@@ -11991,6 +11991,20 @@ pub struct JobBoard {
     /// name is STICKY the way identity is: a farmer who hauls for an
     /// afternoon is still the farmer.
     pub professions: HashMap<common::uid::Uid, common::bastion::WorkType>,
+    /// ★ G1c-c: who the BUILDERS DRAFT took, and the trade it took them
+    /// FROM. A drafted builder is a loan, not a conversion — when the house
+    /// is registered they go back to being the farmer/miner/cook they were,
+    /// and not to whatever a day of Build tallies would have argmaxed them
+    /// into. It is also the draft's own memory of its size: an entry here
+    /// counts as a builder even after the daily argmax renames its colonist,
+    /// so the town cannot draft a fresh farmer every morning while the last
+    /// one is still on the scaffold.
+    ///
+    /// Session state, like `professions` itself (the board is runtime-only):
+    /// a reload mid-house forgets the loan and the drafted keep Build until
+    /// the tallies move them, which is the same latency every other consumer
+    /// of this map already has.
+    pub builder_former_trade: HashMap<common::uid::Uid, common::bastion::WorkType>,
     /// ROW 31: the last game-day the tallies were halved and the
     /// professions derived (once daily, at the schedule cadence).
     pub profession_day: i64,
@@ -16827,6 +16841,18 @@ fn force_plot_request() -> bool {
 fn no_worldgen_plots() -> bool {
     static NO_WORLDGEN_PLOTS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *NO_WORLDGEN_PLOTS.get_or_init(|| std::env::var_os("BASTION_NO_WORLDGEN_PLOTS").is_some())
+}
+
+/// ★ G1c-c THE IDENTITY FALLBACK: with `BASTION_NO_BUILDER_DRAFT` set, the
+/// town never staffs its own build and the day line behaves exactly as it did
+/// before this row — the `BUILDERS DRAFTED`/`BUILDERS RELEASED` block is the
+/// whole of the change, so skipping it is byte-for-byte the old behaviour.
+/// Read once, like `no_worldgen_plots` above; the DECISION it gates
+/// (`builders_wanted`'s plan clause) is pinned separately, so this is only the
+/// environment read.
+fn no_builder_draft() -> bool {
+    static NO_BUILDER_DRAFT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *NO_BUILDER_DRAFT.get_or_init(|| std::env::var_os("BASTION_NO_BUILDER_DRAFT").is_some())
 }
 
 /// bastion (#93): the HOSTILE PROXIMITY CENSUS gate.
@@ -24579,10 +24605,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     )
                                 })
                                 .unwrap_or((0, 0));
-                            // Builders = Build jobs CLAIMED inside this
-                            // plot's footprint. Zero with cells remaining is
-                            // the finding: the house is stalled, not slow.
-                            let builders = board
+                            // ★ G1c-c, WHAT `builders=0` ACTUALLY COUNTED.
+                            // This number is Build jobs CLAIMED inside the
+                            // plot's footprint AT THE INSTANT THE DAY LINE
+                            // FIRES — a point sample of who is holding a cell
+                            // in this one tick, not a count of the town's
+                            // builders. That is why the b1 arm could print
+                            // `placed=8652 ... builders=0` on a day in which
+                            // twelve cells were genuinely placed: twelve
+                            // passers-by claimed, worked and released cells
+                            // over the day, and none of them happened to be
+                            // mid-claim on the tick the line ran. A
+                            // TRANSITION counted by POINT SAMPLING, and it
+                            // reads as a structural zero.
+                            //
+                            // It keeps its own (clearer) name because it is
+                            // still the right instrument for "is anybody on
+                            // this house right now"; `builders` now means
+                            // what a reader assumes it means — the colonists
+                            // the town NAMES as builders, which is the number
+                            // the draft above moves.
+                            let claimed_in_plot = board
                                 .jobs
                                 .values()
                                 .filter(|j| {
@@ -24594,6 +24637,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         && j.pos.y < plan.aabr_wpos.max.y
                                 })
                                 .count();
+                            let builders = board
+                                .professions
+                                .values()
+                                .filter(|w| **w == common::bastion::WorkType::Build)
+                                .count();
+                            let drafted = board.builder_former_trade.len();
                             info!(
                                 plan = plan.id,
                                 kind = ?plan.kind,
@@ -24602,9 +24651,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // (only the cells that show).
                                 total = plan.total,
                                 queued,
-                                placed = plan.total.saturating_sub(remaining),
+                                // ★ G1c-c: `placed` is THE CELLS THE BUILDERS
+                                // PLACED. It used to be
+                                // `total - remaining`, which on the b1 arm
+                                // read `placed=8652` on a day the colony laid
+                                // twelve blocks: `total` is every block
+                                // worldgen drew, INCLUDING the ~8,640 the
+                                // visibility filter skipped as underground or
+                                // already-standing, so the old number was
+                                // dominated by work nobody did. Progress is
+                                // measured against the QUEUED cells, which is
+                                // what `PlotPlan::total`'s own doc says
+                                // ("Progress is reported against the queued
+                                // cells, not against this"), and the old
+                                // figure keeps its meaning beside it as
+                                // `placed_total`.
+                                placed = queued.saturating_sub(remaining),
+                                placed_total = plan.total.saturating_sub(remaining),
                                 remaining,
                                 builders,
+                                drafted,
+                                claimed_in_plot,
                                 beds = plan.beds.len(),
                                 queued_day = plan.queued_day,
                                 day = today,
@@ -45499,6 +45566,202 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 needed = haulers_needed(roster_now),
                                 promoted = ?promoted.iter().map(|u| u.0.get()).collect::<Vec<_>>(),
                                 "bastion: DEDICATED HAULERS — the Haul lane topped up to its share (Ben)"
+                            );
+                        }
+                    }
+                    // ★ G1c-c: THE TOWN STAFFS ITS BUILD.
+                    //
+                    // The measured defect (arm b1, pair 21ab563470): the
+                    // allocator already NAMES the right lane — the very line
+                    // above prints `neediest=Some(Build)` against 1,909 open
+                    // Build jobs and 0 named builders — and then nothing acts
+                    // on it, because the only thing in this town that MOVES a
+                    // colonist between trades is the hauler cap, and that one
+                    // returns each surplus hauler to the trade they already
+                    // had. Twelve cells a day; 158 days for one house.
+                    //
+                    // LAST of the three lane-staffing passes, deliberately:
+                    // `reserve_haulers` promotes out of the NON-haulers, so a
+                    // builder drafted before it would be a candidate to be
+                    // pulled straight back out of the lane on the same day,
+                    // by the block immediately below the one that drafted
+                    // them. Order here IS the fix's correctness.
+                    if !no_builder_draft() {
+                        use common::bastion::WorkType as W;
+                        // Is there a house in flight? The plot plan is the
+                        // only thing this draft exists for — see
+                        // `builders_wanted`'s first clause and why it is
+                        // first.
+                        let plot_plan_open = board.plot_plans.iter().any(|p| !p.registered);
+                        // ★ A GUARD MUST NOT STARVE THE THING IT PROTECTS.
+                        // `builder_former_trade` is what stops the town
+                        // re-drafting every morning — which means a stale
+                        // entry (a drafted colonist who died, or was never
+                        // reloaded) would count as a standing builder
+                        // FOREVER and silently starve the draft of the very
+                        // slot it is meant to fill. The map is a loan
+                        // register for people the town still has.
+                        {
+                            let live: HashSet<common::uid::Uid> =
+                                board.professions.keys().copied().collect();
+                            board.builder_former_trade.retain(|u, _| live.contains(u));
+                        }
+                        // Open Build work, colony-wide. Counted here rather
+                        // than reusing the hauler cap's `open_by_lane`: that
+                        // binding is scoped INSIDE the `BASTION_NO_HAUL_CAP`
+                        // guard, so reusing it would mean hoisting a `let`
+                        // out of the hauler cap, and this row must not touch
+                        // it. One extra pass over the board, once per game
+                        // day, is the cheaper price.
+                        let open_build_cells = board
+                            .jobs
+                            .values()
+                            .filter(|j| j.claimed_by.is_none() && j.work == W::Build)
+                            .count();
+                        let roster_now = board.professions.len();
+                        // ★ A DRAFTED BUILDER COUNTS AS A BUILDER UNTIL
+                        // RELEASED, even when this morning's argmax has
+                        // renamed them: they still carry `in_lane(Build)`
+                        // priorities and are still on the scaffold. Counting
+                        // only the NAME would draft a fresh farmer every
+                        // single day and quietly empty the fields — the
+                        // failure mode `builder_former_trade` exists to stop.
+                        let builders_now = board
+                            .professions
+                            .iter()
+                            .filter(|(u, w)| {
+                                **w == W::Build || board.builder_former_trade.contains_key(*u)
+                            })
+                            .count();
+                        let wanted = crate::bastion_plot_build::builders_wanted(
+                            open_build_cells,
+                            roster_now,
+                            plot_plan_open,
+                        );
+                        if wanted > builders_now {
+                            let mut by_lane_named: HashMap<W, u32> = HashMap::new();
+                            for w in board.professions.values() {
+                                *by_lane_named.entry(*w).or_insert(0) += 1;
+                            }
+                            let by_uid: HashMap<u64, common::uid::Uid> =
+                                board.professions.keys().map(|u| (u.0.get(), *u)).collect();
+                            // (uid, trade, TOTAL lane tally) — the same
+                            // `lane_total` the PROFESSION witness prints just
+                            // below, so "least invested" means the same thing
+                            // in both places. Anyone already on loan to the
+                            // draft is excluded by construction.
+                            let mut candidates: Vec<(u64, W, u32)> = board
+                                .professions
+                                .iter()
+                                .filter(|(u, _)| !board.builder_former_trade.contains_key(*u))
+                                .map(|(u, w)| {
+                                    let total: u32 = board
+                                        .lane_counts
+                                        .iter()
+                                        .filter(|((cu, _), _)| cu == u)
+                                        .map(|(_, v)| *v)
+                                        .sum();
+                                    (u.0.get(), *w, total)
+                                })
+                                .collect();
+                            // hashbrown's iteration order is not a decision:
+                            // `pick_builders` is deterministic given a
+                            // deterministic input, so the input is sorted.
+                            candidates.sort_by_key(|(u, ..)| *u);
+                            let drafted = crate::bastion_plot_build::pick_builders(
+                                &candidates,
+                                &by_lane_named,
+                                wanted - builders_now,
+                            );
+                            let mut drafted_pairs: Vec<(common::uid::Uid, W)> = drafted
+                                .iter()
+                                .filter_map(|uid| by_uid.get(uid).copied())
+                                .filter_map(|u| board.professions.get(&u).map(|w| (u, *w)))
+                                .collect();
+                            drafted_pairs.sort_by_key(|(u, _)| u.0.get());
+                            if !drafted_pairs.is_empty() {
+                                // The label alone would not move anyone —
+                                // the same finding the hauler cap records
+                                // twelve lines up. A profession that does not
+                                // reach the CLAIM priorities builds nothing,
+                                // which is precisely how the b1 arm ended the
+                                // day with `neediest=Some(Build)` and no
+                                // builders.
+                                for (e, u) in (&entities, &uids).join() {
+                                    if drafted_pairs.iter().any(|(du, _)| du == u)
+                                        && let Some(mut c) = colonists.get_mut(e)
+                                    {
+                                        c.0.work_priorities =
+                                            common::bastion::WorkPriorities::in_lane(W::Build);
+                                    }
+                                }
+                                for (u, was) in &drafted_pairs {
+                                    board.builder_former_trade.insert(*u, *was);
+                                    board.professions.insert(*u, W::Build);
+                                    named.retain(|(nu, ..)| nu != u);
+                                    named.push((
+                                        *u,
+                                        W::Build,
+                                        board
+                                            .lane_counts
+                                            .get(&(*u, W::Build))
+                                            .copied()
+                                            .unwrap_or(0),
+                                    ));
+                                }
+                                info!(
+                                    day = today,
+                                    open_build_cells,
+                                    roster = roster_now,
+                                    wanted,
+                                    builders_now,
+                                    drafted = ?drafted_pairs
+                                        .iter()
+                                        .map(|(u, w)| format!("{}:{:?}", u.0.get(), w))
+                                        .collect::<Vec<_>>(),
+                                    "bastion: ★ BUILDERS DRAFTED — the town staffs its own build"
+                                );
+                            }
+                        } else if !plot_plan_open && !board.builder_former_trade.is_empty() {
+                            // THE HOUSE IS BUILT. Everyone the draft took
+                            // goes back to the trade it took them FROM —
+                            // which is what the map is for: a drafted farmer
+                            // returns a farmer, not whatever a week of Build
+                            // tallies would have argmaxed them into.
+                            let mut released: Vec<(common::uid::Uid, W)> = board
+                                .builder_former_trade
+                                .iter()
+                                .map(|(u, w)| (*u, *w))
+                                .collect();
+                            released.sort_by_key(|(u, _)| u.0.get());
+                            for (e, u) in (&entities, &uids).join() {
+                                if let Some((_, w)) = released.iter().find(|(ru, _)| ru == u)
+                                    && let Some(mut c) = colonists.get_mut(e)
+                                {
+                                    c.0.work_priorities =
+                                        common::bastion::WorkPriorities::in_lane(*w);
+                                }
+                            }
+                            for (u, w) in &released {
+                                board.professions.insert(*u, *w);
+                                named.retain(|(nu, ..)| nu != u);
+                                named.push((
+                                    *u,
+                                    *w,
+                                    board.lane_counts.get(&(*u, *w)).copied().unwrap_or(0),
+                                ));
+                            }
+                            board.builder_former_trade.clear();
+                            info!(
+                                day = today,
+                                open_build_cells,
+                                wanted,
+                                builders_now,
+                                released = ?released
+                                    .iter()
+                                    .map(|(u, w)| format!("{}:{:?}", u.0.get(), w))
+                                    .collect::<Vec<_>>(),
+                                "bastion: BUILDERS RELEASED — the house is built; the crew goes back to its trades"
                             );
                         }
                     }

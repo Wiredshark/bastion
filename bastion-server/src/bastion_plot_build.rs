@@ -268,6 +268,171 @@ pub fn drain_takes_the_plot_path(
     !no_worldgen_plots && have_site && !plot_plan_in_flight && !plot_request_pending
 }
 
+// ─── ★ G1c-c: THE TOWN STAFFS ITS BUILD ─────────────────────────────────────
+//
+// # The defect these two functions close
+//
+// Measured on arm b1 (pair `21ab563470`, 2026-09-02 19:33). The first worldgen
+// house was laid out live — `PLOT PLAN QUEUED plan=81`, 1,909 visible cells —
+// and then the day-1 line read:
+//
+//     HAUL LANE CEILING ... neediest=Some(Build)
+//         demoted=["21:Farm","22:Farm","30:Farm","40:Farm","42:Build","55:Mine",..]
+//     BUILD PROGRESS plan=81 queued=1909 placed=8652 remaining=1897 builders=0
+//
+// The allocator NAMED THE RIGHT LANE: `neediest=Some(Build)`, 1,909 open Build
+// jobs against 0 named builders. But naming is all it could do. The only
+// mechanism in this town that MOVES a colonist between trades is the hauler
+// cap, and that mechanism returns each surplus hauler to the trade they
+// already had — one of them (42) merely happened to be a builder already.
+// Twelve cells were placed in a whole game day. At twelve a day the house
+// takes 158 days.
+//
+// So the gap is not knowledge, it is STAFFING: a lane nobody is named by gets
+// whoever wanders past it, and a 1,909-cell house is not built by passers-by.
+// `builders_wanted` says how many the town should have and `pick_builders`
+// says who — both pure, so the two decisions this row can actually get wrong
+// (how many, and at whose expense) are pinned without a generated world. Same
+// split the rest of this module uses; the wiring is `// ★ G1c-c` in
+// `bastion_jobs.rs`.
+
+/// ★ TASTE NUMBER, PENDING BEN'S CALL. One builder per this many open Build
+/// cells.
+///
+/// Not measured. Picked so the b1 house finishes in a plausible week rather
+/// than a plausible season, and named here — rather than inlined — precisely
+/// so Ben can overrule one number instead of re-deriving a policy. On the b1
+/// plot (1,909 open cells) it asks for 12 and [`BUILD_LANE_CAP`] trims that to
+/// 6; at the measured day-1 rate that is still a multi-day house, which is
+/// what the GROW CYCLES ARE REAL ruling wants — a house is not cheaper than a
+/// crop.
+pub const BUILD_CELLS_PER_BUILDER: usize = 150;
+
+/// ★ TASTE NUMBER, PENDING BEN'S CALL. The hard ceiling on the Build lane, in
+/// the same spirit as `bastion_jobs::haul_lane_cap`: a town of builders is not
+/// a town either. Six is enough to move a house in days and small enough that
+/// the farms, the kitchen and the mine keep running.
+pub const BUILD_LANE_CAP: usize = 6;
+
+/// ★ TASTE NUMBER, PENDING BEN'S CALL. The town spares at most one colonist in
+/// six for the Build lane, mirroring `bastion_jobs::COLONISTS_PER_HAULER` (the
+/// same 6, for the same reason: it is the share that still leaves a small
+/// colony a workforce). This is the term that makes the answer depend on the
+/// TOWN and not only on the house — a roster of 9 gives 1 builder for the same
+/// 1,909-cell plot a roster of 49 staffs with 6.
+pub const COLONISTS_PER_BUILDER: usize = 6;
+
+/// The town never drops below this many cooks to staff a build. Two, not one,
+/// so a single cook asleep or off-shift does not close the kitchen.
+pub const COOK_FLOOR: usize = 2;
+
+/// How many builders the town should have right now.
+///
+/// - **No plot plan open ⇒ 0.** This is the load-bearing clause and it is
+///   first for a reason: without it the town would keep a standing build crew
+///   for a house that does not exist, and every stray Build cell in the colony
+///   (a ladder, a bed, a cook station) would pull farmers off the fields
+///   forever. The draft exists to finish a HOUSE; with no house in flight
+///   there is nothing to staff.
+/// - Otherwise one builder per [`BUILD_CELLS_PER_BUILDER`] open cells, clamped
+///   to at least 1 (a plan with a handful of cells left still deserves
+///   somebody) and at most [`BUILD_LANE_CAP`].
+/// - And never more than `roster / COLONISTS_PER_BUILDER`, so the ceiling is a
+///   property of the town as well as of the house.
+///
+/// Deliberately total and saturating: a roster under [`COLONISTS_PER_BUILDER`]
+/// yields 0, which is correct — a colony of five that spares a builder has
+/// spared a fifth of itself.
+pub fn builders_wanted(open_build_cells: usize, roster: usize, plot_plan_open: bool) -> usize {
+    if !plot_plan_open {
+        return 0;
+    }
+    let by_house = (open_build_cells / BUILD_CELLS_PER_BUILDER).clamp(1, BUILD_LANE_CAP);
+    by_house.min(roster / COLONISTS_PER_BUILDER)
+}
+
+/// Who gets retrained into the Build lane, in order.
+///
+/// `candidates` is `(uid, the trade the town names them by, that colonist's
+/// TOTAL lane tally)` — the third number is how much of themselves they have
+/// put into their trades, the same `lane_total` the `PROFESSION` witness
+/// prints. `by_lane_named` is how many colonists the town names by each trade.
+///
+/// The order, and why each term is the way round it is:
+///
+/// 1. **The most-staffed trades give first.** Taking the town's only miner to
+///    build a wall is how a colony ends up with a house and no stone. Ten
+///    farmers can spare four; two farmers cannot spare two.
+/// 2. **Within a trade, the LEAST invested retrains.** `lane_total` is
+///    time-held (ROW 48's unit), so this takes the newest, least-practised
+///    colonist and leaves the veteran farmer farming. It costs the town the
+///    least skill, and it is the opposite of what an argmax-driven scheme
+///    would pick.
+/// 3. **uid ascending** last, so two identical colonists resolve the same way
+///    on every run of the same save.
+///
+/// Three lanes are never drafted, and one is floored:
+///
+/// - **Haul** — the hauler cap and the dedicated-hauler floor both own that
+///   lane; drafting out of it would fight two mechanisms that run in the same
+///   block, on the same day, in both directions.
+/// - **Guard** — a guard is the town's answer to a threat, and a threat does
+///   not wait for the house.
+/// - **Build** — already a builder; drafting them is a no-op that would eat a
+///   slot and make the draft look bigger than it is.
+/// - **Cook**, only down to [`COOK_FLOOR`]. A town that builds itself a
+///   beautiful house and stops cooking has gained nothing.
+///
+/// Returns at most `wanted` uids, and fewer when nothing else qualifies. Ties
+/// inside a staffing level break on the trade's debug name — `WorkType` has no
+/// `Ord`, and the string is the stable key this crate already uses for exactly
+/// this purpose (`cap_haul_lane`, `neediest_lane`).
+///
+/// The staffing snapshot is read ONCE, not recomputed as the list drains:
+/// "the biggest trades give" is a statement about the town as it stands at the
+/// day boundary, and re-ranking mid-draft would make the answer depend on the
+/// draft's own size.
+pub fn pick_builders(
+    candidates: &[(u64, common::bastion::WorkType, u32)],
+    by_lane_named: &hashbrown::HashMap<common::bastion::WorkType, u32>,
+    wanted: usize,
+) -> Vec<u64> {
+    use common::bastion::WorkType as W;
+    if wanted == 0 {
+        return Vec::new();
+    }
+    let mut ranked: Vec<&(u64, W, u32)> = candidates
+        .iter()
+        .filter(|(_, w, _)| !matches!(w, W::Haul | W::Guard | W::Build))
+        .collect();
+    ranked.sort_by(|a, b| {
+        let (sa, sb) = (
+            by_lane_named.get(&a.1).copied().unwrap_or(0),
+            by_lane_named.get(&b.1).copied().unwrap_or(0),
+        );
+        sb.cmp(&sa)
+            .then_with(|| format!("{:?}", a.1).cmp(&format!("{:?}", b.1)))
+            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    let cooks = by_lane_named.get(&W::Cook).copied().unwrap_or(0) as usize;
+    let mut cooks_taken = 0usize;
+    let mut out = Vec::with_capacity(wanted);
+    for (uid, w, _) in ranked {
+        if out.len() >= wanted {
+            break;
+        }
+        if *w == W::Cook {
+            if cooks.saturating_sub(cooks_taken + 1) < COOK_FLOOR {
+                continue;
+            }
+            cooks_taken += 1;
+        }
+        out.push(*uid);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,6 +685,228 @@ mod tests {
             drain_takes_the_plot_path(false, true, false, false),
             drain_takes_the_plot_path(false, false, false, false),
             drain_takes_the_plot_path(false, true, true, false),
+        );
+    }
+
+    /// ★ G1c-c, the SIZE of the draft — the number the b1 arm never
+    /// computed, against the b1 arm's own figures.
+    ///
+    /// PLANTED DEFECT (the one this test exists to catch): drop the plan
+    /// gate, i.e. delete the `if !plot_plan_open { return 0 }`. The FIRST
+    /// assert goes red. And that defect is not hypothetical — it is the
+    /// obvious simplification ("just scale with the open cells"), and it
+    /// would keep a standing build crew forever off the colony's stray Build
+    /// cells (ladders, beds, cook stations), which is a permanent farm tax
+    /// for no house.
+    #[test]
+    fn builders_wanted_scales_with_the_open_cells_and_stops_without_a_plan() {
+        // 1. NO PLAN, NO CREW — at every size of demand and of town.
+        for cells in [0usize, 1, 100, 1_909, 100_000] {
+            for roster in [0usize, 9, 49, 500] {
+                assert_eq!(
+                    builders_wanted(cells, roster, false),
+                    0,
+                    "no plot plan is open: {cells} open cells and a roster of {roster} \
+                     must still staff nobody — the draft finishes a HOUSE, and the \
+                     colony's stray Build cells are not one"
+                );
+            }
+        }
+
+        // 2. A SMALL HOUSE STILL GETS SOMEBODY. 100 / 150 = 0, and the
+        //    clamp floor turns that into 1: a plan with a handful of cells
+        //    left is still a plan.
+        assert_eq!(
+            builders_wanted(100, 49, true),
+            1,
+            "under one builder's worth of cells still deserves one builder"
+        );
+
+        // 3. THE b1 HOUSE, THE b1 TOWN. 1,909 / 150 = 12, trimmed to the
+        //    lane cap; the roster term (49/6 = 8) is not the binding one.
+        assert_eq!(
+            builders_wanted(1_909, 49, true),
+            BUILD_LANE_CAP,
+            "the measured b1 plot on a roster of 49: the lane cap binds, not the town"
+        );
+        assert_eq!(BUILD_LANE_CAP, 6, "the cap this row was sized against");
+
+        // 4. THE SAME HOUSE, A SMALL TOWN. 9/6 = 1: the TOWN binds now.
+        //    This is the term that stops a hamlet emptying its fields into
+        //    one building site.
+        assert_eq!(
+            builders_wanted(1_909, 9, true),
+            1,
+            "a town of nine spares one builder for the same house a town of 49 \
+             staffs with six — the roster share binds, not the cell count"
+        );
+
+        // 5. NEVER ABOVE THE CAP, at any demand, on any town big enough for
+        //    the roster term to stop binding.
+        for cells in [0usize, 1, 149, 150, 1_909, 10_000, usize::MAX] {
+            for roster in [0usize, 1, 5, 6, 9, 36, 49, 500] {
+                let n = builders_wanted(cells, roster, true);
+                assert!(
+                    n <= BUILD_LANE_CAP,
+                    "cells={cells} roster={roster} wanted {n} > cap {BUILD_LANE_CAP}"
+                );
+                assert!(
+                    n <= roster / COLONISTS_PER_BUILDER,
+                    "cells={cells} roster={roster} wanted {n} — more than the town's share"
+                );
+            }
+        }
+        // A colony too small to spare anyone spares no one.
+        assert_eq!(builders_wanted(1_909, 5, true), 0, "five colonists spare nobody");
+
+        println!(
+            "builders_wanted: no_plan={} small_house={} b1_house_town49={} \
+             b1_house_town9={} town5={} cap={BUILD_LANE_CAP} per_builder={BUILD_CELLS_PER_BUILDER}",
+            builders_wanted(1_909, 49, false),
+            builders_wanted(100, 49, true),
+            builders_wanted(1_909, 49, true),
+            builders_wanted(1_909, 9, true),
+            builders_wanted(1_909, 5, true),
+        );
+    }
+
+    /// ★ G1c-c, WHOSE trade pays for the house. The staffing question the
+    /// hauler cap answers for its own lane and nothing answers for Build.
+    ///
+    /// PLANTED DEFECT: allow Haul (or take a cook below [`COOK_FLOOR`]).
+    /// Both go red below. Neither is a strawman — "just take whoever has the
+    /// lowest lane total" is the one-line version of this function, and on
+    /// the roster here it drafts three haulers, which puts the draft into a
+    /// tug-of-war with `reserve_haulers`/`cap_haul_lane` running in the same
+    /// daily block: the floor re-promotes them the next day and the town
+    /// spends its days renaming people instead of building.
+    #[test]
+    fn the_builders_come_from_the_biggest_trades_least_invested_first() {
+        use common::bastion::WorkType as W;
+
+        // A hand-built town: Farm 10, Cook 6, Mine 4, Haul 12, Guard 3.
+        // Lane totals are chosen so the ANSWER IS NOT THE UID ORDER — the
+        // four lowest-invested farmers are uids 4, 5, 1, 2 and the pair at
+        // 40 exercises the uid tie-break.
+        let by_lane_named: hashbrown::HashMap<W, u32> = [
+            (W::Farm, 10u32),
+            (W::Cook, 6),
+            (W::Mine, 4),
+            (W::Haul, 12),
+            (W::Guard, 3),
+        ]
+        .into_iter()
+        .collect();
+        let mut candidates: Vec<(u64, W, u32)> = Vec::new();
+        // Farmers: uids 1..=10. uid 4 = 10 (newest), uid 5 = 20,
+        // uids 1 and 2 tie at 40, everyone else 100+.
+        for (uid, total) in [
+            (1u64, 40u32),
+            (2, 40),
+            (3, 100),
+            (4, 10),
+            (5, 20),
+            (6, 110),
+            (7, 120),
+            (8, 130),
+            (9, 140),
+            (10, 150),
+        ] {
+            candidates.push((uid, W::Farm, total));
+        }
+        // Cooks 11..=16, ALL less invested than any farmer, so only the
+        // "most-staffed trade first" term keeps them out of the answer.
+        for uid in 11u64..=16 {
+            candidates.push((uid, W::Cook, 1));
+        }
+        // Miners 17..=20, haulers 21..=32, guards 33..=35 — the haulers and
+        // guards are the least invested in the whole town, which is exactly
+        // the trap a pure lane_total sort falls into.
+        for uid in 17u64..=20 {
+            candidates.push((uid, W::Mine, 5));
+        }
+        for uid in 21u64..=32 {
+            candidates.push((uid, W::Haul, 0));
+        }
+        for uid in 33u64..=35 {
+            candidates.push((uid, W::Guard, 0));
+        }
+        // Two colonists already in the lane: never drafted twice.
+        candidates.push((36, W::Build, 0));
+        candidates.push((37, W::Build, 0));
+
+        let picked = pick_builders(&candidates, &by_lane_named, 4);
+        println!("pick_builders(wanted=4) -> {picked:?}");
+        assert_eq!(
+            picked,
+            vec![4u64, 5, 1, 2],
+            "the four builders come out of Farm (10 named, the biggest draftable \
+             trade), least-invested first, uid ascending on the 40/40 tie — NOT out \
+             of Haul or Guard, whose colonists have the lowest lane totals in town"
+        );
+
+        // The three forbidden lanes, stated separately so a regression names
+        // itself rather than just shifting the vector above.
+        let forbidden: Vec<u64> = (21..=35).chain(36..=37).collect();
+        for uid in &forbidden {
+            assert!(
+                !picked.contains(uid),
+                "uid {uid} is Haul, Guard or already Build and must never be drafted"
+            );
+        }
+
+        // Asking for more than one trade can spare walks DOWN the staffing
+        // order: Farm (10) exhausts, then Cook (6) — but only to the floor —
+        // then Mine (4).
+        let big = pick_builders(&candidates, &by_lane_named, 30);
+        println!("pick_builders(wanted=30) -> {big:?}");
+        assert_eq!(
+            big.len(),
+            10 + (6 - COOK_FLOOR) + 4,
+            "every farmer, every cook above the floor, every miner — and nobody else"
+        );
+        assert_eq!(
+            big.iter().filter(|u| (11..=16).contains(*u)).count(),
+            6 - COOK_FLOOR,
+            "the kitchen keeps {COOK_FLOOR} cooks no matter how big the house is"
+        );
+        assert!(
+            big.iter().all(|u| !forbidden.contains(u)),
+            "the forbidden lanes stay forbidden however large the draft: {big:?}"
+        );
+
+        // THE SECOND CALL the brief names: a thin town, Farm 2 / Cook 2. The
+        // cooks are AT the floor, so no cook is draftable at all, and a
+        // request for four comes back with two farmers.
+        let thin_named: hashbrown::HashMap<W, u32> =
+            [(W::Farm, 2u32), (W::Cook, 2)].into_iter().collect();
+        let thin: Vec<(u64, W, u32)> = vec![
+            (1, W::Farm, 90),
+            (2, W::Farm, 80),
+            (3, W::Cook, 1),
+            (4, W::Cook, 2),
+        ];
+        let thin_picked = pick_builders(&thin, &thin_named, 4);
+        println!("pick_builders(thin town, wanted=4) -> {thin_picked:?}");
+        assert_eq!(
+            thin_picked,
+            vec![2u64, 1],
+            "Farm 2 / Cook 2: both farmers (least invested first) and NO cook — a \
+             town that builds a beautiful house and stops cooking has gained nothing"
+        );
+        assert!(
+            !thin_picked.contains(&3) && !thin_picked.contains(&4),
+            "no cook may be taken below {COOK_FLOOR}"
+        );
+
+        // Zero wanted is zero taken, and the function is a pure function of
+        // its inputs (the same call twice is the same answer — the sort has
+        // no HashMap-order term in it).
+        assert!(pick_builders(&candidates, &by_lane_named, 0).is_empty());
+        assert_eq!(
+            pick_builders(&candidates, &by_lane_named, 7),
+            pick_builders(&candidates, &by_lane_named, 7),
+            "deterministic: the same roster drafts the same people every run"
         );
     }
 }

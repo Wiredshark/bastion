@@ -82,10 +82,31 @@ pair is re-run on b2 with BASTION_NO_SCRAMBLE_ASSIST=1 (the identity
 switch) as the matched control; if the surge persists with the switch
 on, it is not W6's.
 
-## Disposition (one replicate)
+## The switch-on control (b2 on d065d4ba4b with BASTION_NO_SCRAMBLE_ASSIST=1, booted 19:32, same cut; read 20:18)
 
-W6 FAILED its probe, terrace and embed bars and left the climb assist
-unfired; the design's clock was wrong, not its arms. Next: W6-B — take
+| by day-1 15:00        | D1c boot | W6 boot (arm on) | control (arm off) |
+|-----------------------|---------:|-----------------:|------------------:|
+| probes / terrace      | 72 / 22  | 132 / 36         | 93 / 19           |
+| step assists          | 21       | 185              | 3                 |
+| climb assists         | 1        | 4                | 2                 |
+| embed / net events    | 1,055    | 2,036            | 1,034             |
+| DID NOT STICK (step)  | 13       | 16               | 0                 |
+| starving at the cut   | 2        | 3                | 4                 |
+
+The surge was W6's. The arm that caused it is the committed-walker
+climb: a trunk walker's mover glides at the TRUNK's next waypoint
+while the assist teleported the body onto the CHASER's route head —
+two frames — and at a ledge the two fought (up by the assist, back by
+the glide, every tick), the case the committed-walker filter had been
+written for. W6-C restores that filter (a committed walker gets no
+assist, climb included) and gates W6-B's stall-clock climb to
+chaser-driven walkers.
+
+## Disposition (one replicate each)
+
+W6 FAILED its probe, terrace and embed bars, left the climb assist
+unfired, and its committed-walker arm caused a regression measured by
+the identity switch; the clock was wrong AND one arm was a frame error. Next: W6-B — take
 a promised, standable, adjacent two-up head from the STALL WATCHER's
 clock (first_stall), where the probe already proves the body is not
 advancing, rather than from the assist's stuck_time. The switch-on
