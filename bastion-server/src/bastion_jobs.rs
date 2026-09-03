@@ -11944,6 +11944,34 @@ pub(crate) fn zone_scope(
     open_inside.then_some(region)
 }
 
+/// ★ G1d: where the boot-time replay of the colony's growth log has got to.
+///
+/// One entry is attempted per tick, exactly like a fresh plot request, and for
+/// the same reason: `grow_plot`'s healthy refusal is `IndexShared`, which is a
+/// per-tick fact about whether a chunk job is holding the world index. A
+/// deferral keeps the cursor where it is and the next tick asks again.
+///
+/// The three tallies are what the closing witness reports, and they are kept
+/// rather than recomputed because the log itself does not record what happened
+/// on replay: a line that could not be re-grown (worldgen changed under the
+/// save) still reads `registered: false` afterwards.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GrowthReplay {
+    /// The index of the next line of `JobBoard::growth_log` to replay.
+    pub cursor: usize,
+    /// Lines whose plot went back into the site.
+    pub regrown: usize,
+    /// Lines that were re-grown but queued and registered nothing, because
+    /// the house was already finished and the terrain scan re-adopts it.
+    pub skipped_registered: usize,
+    /// Lines worldgen would not place again (`NoRoom`). Not an error and never
+    /// a panic — the site is generated from the world seed, so a worldgen
+    /// change can legitimately leave no room where there was room before. The
+    /// house's blocks are still standing in the terrain; only the site's claim
+    /// on its tiles is lost.
+    pub refused: usize,
+}
+
 #[derive(Default)]
 pub struct JobBoard {
     /// ★ DETERMINISTIC COST PROXY (roadmap item 39, 2026-08-19).
@@ -13564,10 +13592,14 @@ pub struct JobBoard {
     pub plans: Vec<(common::bastion::ZoneId, Vec<Vec3<i32>>)>,
     // ★ G1c ─────────────────────────────────────────────────────────────
     /// bastion (G1c): the worldgen plots the colony has ordered and is
-    /// building, one entry per live `plans` id. Session state (G1d owns
-    /// persistence): a restart loses the plan and the half-built house stands
-    /// as terrain, which is the same thing that happens to a bedroll plan
-    /// today.
+    /// building, one entry per live `plans` id.
+    ///
+    /// SESSION STATE, deliberately, and G1d did NOT change that: what
+    /// persists is [`growth_log`](JobBoard::growth_log) — four scalars per
+    /// house — and this vector is rebuilt from it at boot by re-growing each
+    /// plot and re-queueing whatever the terrain does not already hold.
+    /// Serialising the plans themselves would freeze rendered geometry and
+    /// plan ids (minted fresh every boot) into the save format.
     pub plot_plans: Vec<crate::bastion_plot_build::PlotPlan>,
     /// bastion (G1c): per-cell TARGET blocks for plot plans — what the Build
     /// completion must place at that cell, and what the retire predicate
@@ -13602,6 +13634,34 @@ pub struct JobBoard {
     /// adopted) colony, which adoption would never have recorded at all.
     /// `None` = resolved to nothing yet, and the drain keeps the bedroll path.
     pub colony_site: Option<common::store::Id<world::site::Site>>,
+    // ★ G1d ─────────────────────────────────────────────────────────────
+    /// bastion (G1d): THE COLONY'S GROWTH LOG, live — one line per worldgen
+    /// plot the colony has ever ordered, in the order it ordered them.
+    ///
+    /// This is the board's copy of `rtsim::data::Data::bastion_growth_log`,
+    /// and it is the AUTHORITATIVE one while the server runs: the rtsim
+    /// bridge seeds it from the save once at boot (before that save can be
+    /// rewritten) and mirrors it back into rtsim data immediately before each
+    /// save. A mirror rather than a drain queue, unlike `pending_thoughts`
+    /// and `pending_sentiments`, because this row must also FLIP an existing
+    /// line (`registered`) and not only append one — and a whole-list assign
+    /// is idempotent where a drain of edits is not.
+    ///
+    /// The board is the only place that can maintain it: both writes happen
+    /// in this system (the fulfil step appends, `PLOT BUILT` flips), and this
+    /// system holds rtsim by a READ handle only (`RtSimAccess::rt_state`).
+    pub growth_log: Vec<common::bastion::BastionGrownPlotV1>,
+    /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
+    /// `None` when there is nothing left to replay.
+    ///
+    /// `Some` means the colony is still putting back plots it grew in an
+    /// earlier session, and the daily housing gate must not spend a new house
+    /// request until it is done — a guard must refuse before it spends, and a
+    /// new plot laid while the old ones are still missing from the site can
+    /// land on top of one of them.
+    ///
+    /// [`growth_log`]: JobBoard::growth_log
+    pub growth_replay: Option<GrowthReplay>,
     // ───────────────────────────────────────────────────────────────────
     /// bastion (AUTON-1): the mine generator's z-slab cursor — one slab of
     /// the scan volume per firing; session-state (a reboot rescans, which
@@ -13773,6 +13833,34 @@ pub fn canonical_cell_drop_order(cells: impl IntoIterator<Item = Vec3<i32>>) -> 
 }
 
 impl JobBoard {
+    /// ★ G1d: hand the colony's GROWTH LOG back to the board at boot, and open
+    /// the replay cursor over it.
+    ///
+    /// Called once per server lifetime by the rtsim bridge (the only system
+    /// that can see the save), beside the designation restore it already does
+    /// and for the same reason: this system can see the terrain and the world
+    /// index but not the save, and that one can see the save but neither of
+    /// the others.
+    ///
+    /// IDENTITY FALLBACK: an empty log opens no cursor, so a fresh world — and
+    /// a save written before this field existed — behaves exactly as it did
+    /// before this row.
+    ///
+    /// `plots_built` is restored, not re-derived: it is a count of houses this
+    /// colony has finished, and after a restart the honest value is the number
+    /// of registered lines, not zero. It gates nothing (it is telemetry, and
+    /// the `PLOT BUILT` witness prints it), so restoring it cannot move any
+    /// decision — it only stops the log from saying the town has built its
+    /// first house three restarts running.
+    pub fn seed_growth_log(&mut self, log: Vec<common::bastion::BastionGrownPlotV1>) {
+        if log.is_empty() {
+            return;
+        }
+        self.plots_built = log.iter().filter(|e| e.registered).count() as u32;
+        self.growth_log = log;
+        self.growth_replay = Some(GrowthReplay::default());
+    }
+
     /// ★★ THE ONE CONVICTION RULE for the strike ledger.
     ///
     /// A cell is condemned when the evidence against it reaches
@@ -16872,6 +16960,96 @@ fn no_worldgen_plots() -> bool {
     *NO_WORLDGEN_PLOTS.get_or_init(|| std::env::var_os("BASTION_NO_WORLDGEN_PLOTS").is_some())
 }
 
+/// ★ G1d: THE ONE PLAN-QUEUE PATH for a grown worldgen plot.
+///
+/// Lifted verbatim out of the fulfil step so the growth-log replay can take
+/// the SAME path a fresh request takes, rather than a second copy of it. That
+/// is the whole reason this function exists: the replay's job is to resume a
+/// half-built house, and a resume that queued cells through its own code would
+/// be free to drift away from the path that queued them the first time — the
+/// drift this file has already paid for once (see `adopt_furniture_surface`).
+///
+/// What it does, in order: measure the plot against the terrain AS IT STANDS
+/// NOW (`visible_cells` — which is exactly what makes a replay resume rather
+/// than rebuild: every cell the world already holds is skipped), mint a plan
+/// id, record each cell's target block, push the plan the existing build
+/// generator drains, add the footprint to the claim mask, and record the
+/// `PlotPlan` the completion loop retires.
+///
+/// Returns `(plan id, queued cells, plot total, skipped_underground,
+/// skipped_unchanged)` so the caller can witness them; it emits nothing
+/// itself, because the fresh request and the replay have different things to
+/// say about the same numbers.
+///
+/// `day` is the day the plot was ORDERED — for a replayed line, the day in its
+/// growth-log entry and not today, so `PLOT BUILT`'s `days_taken` still counts
+/// from when the town decided it wanted the house.
+fn queue_grown_plot(
+    board: &mut JobBoard,
+    terrain: &TerrainGrid,
+    grown: &crate::bastion_growth::GrownPlot,
+    site: common::store::Id<world::site::Site>,
+    kind: world::site::bastion_layout::LayoutKind,
+    day: i64,
+) -> (common::bastion::ZoneId, usize, usize, usize, usize) {
+    use crate::bastion_plot_build as plotb;
+
+    let total = grown.blocks.len();
+    // BUILD ONLY WHAT SHOWS: the plot is already in the index, so anything the
+    // terrain already holds is finished before it starts, and an underground
+    // foundation course is work nobody can ever see.
+    let (cells, skipped_underground, skipped_unchanged) =
+        plotb::visible_cells(&grown.blocks, |p| terrain.get(p).ok().copied());
+    let plan_id = board.next_zone;
+    board.next_zone += 1;
+    let mut z_lo = i32::MAX;
+    let mut z_hi = i32::MIN;
+    let mut cell_positions = Vec::with_capacity(cells.len());
+    for (pos, block) in cells {
+        z_lo = z_lo.min(pos.z);
+        z_hi = z_hi.max(pos.z);
+        board.plot_blocks.insert(pos, block);
+        cell_positions.push(pos);
+    }
+    let queued = cell_positions.len();
+    // The plan the EXISTING build generator drains — one pipeline, not a
+    // second one. Cells are frozen at queue time, exactly like
+    // `queue_build_plan`.
+    board.plans.push((plan_id, cell_positions));
+    if queued > 0 {
+        // ...and, like `queue_build_plan`, the footprint joins the claim mask
+        // so access carving may serve it and the bedroll ring scan will not
+        // drop a bed inside the new house.
+        board.designated.push((
+            Region {
+                min: Vec3::new(grown.placed.aabr_wpos.min.x, grown.placed.aabr_wpos.min.y, z_lo),
+                max: Vec3::new(
+                    grown.placed.aabr_wpos.max.x - 1,
+                    grown.placed.aabr_wpos.max.y - 1,
+                    z_hi,
+                ),
+            },
+            DesignationKind::Build,
+        ));
+    }
+    board.plot_plans.push(plotb::PlotPlan {
+        id: plan_id,
+        site,
+        kind,
+        aabr_wpos: grown.placed.aabr_wpos,
+        door: grown.placed.door_wpos,
+        beds: grown.beds.clone(),
+        total,
+        registered: false,
+        queued_day: day,
+        // ★ G1d: the key back into the growth log. `PLOT BUILT` flips the
+        // line with this seed, so the next boot knows this house is already
+        // in the household census.
+        seed: grown.seed,
+    });
+    (plan_id, queued, total, skipped_underground, skipped_unchanged)
+}
+
 /// ★ G1c-c THE IDENTITY FALLBACK: with `BASTION_NO_BUILDER_DRAFT` set, the
 /// town never staffs its own build and the day line behaves exactly as it did
 /// before this row — the `BUILDERS DRAFTED`/`BUILDERS RELEASED` block is the
@@ -17635,8 +17813,187 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
 
+            // ── ★ G1d (b0) REPLAY THE GROWTH LOG ──────────────────────
+            //
+            // BEFORE any new request is fulfilled, and that ordering is the
+            // point. The world index is regenerated from the world seed at
+            // every boot, so on a restarted world every plot this colony ever
+            // grew is MISSING from its site: the tiles read free again, even
+            // though the walls are still standing in the saved terrain. A
+            // fresh request fulfilled first could be placed straight through
+            // one of them.
+            //
+            // ONE ENTRY PER TICK, exactly like a fresh request, and for the
+            // same reason: `grow_plot`'s healthy refusal is `IndexShared`, a
+            // per-tick fact. Registered lines cost nothing beyond the
+            // `grow_plot` itself (no visibility measurement, no plan, no
+            // designation, no registration), so a log of finished houses
+            // replays in as many ticks as it has houses — fractions of a
+            // second at 30 tps.
+            //
+            // The cursor is CLOSED (`None`) only when every line has been
+            // dealt with, and while it is open the daily housing gate refuses
+            // to spend a new house request (see the drain, `// ★ G1d`).
+            if let Some(mut replay) = board.growth_replay
+                && let Some(site) = board.colony_site
+                && let Some(world) = world_arc.as_deref()
+                && let Some(index) = world_index.as_deref_mut()
+            {
+                // The line to attempt this tick. `growth_log` cannot grow
+                // while the cursor is open — the only appender is the fulfil
+                // step below, which this block's `else` shuts out — so the
+                // index stays valid across ticks.
+                if let Some(entry) = board.growth_log.get(replay.cursor).cloned() {
+                    // ★ G1d: the decision, pinned in `bastion_plot_build`.
+                    // BOTH arms re-grow; they differ in what happens after.
+                    let decision = plotb::replay_decision(&entry);
+                    match crate::bastion_growth::grow_plot(
+                        index,
+                        world.sim(),
+                        site,
+                        decision.kind(),
+                        decision.seed(),
+                    ) {
+                        Ok(grown) => {
+                            PLOT_DEFERRALS.store(0, core::sync::atomic::Ordering::Relaxed);
+                            replay.regrown += 1;
+                            let (plan, cells, blocks, standing) = if decision.queues() {
+                                // The SAME path a fresh request takes —
+                                // measured against the terrain as it stands
+                                // NOW, which is what turns a re-grow into a
+                                // RESUME: every block the colonists already
+                                // laid before the restart is skipped, and only
+                                // the missing remainder is queued.
+                                let (plan_id, queued, total, under, unchanged) = queue_grown_plot(
+                                    &mut board,
+                                    &terrain,
+                                    &grown,
+                                    site,
+                                    decision.kind(),
+                                    entry.day,
+                                );
+                                (Some(plan_id), queued, total, unchanged + under)
+                            } else {
+                                // Registered: the house is finished and the
+                                // terrain scan re-adopts it in place. Queue
+                                // nothing, register nothing — a bed is a
+                                // one-shot resource nothing re-adds, and a
+                                // second registration would count one house
+                                // twice.
+                                replay.skipped_registered += 1;
+                                let blocks = grown.blocks.len();
+                                (None, 0, blocks, blocks)
+                            };
+                            info!(
+                                entry = replay.cursor,
+                                entries = board.growth_log.len(),
+                                kind = ?decision.kind(),
+                                seed = entry.seed,
+                                registered = entry.registered,
+                                ordered_day = entry.day,
+                                aabr = ?grown.placed.aabr_wpos,
+                                blocks,
+                                cells_remaining = cells,
+                                // TREATMENT BESIDE OUTCOME: how much of this
+                                // house the saved terrain already holds. It is
+                                // the number that distinguishes a RESUME from
+                                // a rebuild — `blocks - cells_remaining`, said
+                                // out loud so nobody has to subtract.
+                                already_standing = standing,
+                                plan = ?plan,
+                                "bastion: PLOT RE-GROWN FROM THE LOG — the site knows this \
+                                 plot again, and the colonists finish what they started"
+                            );
+                            replay.cursor += 1;
+                        },
+                        // The healthy refusal: a chunk job holds the index
+                        // this tick. Nothing was spent, the cursor does not
+                        // move, and the next tick asks again.
+                        Err(crate::bastion_growth::GrowRefusal::IndexShared { strong_count }) => {
+                            let n = PLOT_DEFERRALS
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+                                + 1;
+                            if n.is_power_of_two() {
+                                info!(
+                                    strong_count,
+                                    deferrals = n,
+                                    entry = replay.cursor,
+                                    outcome = ?plotb::HouseRequestOutcome::Deferred,
+                                    "bastion: GROWTH LOG REPLAY DEFERRED — the world index is \
+                                     being read this tick; the cursor stands"
+                                );
+                            }
+                        },
+                        // NEVER A PANIC. The site is generated from the world
+                        // seed, so a worldgen change (or a different build)
+                        // can legitimately leave no roadside room where there
+                        // was room before. Retrying is pointless — the seed is
+                        // fixed by the log, and the same seed on the same site
+                        // yields the same refusal — so the line is counted,
+                        // named, and stepped over. The house's blocks are
+                        // still standing; only the site's claim on its tiles
+                        // is lost.
+                        Err(crate::bastion_growth::GrowRefusal::NoRoom) => {
+                            PLOT_DEFERRALS.store(0, core::sync::atomic::Ordering::Relaxed);
+                            replay.refused += 1;
+                            info!(
+                                entry = replay.cursor,
+                                entries = board.growth_log.len(),
+                                kind = ?decision.kind(),
+                                seed = entry.seed,
+                                registered = entry.registered,
+                                ordered_day = entry.day,
+                                site = ?site,
+                                "bastion: GROWTH LOG ENTRY COULD NOT BE RE-GROWN — worldgen \
+                                 found no room for this seed on this site; the entry is kept \
+                                 and the replay continues"
+                            );
+                            replay.cursor += 1;
+                        },
+                        // A stale id. Drop it and let the resolver above find
+                        // the town again; the cursor stands, and with no site
+                        // the guard on the housing drain lifts, so the colony
+                        // falls back to the bedroll path exactly as a siteless
+                        // colony always has.
+                        Err(crate::bastion_growth::GrowRefusal::NoSuchSite) => {
+                            PLOT_DEFERRALS.store(0, core::sync::atomic::Ordering::Relaxed);
+                            board.colony_site = None;
+                            info!(
+                                site = ?site,
+                                entry = replay.cursor,
+                                "bastion: GROWTH LOG REPLAY PAUSED — the colony's site id \
+                                 names no site in this index; the site will be re-resolved"
+                            );
+                        },
+                    }
+                }
+                // Done when the cursor runs off the end — including the
+                // degenerate case of an empty log, which closes on the first
+                // tick having changed nothing at all (the identity fallback).
+                if replay.cursor >= board.growth_log.len() {
+                    info!(
+                        entries = board.growth_log.len(),
+                        re_grown = replay.regrown,
+                        skipped_registered = replay.skipped_registered,
+                        refused = replay.refused,
+                        plots_built = board.plots_built,
+                        "bastion: GROWTH LOG REPLAYED — every plot the colony grew is back in \
+                         its site"
+                    );
+                    board.growth_replay = None;
+                } else {
+                    board.growth_replay = Some(replay);
+                }
+            }
             // ── (b) FULFIL THE HOUSE REQUEST ──────────────────────────
-            if let Some((kind, day, refusals)) = board.plot_request
+            //
+            // ★ G1d: `growth_replay.is_none()` is the second half of the
+            // guard on the housing drain, stated again HERE because this is
+            // the step that actually spends. A request cannot be set while the
+            // replay is open, but a guard that trusts its producer is a guard
+            // that stops guarding the day someone adds a second producer.
+            else if let Some((kind, day, refusals)) = board.plot_request
+                && board.growth_replay.is_none()
                 && let Some(site) = board.colony_site
                 && let Some(world) = world_arc.as_deref()
                 && let Some(index) = world_index.as_deref_mut()
@@ -17645,64 +18002,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 match crate::bastion_growth::grow_plot(index, world.sim(), site, kind, seed) {
                     Ok(grown) => {
                         PLOT_DEFERRALS.store(0, core::sync::atomic::Ordering::Relaxed);
-                        let total = grown.blocks.len();
-                        // BUILD ONLY WHAT SHOWS: the plot is already in the
-                        // index, so anything the terrain already holds is
-                        // finished before it starts, and an underground
-                        // foundation course is work nobody can ever see.
-                        let (cells, skipped_underground, skipped_unchanged) =
-                            plotb::visible_cells(&grown.blocks, |p| {
-                                terrain.get(p).ok().copied()
-                            });
-                        let plan_id = board.next_zone;
-                        board.next_zone += 1;
-                        let mut z_lo = i32::MAX;
-                        let mut z_hi = i32::MIN;
-                        let mut cell_positions = Vec::with_capacity(cells.len());
-                        for (pos, block) in cells {
-                            z_lo = z_lo.min(pos.z);
-                            z_hi = z_hi.max(pos.z);
-                            board.plot_blocks.insert(pos, block);
-                            cell_positions.push(pos);
-                        }
-                        let queued = cell_positions.len();
-                        // The plan the EXISTING build generator drains — one
-                        // pipeline, not a second one. Cells are frozen at
-                        // queue time, exactly like `queue_build_plan`.
-                        board.plans.push((plan_id, cell_positions));
-                        if queued > 0 {
-                            // ...and, like `queue_build_plan`, the footprint
-                            // joins the claim mask so access carving may
-                            // serve it and the bedroll ring scan will not
-                            // drop a bed inside the new house.
-                            board.designated.push((
-                                Region {
-                                    min: Vec3::new(
-                                        grown.placed.aabr_wpos.min.x,
-                                        grown.placed.aabr_wpos.min.y,
-                                        z_lo,
-                                    ),
-                                    max: Vec3::new(
-                                        grown.placed.aabr_wpos.max.x - 1,
-                                        grown.placed.aabr_wpos.max.y - 1,
-                                        z_hi,
-                                    ),
-                                },
-                                DesignationKind::Build,
-                            ));
-                        }
-                        board.plot_plans.push(plotb::PlotPlan {
-                            id: plan_id,
-                            site,
-                            kind,
-                            aabr_wpos: grown.placed.aabr_wpos,
-                            door: grown.placed.door_wpos,
-                            beds: grown.beds.clone(),
-                            total,
-                            registered: false,
-                            queued_day: day,
-                        });
+                        let (plan_id, queued, total, skipped_underground, skipped_unchanged) =
+                            queue_grown_plot(&mut board, &terrain, &grown, site, kind, day);
                         board.plot_request = None;
+                        // ★ G1d: THE LOG IS WRITTEN HERE, at the moment the
+                        // order becomes a fact about the world — not when the
+                        // house finishes. A half-built house is exactly the
+                        // case a restart must be able to resume, so the line
+                        // has to exist before the first block is laid.
+                        // `registered: false` until `PLOT BUILT` says
+                        // otherwise.
+                        board.growth_log.push(common::bastion::BastionGrownPlotV1 {
+                            kind: plotb::wire_kind(kind),
+                            seed,
+                            day,
+                            registered: false,
+                        });
                         info!(
                             plan = plan_id,
                             kind = ?kind,
@@ -17716,6 +18031,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             no_stone_bill = true,
                             seed,
                             day,
+                            growth_log = board.growth_log.len(),
                             outcome = ?plotb::HouseRequestOutcome::Grown,
                             "bastion: PLOT PLAN QUEUED — the colonists will build what shows"
                         );
@@ -22041,14 +22357,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // BYTE-IDENTICAL behaviour under BASTION_NO_WORLDGEN_PLOTS.
             // ★ G1c FIXTURE: BASTION_FORCE_PLOT_REQUEST asks for a house whenever
             // none is in flight (the flat lab's 58 houses never trip the gate).
-            if (board.pending_house.is_some() || force_plot_request())
+            //
+            // ★ G1d: A GUARD MUST REFUSE BEFORE IT SPENDS. While the growth
+            // log is still being replayed, the site does not yet know about
+            // every plot this colony has already grown — their tiles read free
+            // — so a house ordered now could be laid straight through a wall
+            // that is standing in the saved terrain. The whole housing drain
+            // waits, BOTH paths: the bedroll fallback would put a bed inside a
+            // half-restored house just as happily.
+            //
+            // `pending_house` is HELD, not taken, so the day's intent survives
+            // the wait and fires the moment the replay closes.
+            //
+            // The guard cannot outlive the replay's ability to run: it is
+            // conditioned on `colony_site`, which is only ever set FROM the
+            // live world index, so a build with no index (the non-worldgen
+            // server, the test world) never arms it and keeps the bedroll path
+            // exactly as it always had. A stale site id disarms it too — the
+            // replay clears `colony_site` on `NoSuchSite`.
+            if board.growth_replay.is_some() && board.colony_site.is_some() {
+                if board.pending_house.is_some() {
+                    info!(
+                        day = board.pending_house,
+                        entries = board.growth_log.len(),
+                        cursor = board.growth_replay.map(|r| r.cursor),
+                        "bastion: HOUSE REQUEST HELD — the colony's growth log is still being \
+                         replayed; the town does not order a new plot until every old one is \
+                         back in its site"
+                    );
+                }
+            } else if (board.pending_house.is_some() || force_plot_request())
                 && crate::bastion_plot_build::drain_takes_the_plot_path(
                     no_worldgen_plots(),
                     board.colony_site.is_some(),
                     // UNREGISTERED, not merely present: `plot_plans` keeps a
-                    // record of every house the colony has built (G1d
-                    // persists it), so `is_empty()` would be true exactly
-                    // once and the town would build one house, ever.
+                    // record of every house the colony has built this session
+                    // (and, since G1d, of every one it re-grew from the
+                    // growth log at boot), so `is_empty()` would be true
+                    // exactly once and the town would build one house, ever.
                     board.plot_plans.iter().any(|p| !p.registered),
                     board.plot_request.is_some(),
                 )
@@ -22357,6 +22703,57 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let _ = board.adopt_beds_surface(&terrain, min_xy, max_xy, hint_z);
                     board.plot_plans[idx].registered = true;
                     board.plots_built += 1;
+                    // ★ G1d: the growth log learns the house is FINISHED, so
+                    // the next boot re-grows its plot (the site must know its
+                    // tiles are taken) and registers nothing (the terrain scan
+                    // re-adopts a finished house in place; a bed is a one-shot
+                    // resource nothing re-adds).
+                    //
+                    // MATCHED BY SEED, which is unique per line by
+                    // construction: `next_house_seed` mixes (day, plan count,
+                    // refusals) and no two orders agree on all three. Matching
+                    // by plan id would not work at all — plan ids are minted
+                    // fresh every boot and are not in the save.
+                    //
+                    // ★ WHY THIS CANNOT DOUBLE-COUNT A HOUSE, even for one
+                    // finished in the 60 seconds before the server stopped.
+                    // The two facts that decide it — the Bed region
+                    // `adopt_beds_surface` just pushed into `designated`, and
+                    // this `registered` flag — are written on THIS tick and
+                    // persisted by the SAME save block (`server/src/rtsim/
+                    // tick.rs`, one statement apart, under one lock). So a
+                    // save carries both or neither:
+                    //
+                    // - both → the restore re-adopts the house from its saved
+                    //   Bed order, and the replay skips the line. One count.
+                    // - neither → nothing re-adopts it, and the replay
+                    //   re-queues a plan with zero missing cells, which
+                    //   retires on the spot and lands right back here. One
+                    //   count.
+                    //
+                    // There is no third state, which is exactly why the flag
+                    // may be trusted as the whole of the answer.
+                    let plan_seed = board.plot_plans[idx].seed;
+                    let logged = match board
+                        .growth_log
+                        .iter_mut()
+                        .find(|e| e.seed == plan_seed)
+                    {
+                        Some(entry) => {
+                            entry.registered = true;
+                            true
+                        },
+                        // Named, not silent. The only way here is a plot that
+                        // was queued without a log line, which would mean a
+                        // second queue path had appeared beside
+                        // `queue_grown_plot` — exactly the drift the shared
+                        // path exists to prevent. The house is still built and
+                        // registered; only its persistence is lost, and it
+                        // would come back as an unregistered line next boot
+                        // (re-grown, and queueing nothing, because the terrain
+                        // already holds every block).
+                        None => false,
+                    };
                     let beds_registered = board.beds.len().saturating_sub(beds_before);
                     let houses = board
                         .designated
@@ -22379,6 +22776,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         ?min_xy,
                         ?max_xy,
                         hint_z,
+                        // ★ G1d: whether the colony's growth log now knows
+                        // this house is finished. `false` is a defect, not a
+                        // shrug — see the match above.
+                        seed = plan_seed,
+                        logged,
                         "bastion: PLOT BUILT — a worldgen house stands and its beds are registered"
                     );
                 }

@@ -2589,6 +2589,90 @@ pub fn settle_plan(adopted_existing: usize, wanted: usize, houses: usize) -> Vec
     (0..(wanted - adopted_existing)).map(|i| i % houses).collect()
 }
 
+// ─── bastion (G1d): THE COLONY'S GROWTH LOG ──────────────────────────────
+//
+// A worldgen plot the colony grows is TWO facts in two different stores. The
+// blocks land in the terrain, which is saved. The plot itself lands in the
+// world INDEX — the site's tile grid and `site.plots` — which is not saved at
+// all: it is regenerated from the world seed at every boot. So after a restart
+// the house STANDS (the terrain kept it) while the site it stands on no longer
+// knows the plot is there: its tiles read free, and the next plot the colony
+// asks for can be laid straight over the one it already built. A HALF-built
+// plan is worse — its cells and their target blocks went with the board, so
+// nothing ever finishes the house.
+//
+// The fix is the one the colony's designations already use. rtsim's `Data` is
+// the only colony state that survives a restart, so what gets saved is the
+// STANDING ORDER — "the colony grew a House with this seed on this day" — and
+// the plot is re-grown from it at boot. `grow_plot` is deterministic in
+// (site state, seed) by construction (pinned in G1a), so replaying the log in
+// order onto a freshly generated site reproduces the same plots in the same
+// places.
+//
+// WHY A LOG AND NOT THE PLOTS. Serialising `PlotPlan` (or worldgen's own
+// `LayoutKind`) would freeze runtime types into the save format: every future
+// change to how a plot is laid out would become a save migration, and a save
+// that carries rendered geometry disagrees with the world the moment worldgen
+// changes. Four scalars per house cannot disagree with anything.
+
+/// bastion (G1d): which kind of worldgen plot one growth-log line names.
+///
+/// A WIRE MIRROR of `world::site::bastion_layout::LayoutKind`, deliberately
+/// NOT that type. `common` does not depend on `world` (the dependency runs the
+/// other way), and the runtime enum must stay free of serde so that adding a
+/// layout kind stays a worldgen decision instead of silently becoming a
+/// save-format decision. The two are mapped explicitly by `From` impls in
+/// `bastion-server`'s `bastion_plot_build`, so a kind added on either side is
+/// a compile error at that seam rather than a save that decodes into the
+/// wrong building.
+///
+/// APPEND ONLY. rtsim's save is a NAMED encoding (`Data::write_to` uses
+/// `rmp_serde::encode::write_named`), so a variant's position is not what is
+/// written — but a save naming a variant this build has removed fails to
+/// decode, and a colony's growth log is not a thing to eat. Add; never remove;
+/// never re-point an existing name at a different building.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BastionLayoutKindV1 {
+    House,
+    FarmField,
+    Workshop,
+}
+
+/// bastion (G1d): ONE LINE OF THE COLONY'S GROWTH LOG — a worldgen plot the
+/// colony ordered, and enough to grow it again.
+///
+/// The whole line is four scalars, and every one of them is load-bearing:
+///
+/// - `kind` — what to ask worldgen for.
+/// - `seed` — WHICH plot. `grow_plot`'s placement search is a pure function of
+///   the site's tile grid and this number, so the same seed replayed onto the
+///   same site puts the same building on the same tiles. Two entries never
+///   share a seed: it is minted by `next_house_seed(day, plan_count,
+///   refusals)` and any two orders differ in at least one of the three.
+/// - `day` — the game day it was ordered, so `PLOT BUILT` can still say how
+///   long the house took across a restart.
+/// - `registered` — whether the finished house was already handed to the
+///   household census. This is the field that stops the log from
+///   double-counting a town: a FINISHED house comes back on its own through
+///   the terrain scan (`adopt_beds_surface` re-adopts it in place), so its log
+///   line must re-grow the PLOT (so the site knows its tiles are taken) and
+///   register NOTHING. A bed is a one-shot resource nothing re-adds; a second
+///   registration would push a second Bed region over the same footprint and
+///   the town would count one house as two.
+///
+/// `#[serde(default)]` on `registered` for the same reason the field on
+/// rtsim's `Data` carries one: a line written by an older build reads as "not
+/// yet registered", which re-queues the house's remaining cells — and against
+/// a terrain that already holds all of them, that queues nothing.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BastionGrownPlotV1 {
+    pub kind: BastionLayoutKindV1,
+    pub seed: u64,
+    pub day: i64,
+    #[serde(default)]
+    pub registered: bool,
+}
+
 #[cfg(test)]
 mod tests {
 

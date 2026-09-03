@@ -103,6 +103,125 @@ pub struct PlotPlan {
     /// The game day the plot was queued, so `PLOT BUILT` can say how long it
     /// took.
     pub queued_day: i64,
+    /// ★ G1d: the seed this plot was grown from — the KEY back into the
+    /// colony's growth log. `PLOT BUILT` flips that line's `registered` by
+    /// matching this value, so a restart knows which houses are already in the
+    /// household census and which are still half-built walls. Unique per entry
+    /// by construction: [`next_house_seed`] mixes (day, plan count, refusals)
+    /// and any two orders differ in at least one of the three.
+    pub seed: u64,
+}
+
+// ─── ★ G1d: THE GROWTH LOG'S TWO SEAMS ──────────────────────────────────────
+
+/// The wire mirror of a layout kind, from the runtime kind.
+///
+/// `common::bastion::BastionLayoutKindV1` exists because `common` cannot see
+/// `world` and worldgen's own `LayoutKind` must not carry serde (a runtime
+/// enum that is also a save format turns every worldgen change into a save
+/// migration). These two functions are the whole of the mapping, in one place:
+/// a kind added to either enum fails to compile HERE — non-exhaustive match —
+/// rather than decoding into the wrong building somewhere else.
+///
+/// ★ DEVIATION FROM THE BRIEF, FORCED: the brief asks for `From` impls. They
+/// are not writable here. Both types are foreign to this crate (one is
+/// `common`'s, the other `world`'s), so `impl From<LayoutKind> for
+/// BastionLayoutKindV1` is an orphan-rule error (E0117, confirmed by
+/// compiling it), and the only two crates that could host the impls are
+/// `world` — which the brief puts off limits — and `common`, which must not
+/// learn about `world` at all. Free functions in the crate that already owns
+/// this seam are what is left; they say the same thing and are called at the
+/// same two places.
+pub fn wire_kind(kind: LayoutKind) -> common::bastion::BastionLayoutKindV1 {
+    use common::bastion::BastionLayoutKindV1 as K;
+    match kind {
+        LayoutKind::House => K::House,
+        LayoutKind::FarmField => K::FarmField,
+        LayoutKind::Workshop => K::Workshop,
+    }
+}
+
+/// The runtime layout kind, from the wire mirror. The other half of the seam
+/// above — a growth-log line is replayed by handing this back to `grow_plot`.
+pub fn runtime_kind(kind: common::bastion::BastionLayoutKindV1) -> LayoutKind {
+    use common::bastion::BastionLayoutKindV1 as K;
+    match kind {
+        K::House => LayoutKind::House,
+        K::FarmField => LayoutKind::FarmField,
+        K::Workshop => LayoutKind::Workshop,
+    }
+}
+
+/// What the boot-time replay does with one line of the colony's growth log.
+///
+/// BOTH variants re-grow the plot, and that is the half of this row that is
+/// easiest to get wrong. It is tempting to read "the house is finished, the
+/// terrain kept it" as "there is nothing to do" — but the thing that did NOT
+/// survive the restart is the plot's claim on the site's tiles. A finished
+/// house whose plot is not re-grown reads as free roadside, and the next house
+/// the colony orders is laid straight through its wall. The variants differ
+/// only in what happens AFTER the grow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplayDecision {
+    /// `registered = true`: the house was finished and already in the
+    /// household census before the restart. Re-grow the plot, then SKIP the
+    /// plan queue and SKIP the registration. Both skips, for different
+    /// reasons:
+    ///
+    /// - **Queue nothing** is not a rule this variant has to enforce so much
+    ///   as one it makes cheap and honest: every block of a finished house is
+    ///   standing in the saved terrain, so [`visible_cells`] against that
+    ///   terrain returns an empty list anyway. Skipping the whole path saves
+    ///   the render and says plainly that a finished house is not work.
+    /// - **Register nothing** is load-bearing. The finished house comes back
+    ///   on its own through the terrain scan (`adopt_beds_surface` re-adopts
+    ///   it in place — beds, hearth, containers and all). Registering it a
+    ///   second time would push a second Bed region over the same footprint,
+    ///   and `derive_households` counts Bed REGIONS: the town would count one
+    ///   house as two and the immigration gate would open on beds nobody has.
+    ReGrowOnly { kind: LayoutKind, seed: u64 },
+    /// `registered = false`: the house was still being built when the server
+    /// stopped (or was never finished at all). Re-grow the plot AND queue what
+    /// the terrain does not already hold — which, for a half-built house, is
+    /// exactly the half that is missing, because `visible_cells` measures
+    /// against the terrain as it stands NOW.
+    ReGrowAndQueue { kind: LayoutKind, seed: u64 },
+}
+
+impl ReplayDecision {
+    /// What to ask worldgen for. The same for both variants — every entry is
+    /// re-grown.
+    pub fn kind(self) -> LayoutKind {
+        match self {
+            Self::ReGrowOnly { kind, .. } | Self::ReGrowAndQueue { kind, .. } => kind,
+        }
+    }
+
+    /// Which plot. The same for both variants, for the same reason.
+    pub fn seed(self) -> u64 {
+        match self {
+            Self::ReGrowOnly { seed, .. } | Self::ReGrowAndQueue { seed, .. } => seed,
+        }
+    }
+
+    /// Does this entry queue cells and eventually register a house? `false`
+    /// for an entry that was already registered — the one-shot rule.
+    pub fn queues(self) -> bool { matches!(self, Self::ReGrowAndQueue { .. }) }
+}
+
+/// The replay decision for one growth-log line.
+///
+/// Split out from the wiring for the usual reason: this is a decision the row
+/// can actually get wrong, and it is decidable from a value, so it is pinned
+/// without a generated world. The call site in `bastion_jobs.rs` is marked
+/// `// ★ G1d`.
+pub fn replay_decision(entry: &common::bastion::BastionGrownPlotV1) -> ReplayDecision {
+    let (kind, seed) = (runtime_kind(entry.kind), entry.seed);
+    if entry.registered {
+        ReplayDecision::ReGrowOnly { kind, seed }
+    } else {
+        ReplayDecision::ReGrowAndQueue { kind, seed }
+    }
 }
 
 /// What the colony should do about a house it asked worldgen for.
@@ -947,5 +1066,204 @@ mod tests {
             pick_builders(&candidates, &by_lane_named, 7),
             "deterministic: the same roster drafts the same people every run"
         );
+    }
+
+    // ─── ★ G1d: THE GROWTH LOG ─────────────────────────────────────────────
+
+    /// THE row's claim, as a pin: a replayed entry queues ONLY the cells the
+    /// world does not already have — so a half-built house resumes with its
+    /// remaining half and a finished one resumes with nothing.
+    ///
+    /// This is [`visible_cells`] read at the replay's angle rather than the
+    /// fresh request's, and the reason it works is that `visible_cells` was
+    /// always measured against the terrain as it stands NOW: nothing in it
+    /// remembers when the plot was grown. The restart is just a very long gap
+    /// between the grow and the measurement.
+    ///
+    /// PLANTED DEFECT (the one this test exists to catch): queue every cell
+    /// regardless of terrain — i.e. the `kept.push` arm taken unconditionally,
+    /// which is what a replay written as "re-queue the plan" instead of
+    /// "re-measure the plot" does. It costs the colony a second full build of
+    /// a house that is already standing: the town would spend a week laying
+    /// blocks on top of identical blocks, and `skipped_unchanged` — the number
+    /// that says so — would read 0.
+    #[test]
+    fn a_replayed_entry_queues_only_what_is_still_missing() {
+        // A ten-block wall, as worldgen laid it out.
+        let plot: Vec<(Vec3<i32>, Block)> =
+            (0..10).map(|x| (Vec3::new(x, 0, 1), wood())).collect();
+
+        // The server stopped after the colonists had placed the first four.
+        // Those four are in the saved terrain; the rest is open air.
+        for placed in [0usize, 4, 10] {
+            let terrain_at = |p: Vec3<i32>| {
+                Some(if (p.x as usize) < placed { wood() } else { air() })
+            };
+            let (kept, underground, unchanged) = visible_cells(&plot, terrain_at);
+            println!(
+                "replay with {placed} of {} already standing -> queued={} \
+                 skipped_unchanged={unchanged} skipped_underground={underground}",
+                plot.len(),
+                kept.len(),
+            );
+            assert_eq!(
+                kept.len(),
+                plot.len() - placed,
+                "the replay queues total - already-placed, and nothing else"
+            );
+            assert_eq!(
+                unchanged, placed,
+                "every block the world already holds is counted as finished, not rebuilt"
+            );
+            assert_eq!(underground, 0, "nothing here is underground");
+            // And the cells it queued are exactly the missing ones, in the
+            // plot's own order — a resumed house lays its courses in the same
+            // direction it started them.
+            assert_eq!(
+                kept.iter().map(|(p, _)| p.x).collect::<Vec<_>>(),
+                (placed as i32..10).collect::<Vec<_>>(),
+                "the queued cells are the MISSING ones, in the plot's own order"
+            );
+        }
+    }
+
+    /// A finished house is re-grown but never re-registered.
+    ///
+    /// The plot must go back into the site (or the next house is laid through
+    /// its wall — the world index is regenerated from the seed and does not
+    /// remember), and the household census must NOT be told about it twice
+    /// (the terrain scan re-adopts it in place; a bed is a one-shot resource
+    /// nothing re-adds, so a double registration is a town that counts one
+    /// house as two and opens its immigration gate on beds nobody has).
+    ///
+    /// PLANTED DEFECT: `replay_decision` returning `ReGrowAndQueue` for every
+    /// entry — the version that treats the log as a list of houses to build
+    /// rather than a list of orders already given. The `queues()` assert below
+    /// turns red for it.
+    #[test]
+    fn a_registered_entry_is_not_re_registered() {
+        use common::bastion::{BastionGrownPlotV1 as Entry, BastionLayoutKindV1 as K};
+
+        let finished = Entry { kind: K::House, seed: 0xABCD_1234, day: 3, registered: true };
+        let half_built = Entry { registered: false, ..finished.clone() };
+
+        let d_finished = replay_decision(&finished);
+        let d_half = replay_decision(&half_built);
+        println!("registered=true -> {d_finished:?}\nregistered=false -> {d_half:?}");
+
+        // The SKIP half: a registered entry queues nothing and registers
+        // nothing.
+        assert!(
+            !d_finished.queues(),
+            "a house already in the census must not be queued or registered again"
+        );
+        assert_eq!(d_finished, ReplayDecision::ReGrowOnly {
+            kind: LayoutKind::House,
+            seed: 0xABCD_1234,
+        });
+
+        // The half nobody remembers to keep: it is still RE-GROWN. Same kind,
+        // same seed, so the plot lands on the same tiles it held before the
+        // restart and the site knows they are taken.
+        assert_eq!(
+            (d_finished.kind(), d_finished.seed()),
+            (LayoutKind::House, 0xABCD_1234),
+            "a finished house is still re-grown — the site must know its tiles are taken"
+        );
+
+        // And the unfinished one does queue.
+        assert!(d_half.queues(), "a half-built house must be resumed");
+        assert_eq!(d_half, ReplayDecision::ReGrowAndQueue {
+            kind: LayoutKind::House,
+            seed: 0xABCD_1234,
+        });
+
+        // The kind round-trips through the wire mirror unchanged, in both
+        // directions and for every variant — the seam where a save could
+        // decode into the wrong building.
+        for (wire, runtime) in [
+            (K::House, LayoutKind::House),
+            (K::FarmField, LayoutKind::FarmField),
+            (K::Workshop, LayoutKind::Workshop),
+        ] {
+            assert_eq!(runtime_kind(wire), runtime);
+            assert_eq!(wire_kind(runtime), wire);
+        }
+    }
+
+    /// A save written before the growth log existed still loads, with an empty
+    /// log — the identity fallback: an empty log replays nothing and changes
+    /// nothing.
+    ///
+    /// ★ DEVIATION, STATED: this pins the property on a two-field stand-in
+    /// rather than on rtsim's `Data` itself, because `Data` has no `Default`
+    /// and cannot be constructed in a unit test without generating a world
+    /// (`nature: Nature::generate(world)`). What is faithful is everything
+    /// that decides the outcome:
+    ///
+    /// - the same CODEC and the same call: `rmp_serde::encode::write_named` is
+    ///   what `Data::write_to` uses, and `rmp_serde::decode::from_read` is
+    ///   what `Data::from_reader` uses. `write_named` matters — the compact
+    ///   rmp encoding writes structs as ARRAYS, under which a `#[serde(
+    ///   default)]` field added anywhere but the end would silently shift
+    ///   every field after it. The named encoding is why the sibling pattern
+    ///   is safe at all, so the pin uses it.
+    /// - the same attribute (`#[serde(default)]`) on the same shape of field
+    ///   (a `Vec` of the real `BastionGrownPlotV1`).
+    ///
+    /// PLANTED DEFECT: drop the `#[serde(default)]`. The decode then fails
+    /// with a missing-field error, which live is a save this build cannot read
+    /// at all — every colony on an older save, gone.
+    #[test]
+    fn the_log_survives_an_old_save() {
+        use common::bastion::{BastionGrownPlotV1 as Entry, BastionLayoutKindV1 as K};
+        use serde::{Deserialize, Serialize};
+
+        /// The save as an older build wrote it: no growth log at all.
+        #[derive(Serialize)]
+        struct OldSave {
+            version: u32,
+            tick: u64,
+        }
+
+        /// The save as this build reads it. Same sibling pattern as the field
+        /// on rtsim's `Data`.
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct NewSave {
+            version: u32,
+            #[serde(default)]
+            bastion_growth_log: Vec<Entry>,
+            tick: u64,
+        }
+
+        let mut old = Vec::new();
+        rmp_serde::encode::write_named(&mut old, &OldSave { version: 10, tick: 7 })
+            .expect("the old save encodes");
+        let loaded: NewSave =
+            rmp_serde::decode::from_read(&old[..]).expect("an old save must still load");
+        println!("old save ({} bytes) loaded as {loaded:?}", old.len());
+        assert_eq!(loaded.version, 10, "the fields that were there are unchanged");
+        assert_eq!(loaded.tick, 7);
+        assert!(
+            loaded.bastion_growth_log.is_empty(),
+            "a save with no growth log loads with an EMPTY one — the identity fallback"
+        );
+
+        // And a log that IS there round-trips through the same codec, so the
+        // fallback is a fallback and not the only thing that works.
+        let written = NewSave {
+            version: 10,
+            bastion_growth_log: vec![
+                Entry { kind: K::House, seed: 11, day: 2, registered: true },
+                Entry { kind: K::Workshop, seed: 12, day: 5, registered: false },
+            ],
+            tick: 7,
+        };
+        let mut bytes = Vec::new();
+        rmp_serde::encode::write_named(&mut bytes, &written).expect("the new save encodes");
+        let read: NewSave =
+            rmp_serde::decode::from_read(&bytes[..]).expect("the new save decodes");
+        println!("round-trip: {read:?}");
+        assert_eq!(read, written, "the log round-trips in order, registered flags and all");
     }
 }

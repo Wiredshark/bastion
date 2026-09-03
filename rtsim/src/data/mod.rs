@@ -112,6 +112,37 @@ pub struct Data {
     #[serde(default)]
     pub bastion_designations: Vec<(common::bastion::Region, common::bastion::DesignationKind)>,
 
+    /// bastion (G1d): the colony's GROWTH LOG — every worldgen plot the colony
+    /// has ordered, in the order it ordered them.
+    ///
+    /// The sibling of [`bastion_designations`](Self::bastion_designations),
+    /// and here for the same reason: this is colony state, and rtsim data is
+    /// where colony state survives a restart. What it persists is different,
+    /// though, and the difference is the point. A designation is an order the
+    /// colony painted; a growth-log line is an order the colony gave WORLDGEN
+    /// — "a House, from this seed, on this day" — and it is replayed by asking
+    /// worldgen for that plot again, not by placing blocks.
+    ///
+    /// WHY THE LOG AND NOT THE PLOT. The world index is regenerated from the
+    /// seed at every boot, so a grown plot's tiles read free again on load
+    /// even though its walls are still standing in the saved terrain: the next
+    /// house the colony asks for could be laid straight over the one it built.
+    /// `grow_plot` is deterministic in (site state, seed), so replaying these
+    /// lines IN ORDER onto the freshly generated site puts every plot back
+    /// exactly where it was — and the half-built one gets its remaining cells
+    /// re-queued against the terrain as it now stands.
+    ///
+    /// NOT the `PlotPlan`, NOT the rendered blocks and NOT worldgen's own
+    /// `LayoutKind`: those are runtime types, and freezing one into the save
+    /// format turns every future layout change into a save migration. Four
+    /// scalars per house cannot go stale.
+    ///
+    /// Sibling `#[serde(default)]` pattern, no version bump: a save written
+    /// before this field existed loads with an EMPTY log, which replays
+    /// nothing and changes nothing.
+    #[serde(default)]
+    pub bastion_growth_log: Vec<common::bastion::BastionGrownPlotV1>,
+
     // If true, rtsim data will be ignored (and, hence, overwritten on next save) on load.
     #[serde(default)]
     pub should_purge: bool,

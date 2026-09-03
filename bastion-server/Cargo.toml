@@ -36,6 +36,13 @@ slotmap = "1.0"
 # Test-only: `WorldSim::generate` takes a `&rayon::ThreadPool`, and the
 # bastion_growth pins build a real world to grow a town in.
 rayon = { workspace = true }
+# Test-only: the G1d growth-log pin decodes an OLD save with the codec rtsim
+# actually uses (`Data::write_to` = `rmp_serde::encode::write_named`,
+# `Data::from_reader` = `rmp_serde::decode::from_read`). Pinning
+# `#[serde(default)]` against serde_json instead would pin a different
+# encoding's tolerance than the one the save format depends on. Same version
+# rtsim and veloren-server already carry, so nothing new enters the lockfile.
+rmp-serde = "1.1.0"
 # Test-only: install a subscriber so the bastion_growth pins actually SHOW the
 # witness line they claim to emit. Without one, `tracing::info!` is a no-op and
 # a witness nobody has ever seen fire is an unverified instrument.

@@ -952,6 +952,28 @@ impl<'a> System<'a> for Sys {
                 );
                 job_board.pending_restore = orders;
             }
+            // ★ G1d: THE GROWTH LOG, at the same seam and for the same
+            // reason. This system can see the save; the bastion tick can see
+            // the world index the plots have to go back into. Seeded here, and
+            // BEFORE the save block below, so the board's copy is authoritative
+            // by the time anything mirrors it back — no union hack is needed
+            // (the designations above need one because their restore waits on
+            // terrain that may be many ticks away; a growth-log line waits on
+            // nothing but the site).
+            //
+            // IDENTITY FALLBACK: an empty log (a fresh world, or a save from
+            // before this field existed) opens no replay cursor and changes
+            // nothing at all.
+            let log = rtsim.state.data().bastion_growth_log.clone();
+            if !log.is_empty() {
+                tracing::info!(
+                    entries = log.len(),
+                    registered = log.iter().filter(|e| e.registered).count(),
+                    "bastion: GROWTH LOG READ FROM SAVE — every plot the colony grew, awaiting \
+                     its site to be re-grown into"
+                );
+                job_board.seed_growth_log(log);
+            }
         }
 
         // Perform a save if required
@@ -986,6 +1008,25 @@ impl<'a> System<'a> for Sys {
             let mut orders = job_board.designated.clone();
             orders.extend(job_board.pending_restore.iter().copied());
             rtsim.state.data_mut().bastion_designations = orders;
+            // ★ G1d: the colony's GROWTH LOG joins the same save, from the
+            // board's copy — which is authoritative from the seed above
+            // onwards, so this is a plain mirror and needs no union: there is
+            // never a window where the board's log is emptier than the save's.
+            //
+            // The two writes are one statement apart rather than merged
+            // because they answer to different owners: `designated` is painted
+            // by players and drained by the restore, while the growth log is
+            // written only by the plot lane (appended when a plot is queued,
+            // flipped when `PLOT BUILT` registers the house).
+            //
+            // THAT THEY ARE ONE STATEMENT APART IS LOAD-BEARING. `PLOT BUILT`
+            // pushes the house's Bed order into `designated` and flips its
+            // growth-log line on the SAME tick, so a save taken here carries
+            // both or neither — never one without the other. That is what
+            // stops a house finished in the last minute before a shutdown from
+            // being counted twice on the next boot (see the ★ G1d note at the
+            // registration site in `bastion_jobs.rs`).
+            rtsim.state.data_mut().bastion_growth_log = job_board.growth_log.clone();
             rtsim.save(/* &slow_jobs, */ false, &db_dir);
         }
 
