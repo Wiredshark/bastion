@@ -30380,6 +30380,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             tier = ?tier,
                                             top_tier_exhausted,
                                             assist_why,
+                                            last_push_site = ?uids.get(entity).and_then(|u| board.last_push_site.get(u)),
+                                            last_assist = ?uids.get(entity).and_then(|u| board.assist_last.get(&u.0.get())).map(|(h, t)| (*h, tick.0.saturating_sub(*t))),
                                             blocks = %layers.join(" | "),
                                             "bastion: WEDGE PROBE — the blocks around a stalled fetch and the walker's route (north row first, west to east; # solid . air ~ filled ? unloaded)"
                                         );
