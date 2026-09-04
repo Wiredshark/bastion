@@ -51,7 +51,42 @@ cycle, the fields reached a few percent of even that. No staffing,
 pathing or lane change could close a gap of that size; the numbers
 had to.
 
-## The read (pending)
+## The first minute of the F2 pair (1e9b2604ad, both arms, 17:00-17:05)
 
-The F2 pair's boot on both arms: the PREREG bars at b1 day 7 and b2
-day 1 and day 8.
+The pins were falsified at the commit first: yield 2, the seed floor
+and a SOWN-only draw each turned their pin red.
+
+| witness | b1 (160-day year) | b2 (8-day year) |
+|---|---|---|
+| FOUNDING SEEDS, per field | 576, 540, 576, 864, 864, 2,916, 324, 1,764 = 8,424 | the same |
+| FOUNDING FIELDS PLANTED | 8 fields, cells 8,424, planted 0, already_cropped 8,411, ripe 0 | the same |
+| FOUNDING GRANARY | roster=20 units=4,072 | roster=24 units=217 |
+| crops: | Tomato, Lettuce, Carrot, WheatYellow x3, Carrot x2 (worldgen) | Carrot, Tomato, Lettuce, WheatYellow x3, Carrot x2 |
+| store at the day-0 census (b2, after delivery) | -- | store_units 8,809, store_seeds 8,432, food_stock 281 |
+
+Three corrections, read off the instrument the row installed:
+
+1. **The fields were never bare.** Worldgen fills an adopted field with
+   ripe crops; F2c's planting found 8,411 of 8,424 cells already
+   cropped and planted nothing. The 49 first-day sows of the old run
+   were the thirteen bare cells and the churn.
+2. **Five of eight fields could never be harvested.** The harvest
+   trigger mints a job only for wheat or for a CLOCKED crop
+   (`crop_is_colony_managed`); tomato, carrot and lettuce placed by
+   worldgen carry no clock, so those fields stood ripe for 69 days.
+   The three wheat fields were harvested at `VOLUNTEER_YIELD` (2),
+   never at the new yield -- F2d changed nothing a founding crop paid.
+3. **The granary fired early.** It waited for "a live roster", which
+   at the first field's drain was 20 of 48 colonists (24 on b2); the
+   par it delivered was for them.
+
+The fields' true area is 8,424 cells, not the 4,320 the pin's literal
+carried (eight fields of 540 was a guess from one field's aabr).
+
+F2c' replaces the three: every ripe roster crop in an adopted field is
+the founding harvest at adoption (Ben's ruling, literally), the cell
+restarts as the town's own with a clock, the yield becomes 4 on the
+measured 8,424 cells (33,696 >= 30,720), and the granary is dropped
+because the founding harvest is the barn. The day-1 and day-7 reads
+of the F2 pair still stand as the seeds' and the eat path's test; the
+budget bars move to the F2c' pair.

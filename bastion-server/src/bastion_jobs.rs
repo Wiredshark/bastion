@@ -4078,10 +4078,13 @@ pub(crate) fn home_pull_penalty(home: Option<Vec3<i32>>, job_pos: Vec3<i32>) -> 
 /// `Designated` collapses to one class on purpose: the census exists to
 /// separate NEED jobs (eat/rest/breakdown) from ordinary work, and splitting
 /// work by designation kind would restore exactly the swamping this key was
-/// widened to prevent.
+/// widened to prevent. ★ G1c-e-i (2026-09-04): ONE exception, `Build`, so
+/// the house's releases can be read apart from the farm's and the mine's
+/// -- the need-vs-work separation the class exists for is untouched.
 pub(crate) fn job_release_class(kind: &common::bastion::JobKind) -> &'static str {
     use common::bastion::JobKind as K;
     match kind {
+        K::Designated(DesignationKind::Build) => "build",
         K::EatFrom { .. } => "eat",
         K::RestAt { .. } => "rest",
         K::Rescue { .. } => "rescue",
@@ -29517,7 +29520,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                             board.preempt_attempts += 1;
                             if active_jobs.contains(entity) {
-                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             }
                             info!(
                                 colonist = %uid,
@@ -30031,7 +30034,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // reservation was never released on suspend,
                             // so there's no double-reserve risk here.
                             if active_jobs.contains(entity) {
-                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             }
                             if let Some(arb) = arbiters.get_mut(entity) {
                                 arb.pending_self_job = None;
@@ -30323,7 +30326,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                                 board.preempt_attempts += 1;
                                 if active_jobs.contains(entity) {
-                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                 }
                                 info!(
                                     colonist = %uid,
@@ -30424,7 +30427,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         {
                             if job.stuck_strikes < PERSIST_ESCALATE_STRIKES {
                                 if active_jobs.contains(entity) {
-                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                 }
                                 if let Some(arb) = arbiters.get_mut(entity) {
                                     arb.pending_self_job = None;
@@ -30502,7 +30505,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // freed for others, activity cleared, bed
                             // occupancy released — conservation by reuse,
                             // no second path to get wrong).
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         }
                         info!(
                             colonist = %uid,
@@ -30802,7 +30805,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .get(entity)
                 .is_some_and(|h| h.is_dead || h.should_die())
             {
-                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                 continue;
             }
             // ★ W7b: DID THE ASSIST'S WRITE LAND? One tick after the drain
@@ -30869,7 +30872,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .flatten();
             let Some(job) = board.jobs.get_mut(&active.job) else {
                 // Cancelled out from under the colonist → re-idle.
-                to_release.push((entity, ReleaseReason::RemovedExternally, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                to_release.push((entity, ReleaseReason::RemovedExternally, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                 continue;
             };
             // B15/FR12: arrive at the COMMITTED work-stance (feet offset), not
@@ -31386,7 +31389,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             .push((active.job, pos.0.map(|e| e.floor() as i32)));
                                         continue;
                                     }
-                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                     continue;
                                 },
                             }
@@ -31425,7 +31428,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: job moot mid-travel — target block changed; dropped"
                         );
                         board.remove_job(active.job);
-                        to_release.push((entity, ReleaseReason::TargetChanged, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        to_release.push((entity, ReleaseReason::TargetChanged, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         continue;
                     }
                     if uids.get(entity).is_some_and(|uid| {
@@ -35292,7 +35295,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             );
                                         }
                                         job.claimed_by = None;
-                                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                     }
                                     continue;
                                 }
@@ -35789,7 +35792,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         info!(job = active.job, pos = ?job.pos, strikes = job.stuck_strikes, until_tick = tick.0 + ROWB_BENCH_TICKS, "ROWB-DIAG: bench set");
                                     }
                                 }
-                                to_release.push((entity, ReleaseReason::TimedOut, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                to_release.push((entity, ReleaseReason::TimedOut, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             }
                         }
                         } // T3.52b: end auton_travel_ok freeze guard
@@ -35890,7 +35893,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if let common::bastion::JobKind::RestAt { bed_pos } = job.kind {
                         let Some(u) = uids.get(entity).copied() else {
                             board.remove_job(active.job);
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             continue;
                         };
                         // ★ THE LATCH IS RE-VERIFIED EVERY TICK (805bf30a06).
@@ -36140,7 +36143,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         None,
                                     );
                                     board.remove_job(active.job);
-                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                 }
                             },
                             Some(_) => {
@@ -36151,12 +36154,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     "bastion: bed occupied — rest released"
                                 );
                                 board.remove_job(active.job);
-                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             },
                             None => {
                                 // Bed gone (mined out / cancelled) — moot.
                                 board.remove_job(active.job);
-                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             },
                         }
                         continue;
@@ -36338,7 +36341,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // remove_job releases the food reservation (B6
                             // machinery — THE removal path).
                             board.remove_job(active.job);
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         } else if let Some(item_entity) = id_maps.uid_entity(item) {
                             // Bag empty, ground entity still present.
                             // ITEM8-CRASH-FINDING.md fix: split HERE, at
@@ -36469,7 +36472,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                 }
                                 board.remove_job(active.job);
-                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             } else {
                                 // `split_off_one` returned `None`: the
                                 // stack is down to its last unit (every
@@ -36541,7 +36544,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 "bastion: food sniped — eat moot"
                             );
                             board.remove_job(active.job);
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         }
                         continue;
                     }
@@ -36629,7 +36632,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             board.idle_breaks.remove(&active.job);
                             board.remove_job(active.job);
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         } else if let Some(controller) = controllers.get_mut(entity) {
                             controller.inputs.move_dir = Vec2::zero();
                             controller.inputs.move_z = 0.0;
@@ -36687,7 +36690,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             info!(job = active.job, "bastion: despond lifted — resuming");
                             board.remove_job(active.job);
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         }
                         continue;
                     }
@@ -36860,7 +36863,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                         }
                         board.remove_job(active.job);
-                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         continue;
                     }
                     // ── B6 HAUL: pickup + drop-off — BEFORE the block-work
@@ -37093,7 +37096,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // `.jobs.remove` sites found while
                                     // hunting the mushroom-reservation leak.
                                     board.remove_job(active.job);
-                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                 }
                             } else {
                                 // Item vanished and we don't hold it (a
@@ -37103,7 +37106,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // future side-table cleanup — no manual
                                 // reservations.remove that can drift).
                                 board.remove_job(active.job);
-                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             }
                             continue;
                         }
@@ -37189,7 +37192,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // T1.15: the one removal path (releases the
                         // reservation; no manual reservations.remove).
                         board.remove_job(active.job);
-                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         debug_assert!(status.may_transition_to(&CommandStatus::Committed));
                         status = CommandStatus::Committed;
                         debug_assert!(status.is_terminal());
@@ -37460,7 +37463,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 if taken.is_none() {
                                     job.progress = 0.0;
                                     job.needs_materials = true;
-                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                                    to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                     continue;
                                 }
                                 // ★ ROW 53: WHAT to sow, decided HERE and
@@ -37806,7 +37809,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "job-completed",
                         );
                         board.remove_job(active.job);
-                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         continue;
                     }
                     if job.kind.is(DesignationKind::Gather) {
@@ -37864,7 +37867,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // was invisible in a line that looked complete.
                             info!(work = ?job.work, xp = COMPLETION_XP, "bastion: xp granted");
                             board.remove_job(active.job);
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         }
                         continue;
                     }
@@ -37978,7 +37981,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: job moot — target block changed under it; dropped"
                         );
                         board.remove_job(active.job);
-                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         continue;
                     }
 
@@ -38094,7 +38097,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 done_regions.push(*region);
                             }
                         }
-                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                         continue;
                     }
 
@@ -38181,7 +38184,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             job.progress = 0.0;
                             job.needs_materials = true;
-                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                             continue;
                         }
                     }
@@ -38359,6 +38362,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         });
                     }
                     block_change.set(job.pos, new_block);
+                    // ★ G1c-e-i (2026-09-04): every placed Build cell, named. The
+                    // count per day is the house's rate; z says what stands.
+                    if job.kind.is(DesignationKind::Build) {
+                        info!(
+                            job = active.job,
+                            colonist = uids.get(entity).map(|u| u.0.get()),
+                            pos = ?job.pos,
+                            z = job.pos.z,
+                            block = ?new_block.kind(),
+                            "bastion: BUILD CELL PLACED"
+                        );
+                    }
                     // ★ EVERY completed build edits the world, so every one
                     // bumps WORLD_BUILDS -- it was bumped for Beds only, so
                     // `builds_since_route` could not see a Mine or a Build
@@ -38702,7 +38717,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             done_regions.push(*region);
                         }
                     }
-                    to_release.push((entity, ReleaseReason::Completed, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                    to_release.push((entity, ReleaseReason::Completed, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                 },
             }
         }
@@ -52142,6 +52157,16 @@ mod tests {
         }
         let ripe = seen[FARM_GROWTH_MAX as usize] as f64 / 540.0;
         assert!((0.03..=0.12).contains(&ripe), "ripe fraction {ripe} is not about a fifteenth");
+    }
+
+    /// ★ G1c-e-i pinned: a Build release is its own class; every other
+    /// designation stays "work". Planted defect: drop the Build arm -- red.
+    #[test]
+    fn a_build_release_is_its_own_class() {
+        use common::bastion::JobKind as K;
+        assert_eq!(job_release_class(&K::Designated(DesignationKind::Build)), "build");
+        assert_eq!(job_release_class(&K::Designated(DesignationKind::Mine)), "work");
+        assert_eq!(job_release_class(&K::Designated(DesignationKind::Farm)), "work");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.
