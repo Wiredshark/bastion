@@ -164,3 +164,47 @@ The stock rose from 1,632 at +3 min to 2,162 at day 1: the lived-in
 draw's ripe share and the kitchen, not the founding harvest. The F2c'-b
 boot (bare cells planted at founding) and Ben's bridge ruling decide
 the day-7 bar.
+
+## The first minute of the F2c'-b pair (a56ecb2822, both arms, 19:29)
+
+Falsified at the commit first: `None | Some(Empty) => Bare` reduced to
+`None => Bare` turned `an_empty_sprite_is_a_bare_founding_cell` red at
+`bastion_jobs.rs:52256`.
+
+| field (b1) | cells | planted | foreign | ripe | harvest units | crop |
+|---|---:|---:|---:|---:|---:|---|
+| 7636,6438 | 540 | 356 | 125 | 73 | 236 | Tomato |
+| 7612,6468 | 576 | 410 | 98 | 97 | 272 | Lettuce |
+| 7672,6318 | 576 | 405 | 109 | 88 | 224 | Carrot |
+| 7702,6264 | 864 | 610 | 247 | 43 | 0 | WheatYellow (plan) |
+| 7732,6252 | 2,916 | 2,263 | 653 | 154 | 0 | WheatYellow (plan) |
+| 7780,6306 | 324 | 215 | 76 | 50 | 132 | Carrot |
+| (1,764) | 1,764 | 1,329 | 226 | 297 | 836 | Carrot |
+| 7684,6480 | 864 | 432 | 432 | 24 | 0 | WheatYellow (plan) |
+| **sum** | 8,424 | **6,020** | 1,966 | 826 | 1,700 | |
+
+Against the F2c'-b bars: planted 6,020 >= 6,000 PASS; day-0 census at
++3 min `food_stock=3368 days_of_food=21.9 field_planted=6445` on b1
+(bar >= 3,000 PASS), `food_stock=3236` on b2; `growing=0` everywhere
+(every worldgen crop starts at Growth 15, as the producer read said).
+
+Two things the instrument added. `foreign` is 1,966 cells, not "the
+hundreds": the three fields the plan calls WheatYellow carry no roster
+crop at all (their cropped cells are all foreign and their harvest is
+0 on both pairs) -- worldgen grew flax, corn or flowers there, the
+colony's plan names them wheat, and the bare cells now carry wheat.
+Those 1,966 foreign cells are dead to the colony until a farmer clears
+them (a later row). And `ripe` 826 = the worldgen ripe (~425, the 1,700
+units) plus the lived-in draw's own ripe share (~400 cells, delivered
+per item: the 56 tomato, 116 lettuce, 128 carrot, 172 + 616 + 96
+wheat lines).
+
+b2, the same minute, as the replicate: planted 6,080, foreign 1,930,
+ripe 793, harvest units 1,604, day-0 food_stock 3,236.
+
+F2c'-c follows from the foreign column: a non-roster sprite whose rtsim
+resource is a plant, flower, grass, vegetable or fruit is CLEARABLE at
+founding and planted like a bare cell; a scarecrow or a fence stays.
+Registered before its binary: planted ~7,900 of 8,424 on both arms,
+foreign in the tens, harvest units unchanged, day-0 stock up by the
+extra cells' ripe share (~500). Falsified below 7,000 planted.

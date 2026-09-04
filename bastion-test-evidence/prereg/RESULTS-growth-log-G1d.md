@@ -77,3 +77,22 @@ colony_saved`) turned the pin red at `server/src/lib.rs:8985`.
 Live evidence: the second restart test (the graceful-stop lever, then
 `-KeepWorld` on this pair) reads HOUSEHOLDS across the boot and counts
 `ADOPT-A-TOWN site chosen` lines; its section follows.
+
+## The second restart test (R1 pair f9622e2b73, b3, 18:40-19:30)
+
+| step | result |
+|---|---|
+| boot 1, plan queued | plan=79 cells=1,909 growth_log=1 at 18:41 |
+| placed before the stop | 0 (the 20-cell wait ran out; the accidental builders had not started) |
+| graceful stop (`BASTION_SHUTDOWN_FILE`) | ports closed in ~9 s; `HARNESS SHUTDOWN FILE seen` 1; "Rtsim save thread finished" |
+| boot 2 (`-KeepWorld`) | GROWTH LOG READ FROM SAVE 1, PLOT RE-GROWN FROM THE LOG 1 (cells_remaining 1,909, already_standing 8,640), GROWTH LOG REPLAYED 1, colony orders replayed 8, panics 0 |
+| the double founding | **STILL THERE**: `ADOPT-A-TOWN site chosen` 1, `COLONY RESTORED, NOT FOUNDED` 0; households 58 -> 116 |
+
+The graceful stop works and the growth log round-trips. R1 did not
+fire: it keyed `colony_saved` on `Data.bastion_home_anchor`, and that
+field is `#[serde(skip)]` -- its own doc says "EPHEMERAL: recomputed
+every server tick ... never persisted, None on load". The pin
+(`a_saved_colony_is_restored_not_founded`) guards the pure decision and
+went red when planted, but the live input it was fed is always None on
+a kept world. The treatment never reached the population. R1b keys the
+decision on a persisted founding mark written once at the founding.

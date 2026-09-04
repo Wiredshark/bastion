@@ -46413,11 +46413,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // out of the hauler cap, and this row must not touch
                         // it. One extra pass over the board, once per game
                         // day, is the cheaper price.
-                        let open_build_cells = board
-                            .jobs
-                            .values()
-                            .filter(|j| j.claimed_by.is_none() && j.work == W::Build)
-                            .count();
+                        // ★ G1c-e: the backlog is the plan's remaining cells
+                        // (`plot_blocks`) plus the stray Build marks -- the job
+                        // generator mints at most two per colonist per pass, so
+                        // the open JOBS never exceeded ~100 and `wanted` was 1
+                        // for a 1,909-cell house (the constant's doc assumes
+                        // the cells; b3 day 1: builders=0, drafted=0).
+                        let open_build_cells = board.plot_blocks.len()
+                            + board
+                                .jobs
+                                .values()
+                                .filter(|j| {
+                                    j.claimed_by.is_none()
+                                        && j.work == W::Build
+                                        && !board.plot_blocks.contains_key(&j.pos)
+                                })
+                                .count();
                         let roster_now = board.professions.len();
                         // ★ A DRAFTED BUILDER COUNTS AS A BUILDER UNTIL
                         // RELEASED, even when this morning's argmax has
@@ -46426,11 +46437,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // only the NAME would draft a fresh farmer every
                         // single day and quietly empty the fields — the
                         // failure mode `builder_former_trade` exists to stop.
+                        // ★ G1c-e: a Build NAME with no build hours is not a
+                        // builder (b3: two zero-hour colonists named Build by
+                        // the argmax's sort order made wanted <= builders_now).
                         let builders_now = board
                             .professions
                             .iter()
                             .filter(|(u, w)| {
-                                **w == W::Build || board.builder_former_trade.contains_key(*u)
+                                crate::bastion_plot_build::counts_as_builder(
+                                    **w == W::Build,
+                                    board.lane_counts.get(&(**u, W::Build)).copied().unwrap_or(0),
+                                    board.builder_former_trade.contains_key(*u),
+                                )
                             })
                             .count();
                         let wanted = crate::bastion_plot_build::builders_wanted(
@@ -46438,6 +46456,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             roster_now,
                             plot_plan_open,
                         );
+                        if wanted > 0 || builders_now > 0 {
+                            info!(
+                                wanted,
+                                builders_now,
+                                named_build = board.professions.values().filter(|w| **w == W::Build).count(),
+                                plan_cells = board.plot_blocks.len(),
+                                open_build_cells,
+                                roster_now,
+                                "bastion: BUILD DRAFT SIZED — the plan's remaining cells set the crew; a Build name with no build hours is not a builder (G1c-e)"
+                            );
+                        }
                         if wanted > builders_now {
                             let mut by_lane_named: HashMap<W, u32> = HashMap::new();
                             for w in board.professions.values() {

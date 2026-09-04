@@ -490,6 +490,17 @@ pub fn builders_wanted(open_build_cells: usize, roster: usize, plot_plan_open: b
     by_house.min(roster / COLONISTS_PER_BUILDER)
 }
 
+/// ★ G1c-e (2026-09-04): who the draft may count as a builder already on the
+/// house. A drafted colonist, until released (they carry `in_lane(Build)`
+/// priorities whatever the morning argmax renamed them); or a colonist the
+/// town names Build who has actually held Build work. A Build NAME alone is
+/// not: the argmax names a colonist with zero hours in every lane by the
+/// first lane in sort order, which is Build -- b3 counted two such
+/// "builders" (one recreating, one hauling all day) and drafted nobody.
+pub fn counts_as_builder(named_build: bool, build_hours: u32, drafted: bool) -> bool {
+    drafted || (named_build && build_hours > 0)
+}
+
 /// Who gets retrained into the Build lane, in order.
 ///
 /// `candidates` is `(uid, the trade the town names them by, that colonist's
@@ -844,6 +855,19 @@ mod tests {
         // no target: the kind rule, unchanged
         assert!(plot_job_still_wanted(None, air(), true), "no target, kind says wanted");
         assert!(!plot_job_still_wanted(None, earth(), false), "no target, kind says not wanted");
+    }
+
+    /// ★ G1c-e pinned: a Build NAME with no build hours is not a builder; a
+    /// drafted colonist is one until released. Planted defect: count the name
+    /// alone (`named_build || drafted`) -> red.
+    #[test]
+    fn a_build_name_with_no_build_hours_is_not_a_builder() {
+        assert!(!counts_as_builder(true, 0, false), "named Build, never built, not drafted: b3's two");
+        assert!(counts_as_builder(true, 7, false), "named Build with build hours");
+        assert!(counts_as_builder(false, 0, true), "drafted this morning, no hours yet");
+        assert!(counts_as_builder(true, 0, true), "drafted and named");
+        assert!(!counts_as_builder(false, 0, false), "a farmer");
+        assert!(!counts_as_builder(false, 9, false), "build hours under another name, not drafted: released");
     }
 
     /// ★ G1c-c, the SIZE of the draft — the number the b1 arm never
