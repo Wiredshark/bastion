@@ -136,6 +136,45 @@ refusing the cell the step assist keeps placing the body on. This is
 the W7 residual's real shape; the bridge-glide reading from the W6
 boot was that boot's, not the class's.
 
+## The W6-C read (b2 on 90feaaf881, booted 21:25, cut at day-1 15:00; read 22:16) and the W7b boot after it
+
+W6-C removes W6's committed-walker arm and keeps W6-B's stall-clock
+climb for chaser-driven walkers. Its pin was falsified at the commit
+before the read: restoring the W6 exception turned it red, and letting
+the stall climb ignore the committed walker turned it red again.
+
+| by day-1 15:00             | D1c control | W6-B (arm on) | W6-C   | W7b boot (same movers + the landing instrument) | bar |
+|----------------------------|------------:|--------------:|-------:|-------:|----------------|
+| probes                     | 72          | 49            | 61     | 50     | <= 60  W6-C misses by one; W7b PASS |
+| probes at the terrace cell | 22          | 14            | 9      | 8      | <= 20  PASS    |
+| EatFrom probes             | 37          | 14            | 25     | 34     | <= 15  FAIL    |
+| starving at the cut / max  | 2 / 7       | 0 / 9         | 0 / 8  | 0 / 9  | <= 3  PASS (cut) |
+| PROMISED CLIMB TAKEN       | --          | 18 (0 repeats)| 9 (0)  | 9 (0)  | fired, none repeated |
+| climb / step / vault assists | 1 / 21 / 21 | 2 / 235 / 18 | 2 / 7 / 14 | 6 / 59 / 11 | -- |
+| embed / net events         | 1,055       | 1,421         | 342    | 1,625  | not above control: W6-C PASS, W7b FAIL |
+| DID NOT STICK (step)       | 13          | 19            | 0      | 17     | --             |
+| ASSIST DID NOT LAND        | --          | --            | --     | 0      | every write landed |
+| panics                     | 0           | 0             | 0      | 0      | 0  PASS        |
+
+Read together: with the committed-walker arm gone the step surge is
+gone (235 -> 7) and the embeds fell to a third of the control on the
+W6-C boot; the W7b boot, the same movers one commit later, read 59
+steps and 1,625 embeds with 17 repeats on two bodies (colonists 53 and
+19, head one cell east, bridge-refused-rock, path state Exhausted).
+Two boots of the same mover disagree by 5x on embeds and 8x on steps:
+that is the colony-metrics variance the standing rule warns of (three
+replicates or the delta is worthless), and one replicate of each is
+what these are. The W7b instrument's own answer is clean: 0 of the
+assist writes failed to land, so a DID NOT STICK repeat is a body moved
+back AFTER the write, by physics or a mover, never a write that did not
+take. The W6-B boot's colonist 66 did not recur on either later boot.
+
+Disposition: W6-C is kept (the regression's mechanism was named and
+removed, and the pin guards it); the terrace bars stand on the W6-C
+boot except EatFrom probes. Replicates before any more mover changes:
+the next b2 boots read the same cut without a code change between
+them.
+
 ## Disposition (one replicate each)
 
 W6 FAILED its probe, terrace and embed bars, left the climb assist

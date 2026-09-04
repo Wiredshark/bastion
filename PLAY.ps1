@@ -43,6 +43,12 @@ param(
     # A second, side-by-side world for a headless test arm: its own userdata
     # (the default is Ben's, which is DELETED on every boot) and its own port.
     [string]$UserData,
+    # ★ G1d (2026-09-04): keep the world. By default every boot deletes its
+    # userdata so a test never inherits a previous colony; -KeepWorld boots
+    # the SAME world again (the growth log, the designations and the placed
+    # blocks come back from the save) -- the restart test, and "resume my
+    # town" for the owner.
+    [switch]$KeepWorld,
     [int]$Port = 14004,
     # Headless arm: nobody will choose a town on the character screen, so let
     # the autofound adopt one itself. Proven 2026-09-01 19:23 on the fixed
@@ -341,8 +347,13 @@ if ($Pick) { $EnvVars['BASTION_ADOPT_WAIT_FOR_MARKER'] = '1' }
 
 if ($BinDir) { $Bin = $BinDir; Write-Host "USING -BinDir $Bin" }
 
-# Fresh userdata, so a test is never confused by a previous colony.
-if (Test-Path $UD) { Remove-Item $UD -Recurse -Force }
+# Fresh userdata, so a test is never confused by a previous colony -- unless
+# the caller asked to KEEP the world (G1d: a grown plot survives a restart).
+if ($KeepWorld) {
+    if (Test-Path $UD) { Write-Host "KEEPING userdata $UD (-KeepWorld)" } else { Write-Host "-KeepWorld given but $UD does not exist: a fresh world" }
+} else {
+    if (Test-Path $UD) { Remove-Item $UD -Recurse -Force }
+}
 
 $env:VELOREN_USERDATA = $UD
 $env:VELOREN_ASSETS   = Join-Path $WT 'assets'
