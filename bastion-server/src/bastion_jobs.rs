@@ -1596,6 +1596,8 @@ pub(crate) const ASSIST_REPEAT_WINDOW_TICKS: u64 = 150;
 /// ★ G1c-d: plot cells the kind rule would have retired but the target rule
 /// kept (the b1 churn's detector; logged at powers of two).
 pub(crate) static PLOT_CELLS_KEPT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// ★ G1c-e-a: plot cells the unclaimed sweep would have reaped (logged at powers of two).
+pub(crate) static PLOT_CELLS_NOT_SWEPT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 pub(crate) fn assist_repeat_is_a_failure(
     last: Option<(Vec3<i32>, u64)>,
@@ -4135,6 +4137,15 @@ pub(crate) fn job_release_class(kind: &common::bastion::JobKind) -> &'static str
 /// cycle), so reaping an unclaimed farm job can never free anything — the
 /// same job reappears with a new id. `is_renewable` names that class;
 /// today it is exactly the farm designations.
+/// ★ G1c-e-a (2026-09-04): which designated jobs are RENEWABLE -- re-derived
+/// from cell state by their own generator every cycle, so reaping one only
+/// churns ids. Farm jobs (the farm pass) and plot cells (the G1c plan drain,
+/// which re-mints every unfilled `plot_blocks` cell). Measured: b1 on the F2
+/// pair, 98 plot cells swept in a day while no builder existed, placed=0.
+pub(crate) fn designation_is_renewable(kind: &common::bastion::JobKind, is_plot_cell: bool) -> bool {
+    matches!(kind, common::bastion::JobKind::Designated(DesignationKind::Farm)) || is_plot_cell
+}
+
 pub(crate) fn designated_sweep_should_reap(
     claimed: bool,
     is_designated: bool,
@@ -44070,12 +44081,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     designated_sweep_should_reap(
                         j.claimed_by.is_some(),
                         matches!(j.kind, common::bastion::JobKind::Designated(_)),
-                        // Renewable = the farm pass re-derives it from cell
-                        // state next cycle; reaping only churns job ids.
-                        matches!(
-                            j.kind,
-                            common::bastion::JobKind::Designated(DesignationKind::Farm)
-                        ),
+                        // Renewable = its own generator re-derives it from cell
+                        // state next cycle; reaping only churns job ids. The
+                        // farm pass for a farm job; ★ G1c-e-a: the plan drain
+                        // for a plot cell (b1: 98 plot cells swept in a day
+                        // while no builder existed, placed=0).
+                        {
+                            let plot_cell = board.plot_blocks.contains_key(&j.pos);
+                            if plot_cell && j.claimed_by.is_none() && unclaimed_secs >= reap_threshold_secs {
+                                let n = PLOT_CELLS_NOT_SWEPT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if n <= 2 || n.is_power_of_two() {
+                                    info!(
+                                        job = *id,
+                                        pos = ?j.pos,
+                                        unclaimed_secs,
+                                        kept = n,
+                                        "bastion: PLOT CELL NOT SWEPT — renewable like a farm cell; its plan re-mints it (G1c-e-a)"
+                                    );
+                                }
+                            }
+                            designation_is_renewable(&j.kind, plot_cell)
+                        },
                         // Crew-owned = the crew system's lifecycle
                         // (claims are schedule-gated; reap is TIMBER's);
                         // see the predicate's comment.
@@ -52164,6 +52190,19 @@ mod tests {
         assert_eq!(job_release_class(&K::Designated(DesignationKind::Build)), "build");
         assert_eq!(job_release_class(&K::Designated(DesignationKind::Mine)), "work");
         assert_eq!(job_release_class(&K::Designated(DesignationKind::Farm)), "work");
+    }
+
+    /// ★ G1c-e-a pinned: a plot cell is renewable like a farm cell; an
+    /// ordinary Build or Mine mark is not. Planted defect: drop the plot arm
+    /// -- red.
+    #[test]
+    fn a_plot_cell_is_renewable_like_a_farm_cell() {
+        use common::bastion::JobKind as K;
+        assert!(designation_is_renewable(&K::Designated(DesignationKind::Farm), false), "a farm job");
+        assert!(designation_is_renewable(&K::Designated(DesignationKind::Build), true), "a plot cell");
+        assert!(!designation_is_renewable(&K::Designated(DesignationKind::Build), false), "a player's build mark");
+        assert!(!designation_is_renewable(&K::Designated(DesignationKind::Mine), false), "a mine mark");
+        assert!(!designated_sweep_should_reap(false, true, designation_is_renewable(&K::Designated(DesignationKind::Build), true), false, 10_000.0, 900.0), "the sweep leaves a plot cell alone");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.

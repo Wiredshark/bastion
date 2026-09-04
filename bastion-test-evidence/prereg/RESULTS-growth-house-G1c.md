@@ -150,18 +150,32 @@ per colonist and z, `build/*` release classes.
 |---|---:|---:|---:|---:|---:|---:|
 | +10 min (day 0, hour 13) | 0 | 1,909 | -- | -- | 0 | 0 |
 | day 1 (hour 0) | 0 | 1,909 | 0 | 0 | 98 | 0 |
+| day 2 (hour 1) | 57 (62 witnessed) | 1,852 | 2 | 0 | 187 | 0 |
 
-No colonist ever considered a plot cell (no claim of a
-`Designated(Build)` job all day; the claim refusal census has no Build
-bucket because none reached it). The draft's own inputs, read off the
-same log and the code:
+Day 1 by builder: colonist 29 placed 44 cells, colonist 84 placed 18;
+z histogram 180:27, 181:21, 182:14 (all Rock: the foundation courses).
+The busiest builder's day-1 releases: 44 Completed, 3 + 2 + 2 Other
+(a `moved` re-aim, a break over, a re-target), 1 recreate. A cell costs
+a builder roughly 1,200 ticks (40 s) end to end -- claim, walk, place,
+release, claim the next -- so the house is travel-priced per cell and
+the crew size is the lever. (Instrument note: the G1c-e-i release
+class reads "gone" for completions because the job is removed before
+the class is computed; `reason=Completed` is the truth and the class
+should be derived from the reason first.)
 
-1. **Two "builders" that never built.** The professions tally names
-   colonists 29 and 84 `profession=Build weight=0`. The morning argmax
-   names a colonist with zero hours in EVERY lane by the first lane in
-   sort order, which is Build. Colonist 29's day: Recreate x3,
-   DepositRun x2, RestAt, Guard, EatFrom. Colonist 84's: 26 hauls. The
-   draft counted them (`builders_now = 2`).
+On day 0 no colonist considered a plot cell (no claim of a
+`Designated(Build)` job; nobody was named Build yet). The draft's own
+inputs, read off the same log and the code:
+
+1. **Two builders by accident.** At the day-1 morning the professions
+   tally named colonists 29 and 84 `profession=Build weight=0`: the
+   argmax names a colonist with zero hours in EVERY lane by the first
+   lane in sort order, which is Build. Colonist 29's day 0: Recreate x3,
+   DepositRun x2, RestAt, Guard, EatFrom. Colonist 84's: 26 hauls.
+   Named, they got `in_lane(Build)` priorities and placed 62 cells on
+   day 1 (44 + 18, all Rock at z 180-181: about 31 cells per
+   builder-day, so a month per house). The draft counted the two names
+   (`builders_now = 2`) and added nobody.
 2. **The backlog it sized on was the open jobs, not the house.** The
    Build job generator mints at most two jobs per colonist per pass
    (`BUILD_GEN_JOBS_PER_COLONIST`), and the unclaimed sweep reaps them
