@@ -83,6 +83,19 @@ Three corrections, read off the instrument the row installed:
 The fields' true area is 8,424 cells, not the 4,320 the pin's literal
 carried (eight fields of 540 was a guess from one field's aabr).
 
+### Day 1 on the F2 pair
+
+| day 1 | b1 (160-day year) | b2 (8-day year) | PREREG bar |
+|---|---|---|---|
+| food_stock / par | 4,662 / 9,879 (29.7 days) | 880 / 345 (5.6 days) | b1 >= 9,000: FAIL (the granary on 20 heads) |
+| starving at the feed lines | 0 (fed 36-41 of 49) | 0-1 | <= 3 on day 7: pending, on course |
+| meals / cooked | 46 / 81 | 43 / 70 | -- |
+| matured / harvested | 0 / 0 | 9 / 0 | -- |
+| store units / seeds | 13,214 / 8,315 | 9,480 / 8,344 | -- |
+| field_planted (clocked cells) | 144 | 125 | the farmers' own day-0 sows |
+| house (b1, lever on) | placed 0, remaining 1,909, builders 0 | -- | see G1c-e-a: 98 plot cells swept unclaimed |
+| panics | 0 | 0 | 0 PASS |
+
 F2c' replaces the three: every ripe roster crop in an adopted field is
 the founding harvest at adoption (Ben's ruling, literally), the cell
 restarts as the town's own with a clock, the yield becomes 4 on the

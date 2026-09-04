@@ -6943,11 +6943,13 @@ pub const FARM_WHEAT_ITEM: &str = "common.items.bastion.wheat";
 /// invariant. b1 (a 160-day year) starved from day 5 for 60 days: 4,320
 /// field cells x 2 = 8,640 units a year against 48 heads x 3.2 x 160 =
 /// 24,576 eaten. See `a_years_harvest_feeds_the_founding_town`.
-pub const FARM_WHEAT_YIELD: u32 = 8;
+pub const FARM_WHEAT_YIELD: u32 = 4;
 /// ★ F2 budget literals: the flat town's measured founding (8 adopted fields
 /// of 30 x 18 = 540 cells; 48 adopted colonists; the 160-day year the year
 /// census printed). Provenance: b1, pair fce20cf9b9, day 0-68 (RESULTS-food-budget-F2.md).
-pub const FLATTOWN_FIELD_CELLS: u32 = 4_320;
+/// (Corrected 2026-09-04 17:05 from the FOUNDING SEEDS lines: eight fields of
+/// 576, 540, 576, 864, 864, 2,916, 324 and 1,764 cells.)
+pub const FLATTOWN_FIELD_CELLS: u32 = 8_424;
 pub const FLATTOWN_FOUNDING_ROSTER: u32 = 48;
 pub const FLATTOWN_DAYS_IN_YEAR: f64 = 160.0;
 /// The margin a year's harvest must carry over a year's eating.
@@ -18217,43 +18219,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
                 board.pending_restore = still_waiting;
             }
-            // ★ F2a THE FOUNDING GRANARY (2026-09-04). A lived-in village keeps
-            // last year's harvest: the general store receives the winter par
-            // (`seasonal_food_par` -- the census's own statement of what must
-            // be in store to reach the harvest window) in the town's grain,
-            // once, through the same deferred delivery the fixture seeds use.
-            // Waits for a live roster (at founding tick the ECS colonists do
-            // not exist yet) and for the first adopted field (the origin whose
-            // chunk is loaded). BASTION_NO_FOUNDING_GRANARY: today's rations.
-            if board.founding_granary.is_none()
-                && !board.adopted_farm_plots.is_empty()
-                && std::env::var_os("BASTION_NO_FOUNDING_GRANARY").is_none()
-            {
-                let roster = (&colonists).join().count() as u32;
-                if roster > 0 {
-                    let diy = common::time::SeasonConfig::current().days_in_year;
-                    let tod = rtsim.rt_state().data().time_of_day.0;
-                    let units = seasonal_food_par(roster, diy, tod);
-                    let origin = board
-                        .stockpiles
-                        .first()
-                        .map(|(_, r)| r.min)
-                        .unwrap_or_else(|| {
-                            let (mn, _) = board.adopted_farm_plots[0];
-                            let z = board.farm_column_z.get(&(mn.x, mn.y)).copied().unwrap_or(0) + 1;
-                            Vec3::new(mn.x, mn.y, z)
-                        });
-                    pending_seed_items.0.push((origin, FARM_WHEAT_ITEM.to_string(), units));
-                    board.founding_granary = Some(units);
-                    info!(
-                        roster,
-                        units,
-                        days_in_year = diy,
-                        ?origin,
-                        "bastion: FOUNDING GRANARY — a lived-in village keeps last year's harvest: the winter par in the town's grain, delivered once"
-                    );
-                }
-            }
+            // ★ F2a's granary fired here for one boot (sized on the first 20 of 48
+            // colonists); F2c' replaced it: the founding harvest IS the barn.
             // ADOPT-A-TOWN: drain deferred SURFACE placements the same way.
             if !board.pending_adopt_surface.is_empty() {
                 let pending = std::mem::take(&mut board.pending_adopt_surface);
@@ -18346,6 +18313,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let plots_for_stage = vec![(min_xy, max_xy)];
                             let (mut cells, mut planted, mut already, mut ripe) = (0u32, 0u32, 0u32, 0u32);
                             let mut harvest_units = 0u32;
+                            let mut founding_items: HashMap<String, u32> = HashMap::new();
+                            let mut drawn_units = 0u32;
                             let origin = Vec3::new(min_xy.x, min_xy.y, hint_z);
                             if std::env::var_os("BASTION_NO_FOUNDING_FIELDS").is_none() {
                                 for y in region.min.y..=region.max.y {
@@ -18364,7 +18333,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         if !ground.is_filled() || crop.is_filled() {
                                             continue;
                                         }
-                                        if crop.get_sprite().is_some() {
+                                        if let Some(sprite) = crop.get_sprite() {
+                                            // ★ F2c' THE FOUNDING HARVEST IS THE WHOLE FIELD: a ripe
+                                            // roster crop of ANY kind is stocked at once and the cell
+                                            // restarts sown with a clock (the town's field from now on).
+                                            // Unripe or unknown: left standing.
+                                            let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
+                                            if crop_roster_index(sprite).is_some() && g >= FARM_GROWTH_MAX {
+                                                if let (Some(item), Ok(nb)) = (
+                                                    farm_crop_item(sprite),
+                                                    Block::air(sprite).with_attr(Growth(FARM_GROWTH_SOWN)),
+                                                ) {
+                                                    ripe += 1;
+                                                    harvest_units += units_per_ripe;
+                                                    founding_items
+                                                        .entry(item.to_string())
+                                                        .and_modify(|u| *u += units_per_ripe)
+                                                        .or_insert(units_per_ripe);
+                                                    block_change.set(cpos, nb);
+                                                    board.farm_growth.insert((cpos.x, cpos.y, cpos.z), now_tod);
+                                                    continue;
+                                                }
+                                            }
                                             already += 1;
                                             continue;
                                         }
@@ -18376,7 +18366,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         );
                                         let stage = if drawn >= FARM_GROWTH_MAX {
                                             ripe += 1;
-                                            harvest_units += units_per_ripe;
+                                            drawn_units += units_per_ripe;
                                             FARM_GROWTH_SOWN
                                         } else {
                                             drawn
@@ -18388,10 +18378,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                     }
                                 }
-                                if harvest_units > 0
+                                if drawn_units > 0
                                     && let Some(item) = farm_crop_item(plan.crop)
                                 {
-                                    pending_seed_items.0.push((origin, item.to_string(), harvest_units));
+                                    pending_seed_items.0.push((origin, item.to_string(), drawn_units));
+                                }
+                                // the founding harvest, per item (the lived-in draw's ripe cells above
+                                // rode `harvest_units` for the plan's crop; these are the worldgen crops)
+                                let mut founding_items: Vec<(String, u32)> = founding_items.into_iter().collect();
+                                founding_items.sort();
+                                for (item, units) in founding_items {
+                                    pending_seed_items.0.push((origin, item, units));
                                 }
                                 board.founding_planted = board.founding_planted.saturating_add(planted);
                                 info!(
@@ -18402,7 +18399,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     ripe,
                                     harvest_units,
                                     crop = ?plan.crop,
-                                    "bastion: FOUNDING FIELDS PLANTED — the town was here before you: its fields stand at every stage; the ripe ones are stocked at once"
+                                    "bastion: FOUNDING FIELDS PLANTED — the town was here before you: its fields stand at every stage; the ripe ones are stocked at once (F2c': THE FOUNDING HARVEST IS THE WHOLE FIELD)"
                                 );
                             } else {
                                 cells = ((region.max.x - region.min.x + 1) * (region.max.y - region.min.y + 1)).max(0) as u32;
