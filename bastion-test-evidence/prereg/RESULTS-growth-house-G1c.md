@@ -77,6 +77,52 @@ Two findings, one of them the cause of the slow build all along:
    the churn gone those named builders have 1,868 open cells; whether a
    name is a worker at the plot is the next read, not a fix yet.
 
+## The G1c-d boot (pair fce20cf9b9, the plot-target retirement rule; b1, booted 21:50 on 09-02, lever on; read at +10 min, day 1, day 2, and again at day 68 after 42 unattended hours)
+
+The pin was falsified at the commit (the old kind rule planted: red);
+the first falsification run had printed a verdict without planting and
+was discarded.
+
+| witness                     | day 1     | day 2     | day 68 |
+|-----------------------------|----------:|----------:|-------:|
+| phantom job retired (Build) | 0         | 0         | 0 in the last five days |
+| PLOT CELL KEPT (count)      | 16,384    | 65,536    | --     |
+| BUILD PROGRESS placed / remaining | 69 / 1,840 | 91 / 1,818 | 291 / 1,618 |
+| builders (drafted)          | 0         | 6         | 8      |
+| HOUSEHOLDS occupied         | 49        | 50        | 31 (the famine, below) |
+| panics                      | 0         | 0         | 0      |
+
+The churn is gone: 28,140 retirements a day became none, and the
+plan's cells stay on the board. The build is still a crawl: 91 cells
+by day 2 and 291 by day 68, with six to eight drafted builders whose
+lane reads 30-80 works a day and 150-230 blocks of travel per claim.
+The rate is not the staffing and not the retirement; the next read is
+WHICH cells get placed (their z) and what the builders do at the ones
+that do not -- the working hypothesis is reachability: a house's walls
+and roof are above a walker's reach until the course below them
+stands, and the plan mints its cells in the order the layout emitted
+them, not from the ground up (G1c-e).
+
+The placement curve over the 68 days (cells placed at each day line):
+69, 91, 126, 130, 151, 158, 160, 169 by day 8, then 169 flat to day
+15, 195 at day 16, 278 by day 29, 284 from day 40 to 57, 291 at day 68.
+The fed phase (days 1-5, six to eight builders) placed about 25 cells
+a day; the starving phase placed almost none.
+
+The release census of that run's last days is the confounder: of the
+work-class releases, 2,652 were "a personal entry releases the held
+work job" (hunger and sleep taking the worker off the job), 1,450 the
+job removed under the worker, and only 561 completions -- a starving
+town drops its work to look for food that is not there. The house's
+rate cannot be read from a starving town; the reachability read is
+re-run on the F2 pair's first two days.
+
+The same 42-hour run found the town starving from day 5 on both arms
+(the year census: a 160-day year, a half-year crop cycle, a founding
+stock of one day, fields whose yield covers a twentieth of the
+town's 3.2 units per head per day). That is its own row (F2) and it
+outranks the house.
+
 ## Disposition
 
 The G1b premise is now TRUE on a live server (owner count 1) and G1c's
