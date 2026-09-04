@@ -189,3 +189,25 @@ and G1c-e (`counts_as_builder(named, build_hours, drafted)`; the backlog
 is `plot_blocks.len()`; a daily `BUILD DRAFT SIZED` witness). The day-2
 read of this boot is kept as the control for the next b3 boot on the
 G1c-e pair.
+
+### G1c-e-a: a plot cell is renewable (701bd155c6)
+
+Defect: the unclaimed-designation sweep (ITEM8-V4 route 3 backstop)
+reaped `Designated(Build)` plot cells after 930 s without a claimant
+(b1 on the F2 pair: 98 in a day; b3 on the instrument pair: 98 by day 1,
+187 by day 2), and the plan drain re-minted them next pass: the same
+churn the sweep already exempts farm jobs from, on the third retirement
+path for the same cells after the phantom check and the moot check
+(G1c-d).
+
+Mechanism: `designation_is_renewable(kind, is_plot_cell)` = a Farm job
+or a cell in `plot_blocks`; the sweep's `is_renewable` argument reads
+it; a witness `PLOT CELL NOT SWEPT` counts what it spares. A player's
+Build or Mine mark still reaps on the old threshold.
+
+Falsified at the commit: the plot arm dropped turned
+`a_plot_cell_is_renewable_like_a_farm_cell` red at
+`bastion_jobs.rs:52203`.
+
+Live evidence pending: `unclaimed designation swept ... Designated(Build)`
+at 0 with `PLOT CELL NOT SWEPT` > 0 on the next b3 boot.

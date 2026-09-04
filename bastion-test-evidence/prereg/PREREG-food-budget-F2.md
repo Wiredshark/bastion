@@ -99,3 +99,23 @@ chain can be read at one line a day.
 The full year (winter at days 120-160) needs a 60-hour arm run; the
 eight-day-year arm (b2) is the proxy: the same predictions at its
 day 7 are read at its day 1 (one cycle) and the winter at its days 6-8.
+
+## F2c'-b bars (written 2026-09-04 19:10, before the pair exists)
+
+The F2c' read showed a worldgen field is about nine-tenths bare and
+the drain counted bare cells as cropped (planted 0). With the Empty
+sprite read as bare:
+
+- FOUNDING FIELDS PLANTED, summed over the eight fields: `planted`
+  >= 6,000 of 8,424 (the crop stripes hold the rest); `foreign` in
+  the hundreds (worldgen's WheatGreen, scarecrows); `ripe` the sum of
+  the worldgen ripe cells (~400) plus the lived-in draw's ripe stage
+  (about 1/14 of the planted cells, ~450). FAIL if planted < 4,000.
+- Day-0 census at +3 min: `food_stock` >= 3,000 on b1 (the F2c' pair
+  read 1,632). FAIL below 2,500.
+- Day 1: `field_planted` (clocked cells) >= 6,000 (the F2c' pair read
+  392: only the farm pass's own sows).
+- The budget bar (>= 9,000 at day 1) stays FAILED by design until
+  Ben's bridge ruling; the day-7 bar (<= 3 starving) is read as before.
+- Falsify at the commit: `None | Some(Empty) => Bare` -> `None =>
+  Bare` turns `an_empty_sprite_is_a_bare_founding_cell` red.

@@ -54,3 +54,26 @@ Two things the same boot showed that are NOT G1d's:
 A half-built house resuming with fewer cells than its first plan
 (needs the graceful stop); a finished house skipped as registered;
 HOUSE REQUEST HELD followed by a request once the replay lands.
+
+## R1: a kept world is not founded twice (f9622e2b73)
+
+The first restart test's second boot replayed the saved orders AND ran
+the autofound again: `colony orders replayed from save` (72 orders)
+and, in the same minute, `ADOPT-A-TOWN site chosen ... chosen_houses=58
+source=spawn-fallback`; HOUSEHOLDS went from houses=58 occupied=49
+before the stop to houses=116 occupied=48 after it. Every house
+registered twice; the housing gate counted double.
+
+Mechanism: the founding branch reads rtsim `bastion_home_anchor`
+first; with a colony saved, the marker wait and the town pick stand
+down and the boot prints `COLONY RESTORED, NOT FOUNDED`.
+`bastion_founding_decision(colony_saved, dtick, blocked_on_marker)` ->
+restored | wait | found is the pure decision, pinned by
+`a_saved_colony_is_restored_not_founded`.
+
+Falsified at the commit: the saved arm dropped (`if false &&
+colony_saved`) turned the pin red at `server/src/lib.rs:8985`.
+
+Live evidence: the second restart test (the graceful-stop lever, then
+`-KeepWorld` on this pair) reads HOUSEHOLDS across the boot and counts
+`ADOPT-A-TOWN site chosen` lines; its section follows.

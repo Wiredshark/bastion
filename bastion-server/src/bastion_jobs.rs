@@ -7238,6 +7238,36 @@ pub(crate) fn crop_roster_index(sprite: SpriteKind) -> Option<usize> {
     FARM_CROP_ROSTER.iter().position(|s| *s == sprite)
 }
 
+/// ★ F2c'-b (2026-09-04): what a founding field cell IS, read off its crop
+/// block. `Block::get_sprite()` returns `Some(Empty)` for plain air, so the
+/// F2c' drain counted every bare cell as "already cropped" (b1: already=2916
+/// of 2916 on a wheat field whose worldgen crop density is ~13%) and planted
+/// nothing. Bare = no sprite or the Empty sprite (planted at the lived-in
+/// stage); Ripe / Growing = a roster crop at / below `FARM_GROWTH_MAX`;
+/// Foreign = any other sprite (worldgen's WheatGreen, a scarecrow, grass),
+/// left standing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FoundingCell {
+    Bare,
+    Ripe,
+    Growing,
+    Foreign,
+}
+
+pub(crate) fn founding_cell_class(sprite: Option<SpriteKind>, growth: u8) -> FoundingCell {
+    match sprite {
+        None | Some(SpriteKind::Empty) => FoundingCell::Bare,
+        Some(s) if crop_roster_index(s).is_some() => {
+            if growth >= FARM_GROWTH_MAX {
+                FoundingCell::Ripe
+            } else {
+                FoundingCell::Growing
+            }
+        },
+        Some(_) => FoundingCell::Foreign,
+    }
+}
+
 /// ★★ THE LOAD-BEARING PART: THE DISCRIMINATOR MOVES FROM SPRITE TO
 /// PROVENANCE.
 ///
@@ -18326,6 +18356,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let mut harvest_units = 0u32;
                             let mut founding_items: HashMap<String, u32> = HashMap::new();
                             let mut drawn_units = 0u32;
+                            let (mut growing, mut foreign) = (0u32, 0u32);
                             let origin = Vec3::new(min_xy.x, min_xy.y, hint_z);
                             if std::env::var_os("BASTION_NO_FOUNDING_FIELDS").is_none() {
                                 for y in region.min.y..=region.max.y {
@@ -18344,13 +18375,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         if !ground.is_filled() || crop.is_filled() {
                                             continue;
                                         }
-                                        if let Some(sprite) = crop.get_sprite() {
+                                        let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
+                                        let class = founding_cell_class(crop.get_sprite(), g);
+                                        // ★ F2c'-b: `Some(Empty)` is a BARE cell; it falls through to
+                                        // the lived-in planting below instead of counting as cropped.
+                                        if let (Some(sprite), true) = (crop.get_sprite(), class != FoundingCell::Bare) {
                                             // ★ F2c' THE FOUNDING HARVEST IS THE WHOLE FIELD: a ripe
                                             // roster crop of ANY kind is stocked at once and the cell
                                             // restarts sown with a clock (the town's field from now on).
                                             // Unripe or unknown: left standing.
-                                            let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
-                                            if crop_roster_index(sprite).is_some() && g >= FARM_GROWTH_MAX {
+                                            if class == FoundingCell::Ripe {
                                                 if let (Some(item), Ok(nb)) = (
                                                     farm_crop_item(sprite),
                                                     Block::air(sprite).with_attr(Growth(FARM_GROWTH_SOWN)),
@@ -18365,6 +18399,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     board.farm_growth.insert((cpos.x, cpos.y, cpos.z), now_tod);
                                                     continue;
                                                 }
+                                            }
+                                            if class == FoundingCell::Growing {
+                                                growing += 1;
+                                            } else {
+                                                foreign += 1;
                                             }
                                             already += 1;
                                             continue;
@@ -18407,10 +18446,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     cells,
                                     planted,
                                     already_cropped = already,
+                                    growing,
+                                    foreign,
                                     ripe,
                                     harvest_units,
                                     crop = ?plan.crop,
-                                    "bastion: FOUNDING FIELDS PLANTED — the town was here before you: its fields stand at every stage; the ripe ones are stocked at once (F2c': THE FOUNDING HARVEST IS THE WHOLE FIELD)"
+                                    "bastion: FOUNDING FIELDS PLANTED — the town was here before you: its fields stand at every stage; the ripe ones are stocked at once (F2c': THE FOUNDING HARVEST IS THE WHOLE FIELD; F2c'-b: a bare cell is planted)"
                                 );
                             } else {
                                 cells = ((region.max.x - region.min.x + 1) * (region.max.y - region.min.y + 1)).max(0) as u32;
@@ -52203,6 +52244,20 @@ mod tests {
         assert!(!designation_is_renewable(&K::Designated(DesignationKind::Build), false), "a player's build mark");
         assert!(!designation_is_renewable(&K::Designated(DesignationKind::Mine), false), "a mine mark");
         assert!(!designated_sweep_should_reap(false, true, designation_is_renewable(&K::Designated(DesignationKind::Build), true), false, 10_000.0, 900.0), "the sweep leaves a plot cell alone");
+    }
+
+    /// ★ F2c'-b pinned: the Empty sprite is a bare founding cell (planted),
+    /// a roster crop is ripe or growing by its Growth, anything else is
+    /// foreign. Planted defect: drop the Empty arm (Empty -> Foreign) -> red.
+    #[test]
+    fn an_empty_sprite_is_a_bare_founding_cell() {
+        use common::terrain::SpriteKind as S;
+        assert_eq!(founding_cell_class(None, 0), FoundingCell::Bare, "no sprite");
+        assert_eq!(founding_cell_class(Some(S::Empty), 15), FoundingCell::Bare, "the Empty sprite is bare");
+        assert_eq!(founding_cell_class(Some(S::Tomato), FARM_GROWTH_MAX), FoundingCell::Ripe, "a ripe roster crop");
+        assert_eq!(founding_cell_class(Some(S::WheatYellow), 3), FoundingCell::Growing, "a growing roster crop");
+        assert_eq!(founding_cell_class(Some(S::WheatGreen), 15), FoundingCell::Foreign, "worldgen's green wheat is off the roster");
+        assert_eq!(founding_cell_class(Some(S::Scarecrow), 15), FoundingCell::Foreign, "a scarecrow");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.
