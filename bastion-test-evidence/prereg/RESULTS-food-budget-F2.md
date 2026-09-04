@@ -103,3 +103,47 @@ measured 8,424 cells (33,696 >= 30,720), and the granary is dropped
 because the founding harvest is the barn. The day-1 and day-7 reads
 of the F2 pair still stand as the seeds' and the eat path's test; the
 budget bars move to the F2c' pair.
+
+## The first minute of the F2c' pair (a55321b958, both arms, 17:45-17:48)
+
+Falsified at the commit first: yield 4 -> 2, the seed floor and the
+SOWN-only draw each turned their pin red.
+
+| field (b1) | cells | already_cropped | ripe | harvest units | crop |
+|---|---:|---:|---:|---:|---|
+| 7612,6468 | 576 | 517 | 59 | 236 | Lettuce |
+| 7636,6438 | 540 | 488 | 52 | 208 | Tomato |
+| 7672,6318 | 576 | 253 | 35 | 140 | Carrot |
+| 7702,6264 | 864 | 857 | 0 | 0 | WheatYellow |
+| 7732,6252 | 2,916 | 2,916 | 0 | 0 | WheatYellow |
+| 7780,6306 | 324 | 293 | 31 | 124 | Carrot |
+| (two more) | 1,764 + 864 | -- | 215 + 0 | 860 + 0 | Carrot, WheatYellow |
+
+Planted 0 on every field, both arms. The founding harvest on b1 came to
+about 1,570 units, not the 33,696 the budget predicted; the day-0
+census at +3 min read `food_stock=1632 days_of_food=10.6
+field_planted=392` (the farm pass's own lived-in sows, not the founding
+drain).
+
+The producer, read after the fact (`world/src/site/plot/farm_field.rs`):
+
+- crops are placed only on trench stripes (`row_spacing`: wheat 6 wide
+  x 0.8 covered, tomato 3 x 1/3, roots 6 x 0.75), never on a bank
+  column, and at a per-cell weight of 1/6 (wheat: 4 Empty, 1
+  WheatGreen, 1 WheatYellow) to 2/5 (tomato) -- a worldgen field is
+  roughly nine-tenths bare;
+- every worldgen crop starts at Growth 15 (the attribute's default in
+  `to_initial_bytes`), so "ripe" is right where a crop exists;
+- `Block::get_sprite()` returns `Some(SpriteKind::Empty)` for plain air,
+  so the drain's "already cropped" branch swallowed every bare cell and
+  the planting branch below it never ran. The F2 read's "the fields
+  were never bare (8,411 of 8,424 already cropped)" was this miscount,
+  not a fact about the fields.
+
+Two conclusions. The founding harvest cannot be the year's food on a
+worldgen field; the bare cells must be planted at founding, which F2c
+intended and this miscount blocked (F2c'-b: the Empty sprite is a bare
+cell; pin `an_empty_sprite_is_a_bare_founding_cell`). And the bridge
+from founding to the first ripe stage of the lived-in draw is a design
+question with numbers, put to Ben: a founding larder sized on the full
+roster and the days to the first harvest, or denser founding fields.

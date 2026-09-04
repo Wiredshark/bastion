@@ -301,6 +301,8 @@ fn server_loop(
     let mut bench_exit_time = None;
 
     let mut tick_no = 0u64;
+    // ★ HARNESS GRACEFUL STOP (2026-09-04): see the check inside the loop.
+    let mut harness_stop_requested = false;
     'outer: loop {
         span!(guard, "work");
         if let Some(bench) = bench {
@@ -315,6 +317,30 @@ fn server_loop(
         };
 
         tick_no += 1;
+        // ★ HARNESS GRACEFUL STOP (2026-09-04, the G1d restart test): a hard
+        // kill loses every edited chunk still loaded -- TerrainPersistence
+        // writes on unload and on shutdown, not on a timer. When
+        // BASTION_SHUTDOWN_FILE names a path and that file appears, request
+        // the same graceful shutdown the console's `shutdown graceful` does.
+        // A lab lever: unset, nothing here runs.
+        if !harness_stop_requested {
+            if let Some(path) = std::env::var_os("BASTION_SHUTDOWN_FILE") {
+                if std::path::Path::new(&path).exists() {
+                    harness_stop_requested = true;
+                    tracing::warn!(
+                        path = ?path,
+                        tick = tick_no,
+                        "bastion: HARNESS SHUTDOWN FILE seen — graceful shutdown in 3 s (chunks and rtsim save on the way out)"
+                    );
+                    shutdown_coordinator.initiate_shutdown(
+                        tick_no,
+                        &mut server,
+                        Duration::from_secs(3),
+                        "harness shutdown file".to_string(),
+                    );
+                }
+            }
+        }
         // Terminate the server if instructed to do so by the shutdown coordinator
         if shutdown_coordinator.check(&mut server, &settings, tick_no) {
             break;
