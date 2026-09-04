@@ -6146,8 +6146,19 @@ impl Server {
                     // captured baseline. The status quo is the EXERCISED
                     // population, so it keeps its exact timing and the new
                     // behaviour is opt-in (PLAY.ps1 sets it).
+                    // ★ R1 (2026-09-04): a kept world is not founded twice. The
+                    // save's home anchor says a colony stands; then the marker
+                    // wait and the founding both stand down and the orders replay.
+                    let colony_saved = self
+                        .state
+                        .ecs()
+                        .read_resource::<rtsim::RtSim>()
+                        .state()
+                        .data()
+                        .bastion_home_anchor;
                     let wait_for_marker = std::env::var_os("BASTION_ADOPT_WAIT_FOR_MARKER")
-                        .is_some();
+                        .is_some()
+                        && colony_saved.is_none();
                     // ★ THE WAIT HAS A CEILING (2026-09-01 22:55). Ben booted
                     // twice tonight and flew over an empty world for 27 and 90
                     // minutes: the choice is a middle-click on the map that an
@@ -6240,7 +6251,16 @@ impl Server {
                     } else {
                         false
                     };
-                    if dtick >= 30 && !blocked_on_marker {
+                    if dtick >= 30 && !blocked_on_marker && colony_saved.is_some() {
+                        // ★ R1: the save holds a colony -- restored, not founded.
+                        SPAWNED.store(true, Ordering::Relaxed);
+                        tracing::warn!(
+                            anchor = ?colony_saved,
+                            dtick,
+                            decision = bastion_founding_decision(true, dtick, blocked_on_marker),
+                            "bastion: COLONY RESTORED, NOT FOUNDED — the save holds a colony (home anchor set); the autofound and the town pick stand down and the saved orders replay"
+                        );
+                    } else if dtick >= 30 && !blocked_on_marker {
                         SPAWNED.store(true, Ordering::Relaxed);
                         let center = bastion_flat_arena::world_center_wpos(&self.world);
                         // On the flat arena the spawn z is the slab constant. On
@@ -8936,6 +8956,37 @@ impl Server {
             ?origin,
             "bastion: BASTION_SEED_FOOD active — colony supplied so hunger is not the              binding constraint (FIXTURE lever; no balance number changed)"
         );
+    }
+}
+
+/// ★ R1 (2026-09-04): what the founding branch does at this tick. A saved
+/// colony (the home anchor in rtsim's Data) outranks everything: "restored".
+/// Otherwise the marker wait holds ("wait") until the tick and the marker
+/// allow the founding ("found"). Pure; pinned.
+pub(crate) fn bastion_founding_decision(colony_saved: bool, dtick: u64, blocked_on_marker: bool) -> &'static str {
+    if colony_saved {
+        "restored"
+    } else if dtick < 30 || blocked_on_marker {
+        "wait"
+    } else {
+        "found"
+    }
+}
+
+#[cfg(test)]
+mod bastion_founding_tests {
+    use super::bastion_founding_decision;
+
+    /// ★ R1 pinned: a saved colony is restored, never founded again, whatever
+    /// the tick or the marker; without one the old rules hold. Planted defect:
+    /// drop the saved arm -- "found" at tick 30 with a saved colony -- red.
+    #[test]
+    fn a_saved_colony_is_restored_not_founded() {
+        assert_eq!(bastion_founding_decision(true, 30, false), "restored");
+        assert_eq!(bastion_founding_decision(true, 5, true), "restored");
+        assert_eq!(bastion_founding_decision(false, 5, false), "wait");
+        assert_eq!(bastion_founding_decision(false, 30, true), "wait");
+        assert_eq!(bastion_founding_decision(false, 30, false), "found");
     }
 }
 

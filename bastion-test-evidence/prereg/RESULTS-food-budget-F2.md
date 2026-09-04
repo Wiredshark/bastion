@@ -147,3 +147,20 @@ cell; pin `an_empty_sprite_is_a_bare_founding_cell`). And the bridge
 from founding to the first ripe stage of the lived-in draw is a design
 question with numbers, put to Ben: a founding larder sized on the full
 roster and the days to the first harvest, or denser founding fields.
+
+### Day 1 on the F2c' pair
+
+| day 1 | b1 (160-day year) | b2 (8-day year) | PREREG bar |
+|---|---|---|---|
+| food_stock / par | 2,162 / 9,879 (13.8 days) | 2,128 / 345 (13.6 days) | b1 >= 9,000: FAIL (the founding harvest is ~1,600; see the producer read) |
+| starving at the midday feed line | 0 (fed 40 of 49) | 1 (fed 38 of 49) | <= 3 on day 7: pending |
+| meals / eat_minted | 48 / 41 | 45 / 44 | -- |
+| targets_shunned | 18 | 15 | the eat path's stall count, not the budget's |
+| settler gate | open (roster 48 -> 49) | open (48 -> 49) | -- |
+| house (b1, lever on) | placed 0, builders 0, drafted 0 | -- | the G1c-e read |
+| panics | 0 | 0 | 0 PASS |
+
+The stock rose from 1,632 at +3 min to 2,162 at day 1: the lived-in
+draw's ripe share and the kitchen, not the founding harvest. The F2c'-b
+boot (bare cells planted at founding) and Ben's bridge ruling decide
+the day-7 bar.

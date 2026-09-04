@@ -140,3 +140,38 @@ prints the strong count (must read 1). Until then no worldgen house
 can be laid out on a live server; the G1c boot on b1 is kept for its
 other reads. The premise is re-tested by the same boot the moment the
 fix lands.
+
+## The house day on b3 (G1c-e-i instrument pair d1788fa5d0, 17:24-17:54)
+
+The instrument boot: house lever forced at day 0, `BUILD CELL PLACED`
+per colonist and z, `build/*` release classes.
+
+| read | placed | remaining | builders | drafted | swept (Build) | BUILDERS DRAFTED lines |
+|---|---:|---:|---:|---:|---:|---:|
+| +10 min (day 0, hour 13) | 0 | 1,909 | -- | -- | 0 | 0 |
+| day 1 (hour 0) | 0 | 1,909 | 0 | 0 | 98 | 0 |
+
+No colonist ever considered a plot cell (no claim of a
+`Designated(Build)` job all day; the claim refusal census has no Build
+bucket because none reached it). The draft's own inputs, read off the
+same log and the code:
+
+1. **Two "builders" that never built.** The professions tally names
+   colonists 29 and 84 `profession=Build weight=0`. The morning argmax
+   names a colonist with zero hours in EVERY lane by the first lane in
+   sort order, which is Build. Colonist 29's day: Recreate x3,
+   DepositRun x2, RestAt, Guard, EatFrom. Colonist 84's: 26 hauls. The
+   draft counted them (`builders_now = 2`).
+2. **The backlog it sized on was the open jobs, not the house.** The
+   Build job generator mints at most two jobs per colonist per pass
+   (`BUILD_GEN_JOBS_PER_COLONIST`), and the unclaimed sweep reaps them
+   at 930 s, so `open_build_cells` never exceeded ~100; `builders_wanted`
+   saw 100 / 150 -> 1 where its own constant's doc assumes the 1,909
+   cells -> 12 -> cap 6. `wanted = 1 <= builders_now = 2`: no draft, on
+   every morning of every boot since G1c-c.
+
+Two rows follow: G1c-e-a (a plot cell is renewable; the sweep leaves it)
+and G1c-e (`counts_as_builder(named, build_hours, drafted)`; the backlog
+is `plot_blocks.len()`; a daily `BUILD DRAFT SIZED` witness). The day-2
+read of this boot is kept as the control for the next b3 boot on the
+G1c-e pair.
