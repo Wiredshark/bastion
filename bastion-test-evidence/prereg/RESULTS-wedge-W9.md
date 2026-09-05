@@ -1119,6 +1119,59 @@ unreachable split summed over the census lines and the first eight
 witnesses at +4, +10, days 1-2) run from the stage; the E2-h chain
 keys on it. The falsifier went red and restored clean at 15:12.
 
+b2 +10 min (hour 14 of day 0, boot 15:35, read 15:45; 42 census
+lines): summed over the lines delivered_unreachable=9,
+unreachable_open=9, unreachable_boxed=0, unreachable_start_solid=0
+(the three sum to the total: the instrument agrees with itself);
+UNREACHABLE APPROACH 8 witnesses, every one start=Open,
+from_in_house=true, first_leg=false (plain fill searches from inside
+a house, not the trunk's approach). The last PUMP CENSUS pending=27
+oldest_wait=111 mean_wait=99 max_wait=184 (worst 779, pending up to
+45). Same read: EMBED WATCH 1, routes=2048, arrived 363, working=12,
+p95 508, panics 0. **The embedded-start hypothesis is falsified**
+(0 of 9, against the 60% the row predicted): the feet stand in the
+open, inside a house, and the exact search still finds no way. The
+next question is the house's exit -- whether the search's admission
+passes the door cell (a door is a sprite on a block; the admission
+may refuse it) -- or the target. W12-i2 reads the door: for an
+unreachable approach from inside a house, the door cells of that
+house region and whether the search's walkable() admits each.
+
+### W11-b landed (1531be2c65, staged 15:53)
+
+Check clean (the chaser reset compiles at the escape site), the pin
+green, both halves staged 15:53 and in lab-bin from 15:53. The
+falsifier (the chaser kept) and the b1 reader (`wait-w11b-b1.sh`:
+after E2-g's night-2 read, a fresh b1 with the fresh-boot guard; the
+loops, the failures with chaser_dropped, the eat timeouts and the
+streaks at +10 and day 1 hour 12) run from the stage; the E2-g-b
+chain keys on it. The falsifier went red and restored clean at 15:56.
+
+## W12-i2, registered 15:55 (keyed on the E2-g-b stage, the end of the chain, before the binary)
+
+The door is not solid to the search: `walkable` tests `is_solid()`,
+which is `solid_height().is_some()` for a sprite block, and the door
+sprites carry none (the index's `conn_passable` pin already says a
+door is a way through). So the exit fails at the doorstep, the floor
+or the target, and nothing says which. Mechanism: at a witnessed
+unreachable approach from inside a Bed-designated region, the
+region's door sprites (Door, DoorDark, DoorWide at the feet's
+z-1..z+2) are scanned; a second `bastion_full_path_ext` runs from
+the delivery's own start and cfg to the nearest door cell;
+`door_probe_verdict(door_found, door_reached)` -> NoDoor /
+SealedInside / ExitOpenTargetUnreachable; UNREACHABLE APPROACH DOOR
+PROBE carries the door cell and `colonist_walkable` at, below and
+above it. Pin `the_unreachable_approach_probes_its_door`; planted:
+the sealed and the open swapped, red. Prediction (b2 fresh,
+`wait-w12i2-b2.sh`, +10 and day 1): the probe fires on at least 6 of
+the first 8 witnesses; doors >= 1 on every probed house;
+SealedInside on at least 5 of 8 (the doorstep) else
+ExitOpenTargetUnreachable on at least 5 (the target, node placement
+outside); NoDoor dominating means the region, not the search.
+Rejected: changing the admission before the probe has spoken; probing
+every unreachable. NOT evidenced: which neighbour rule refuses the
+doorstep; the probe's cost.
+
 ## W11-b, registered 15:15 (keyed on the E2-h stage, the end of the chain, before the binary)
 
 `wall_escape_targets(had_route) -> (had_route, true)`: on Failed the

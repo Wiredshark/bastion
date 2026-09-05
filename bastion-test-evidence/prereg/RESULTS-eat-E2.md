@@ -649,6 +649,24 @@ vary, so the size is not exact; the direction is. The night-1 read
 the eater carries its supper on the way home -- the last work hour
 and the Leisure hours -- not from noon.
 
+After night 1 (b1, hour 6 of day 1, 15:48; the pair 79ff47e087 =
+W12-i1's, which carries E2-g and E2-f, not E2-h): SUPPER ROUND day=0
+hour=12 shortfall=98 loads=54 skipped_no_small=0; arrivals to
+private shelves before the sweep 48, general 9 (E2-e: 21 / 4; bar
+40: MET); SWEPT 14 (E2-e 18; bar 10: not met); SUPPER CARRIED HOME
+own_supper_claims=32 (bar 25: MET); NIGHT MEAL AT HOME 9 (E2-e: 8;
+bar 15: NOT met); no_food_found 305 (E2-e 204); YEAR day=1 food_stock
+4,103 / 26.2 days (bar MET); the Haul lane 37 hauls (bar 25: MET);
+in_bags 19-171 by day (E2-f in the pair). Starving by clock:
+RestAt/Arrived 7, 16, 14, 18 at hours 0-3 (E2-e: 14, 17, 22 -- bar
+6: NOT met, and unchanged); distinct starving sleepers 3 (E2-e 5;
+bar 2: not met); the evening EatFrom/Traveling 10, 19, 10 at 19-21
+and RestAt/Arrived 6-8 at 21-23. **The shelves are stocked and the
+sleepers do not eat from them**: 48 houses got their supper, the
+night meals stayed at nine, and two bodies starve in bed through the
+night as before. The carrying is done; the eating is the row -- the
+night-meal rule's own conditions (read next).
+
 ### E2-h landed (9cbeb09719, staged 15:31)
 
 Check clean, the pin green (E2-d's re-stated), both halves staged
@@ -658,6 +676,34 @@ fresh-boot guard; the day-0 round at hour 13, then nights 1 and 2 at
 hour 6) run from the stage; the W11-b chain keys on it. The falsifier
 went red and restored clean at 15:34; lab-bin carries the pair from
 15:32.
+
+b2 day-0 round (hour 12, read 15:56): houses=49 shortfall=98
+loads=58 no_shelf=0 skipped_no_small=0 (E2-g's day 0: 54 loads,
+0 skipped -- the day-0 store still holds small stacks, so day 0 does
+not test the fallback). The row's test is the day-1 round (E2-e's
+day 1: 23 skipped, 31 loads), read at hour 13 of day 1 (~16:35).
+
+## E2-i1, registered 15:55 (keyed on the W12-i2 stage, the end of the chain, before the binary)
+
+An instrument row from E2-g's night: the curfew never fired
+(curfew=0), every sleeper owns a bed (beds_owned 50 of 50), the
+night pick is already scoped to the home region (`night_ok`), and it
+returned nothing 305 times. At `eat_skip_count("no_food_found")`
+during Sleep the home region's food is counted -- present,
+refused_reach (the component index), refused_cap (the reservation),
+refused_closed (a closed store) -- and `night_shelf_verdict(home_known,
+present, admissible)` -> NoHome / Empty / Refused is counted into the
+EAT CENSUS (night_no_home, night_shelf_empty, night_shelf_refused)
+and logged as NIGHT SHELF EMPTY at the first eight and powers of two.
+Pin `the_night_shelf_names_its_emptiness`; planted: Empty and
+Refused swapped, red. Prediction (b2 fresh, `wait-e2i1-b2.sh`, night
+1 at hour 6): the three night keys sum to the night's no_food_found;
+night_no_home 0; Empty at least 70% (coverage: the row after is the
+round's ordering against the sweep) else Refused at least 70% with
+refused_reach dominant (the shelf cell's component: the shelf's
+placement). Rejected: scoping the pick further; lifting a curfew that
+never fires; guessing between bare and refused. NOT evidenced: the
+day-side no_food_found (the evening rush is a day pick).
 
 ## E2-g-b, registered 15:45 (keyed on the W11-b stage, the end of the chain, before the binary)
 

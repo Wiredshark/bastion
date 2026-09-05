@@ -8352,6 +8352,39 @@ pub(crate) fn supper_round_due(supper_now: bool, last_day: Option<i64>, today: i
 /// ★ E2-b pinned: the last two Work hours of this colonist's schedule --
 /// the haulers' last errand of the day runs here, on shift, with time to
 /// deliver before supper. On the default schedule that is 14 and 15.
+/// ★ E2-g-b pinned: the walk home -- the last Work hour of the day, and
+/// the Leisure hours after it (15 and 16-21 on the default schedule).
+/// Not the morning leisure, not the work day's middle: E2-g's eaters
+/// claimed their supper from noon and the works fell by two fifths.
+pub(crate) fn supper_walk_home_hour(
+    night_watch: &HashSet<common::uid::Uid>,
+    uid: Option<&common::uid::Uid>,
+    hour: u32,
+) -> bool {
+    let block = |h: u32| colonist_schedule_block(night_watch, uid, h % 24);
+    let hour = hour % 24;
+    // The last Work hour: Work now, not Work next.
+    let last_work = matches!(block(hour), ScheduleBlock::Work)
+        && !matches!(block(hour + 1), ScheduleBlock::Work);
+    if last_work {
+        return true;
+    }
+    // A Leisure hour after the day's last Work hour: walk back to the
+    // nearest earlier hour whose block is not Leisure; it must be Work.
+    if matches!(block(hour), ScheduleBlock::Leisure) {
+        let mut h = hour;
+        for _ in 0..24 {
+            h = (h + 23) % 24;
+            match block(h) {
+                ScheduleBlock::Leisure => continue,
+                ScheduleBlock::Work => return true,
+                _ => return false,
+            }
+        }
+    }
+    false
+}
+
 pub(crate) fn shift_end_hour(
     night_watch: &HashSet<common::uid::Uid>,
     uid: Option<&common::uid::Uid>,
@@ -47508,7 +47541,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // ★ E2-g: SUPPER IS CARRIED HOME BY ITS EATER -- the load bound
                 // for the claimant's own shelf claims at 6, before the haul
                 // gate, the guard door and the zero skip below.
-                let own_supper = board.supper_eaters.get(&id).is_some_and(|v| v.contains(uid));
+                let own_supper = board.supper_eaters.get(&id).is_some_and(|v| v.contains(uid))
+                    && supper_walk_home_hour(&board.night_watch, Some(uid), hour_claim);
                 let priority = own_supper_priority(priority, own_supper);
                 let priority = if job.work == common::bastion::WorkType::Haul
                     && priority > 0
@@ -54953,6 +54987,21 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2-g-b pinned: on the default schedule the walk home is hour 15
+    /// (the last Work hour) and 16-21 (the evening Leisure); 12, 13, 14 (the
+    /// work day), 6 and 7 (the morning Leisure), 22 and 3 (Sleep) are not.
+    /// Planted defect: the walk home from noon -> red.
+    #[test]
+    fn the_eater_carries_supper_on_the_way_home() {
+        let nw: HashSet<common::uid::Uid> = HashSet::new();
+        for h in [15u32, 16, 17, 20, 21] {
+            assert!(supper_walk_home_hour(&nw, None, h), "hour {h}: the walk home");
+        }
+        for h in [12u32, 13, 14, 6, 7, 22, 3] {
+            assert!(!supper_walk_home_hour(&nw, None, h), "hour {h}: not the walk home");
+        }
     }
 
     /// ★ E2-g pinned: an eater's own supper load claims at 6 whatever the
