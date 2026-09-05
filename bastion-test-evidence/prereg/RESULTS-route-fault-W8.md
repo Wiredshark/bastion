@@ -48,6 +48,36 @@ spots a handful, with `ROUTE FAULT` lines in their place (~40 a day);
 re-searched route runs into the same slot, the shun count falls only
 by half and W8-ii's node verdicts name the next fix.
 
-## Day 1 on the W8-f pair
+## Day 1 on the W8-f pair (b2, b4a1eb9aa6, 22:22-22:48)
 
-(pending)
+| bar | registered | read | verdict |
+|---|---|---|---|
+| targets_shunned per day | < 20 | 38 (28 Cook, 11 EatFrom) | FAIL |
+| ROUTE FAULT lines | ~40 | 4 (repaths=4) | the mechanism fires, once per job |
+| cooked_today | >= 80 | 43 | FAIL |
+| STORE WOULD CLOSE | 0 | 2 (zone 28) | FAIL |
+| cook stalls at the two old spots | a handful | 0 | the trap moved |
+| starving (dawn) | -- | 1 of 49 | -- |
+
+What the log says the mechanism did and did not do. Cook job 264
+(colonist 63, station (7706,6310,181)) stalled at (7691,6299,181)
+every ~17 s from 02:27 to 02:33: 21 probes, all `head_far` /
+`Exhausted`, the route head three west and one down, `nearby_bodies
+0`, `EMBED WATCH` relocated the body twice, no `GOTO-STAND-RESCUE`.
+W8-f re-pathed the job once (its allowance) at the second stall; every
+later stall expired and shunned another store cell: 20 of the day's
+28 cook shuns are that one job, and both `STORE WOULD CLOSE` lines are
+its store. So W8-f is right about the route fault and wrong about the
+unit: a wedged WALKER stalls the same job again and again, and a
+per-job allowance of one re-path spends itself on the first repeat.
+
+Disposition: the row stands as built (a route fault is not the
+target's fault; one re-path; no shun on that stall) and its bars are
+not met on this boot. The next row, W8-g, blames a repeated stall
+spot on the walker (the job is released, the target is not shunned),
+which removes the shun chain; the wedge itself -- a body the embed
+watch relocated twice into the same trap -- is the mover's row after
+that, with W8-ii's node verdicts. (The `GOTO-STAND-RESCUE` lines in
+the logs are the vanilla agent's sit-to-stand on a Goto,
+`server/agent/src/action_nodes.rs:916`, not a wedge rescue; the embed
+watch is the only handler a wedged body has.)

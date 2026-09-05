@@ -8323,6 +8323,26 @@ pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
 /// kitchen starved (b1 day 2: cooked 90 -> 40, shunned 12 -> 110). Such a
 /// stall drops the route and searches again from the feet, once per job;
 /// the target is not shunned for it.
+/// ★ W8-g (2026-09-04): A REPEATED STALL SPOT BLAMES THE WALKER. A fetch that
+/// stalls twice from the same 4-block spot is a wedged body, not a bad
+/// target: b2 on the W8-f pair, one cook job stalled twenty times in five
+/// minutes at (7691,6299,181) and shunned twenty store cells for it. The job
+/// is still released; the target is left alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StallBlame {
+    Target,
+    Walker,
+}
+
+pub fn stall_blame(repeated_spot: bool) -> StallBlame {
+    if repeated_spot {
+        StallBlame::Walker
+    } else {
+        StallBlame::Target
+    }
+}
+pub static WALKER_BLAMED_STALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub fn route_fault_at_stall(assist_why: &str, search_exhausted: bool) -> bool {
     assist_why == "head_far" && search_exhausted
 }
@@ -13360,6 +13380,8 @@ pub struct JobBoard {
     pub fetch_stall_warned: HashSet<JobId>,
     /// ★ W8-f: re-paths granted per job at a route-fault stall.
     pub route_fault_repaths: HashMap<JobId, u8>,
+    /// ★ W8-g: each walker's last stall spot (4-block cells), for the blame.
+    pub last_stall_spot: HashMap<common::uid::Uid, Vec3<i32>>,
     /// ★ RECENT DROPS: cells a deposit re-aim just chose (load, tick), counted
     /// as occupancy for RECENT_DROP_TICKS so simultaneous arrivals spread.
     pub recent_drops: HashMap<(i32, i32), (u32, u64)>,
@@ -31437,8 +31459,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     }
                                     if expires {
                                         board.fetch_stall_warned.remove(&active.job);
+                                        // ★ W8-g: the walker's spot against its last stall; a repeat
+                                        // blames the walker and spares the target.
+                                        let walker_spot = pos.0.map(|e| (e.floor() as i32).div_euclid(4));
+                                        let walker_uid = uids.get(entity).copied();
+                                        let repeated_spot = walker_uid
+                                            .and_then(|u| board.last_stall_spot.get(&u))
+                                            .is_some_and(|last| *last == walker_spot);
+                                        if let Some(u) = walker_uid {
+                                            board.last_stall_spot.insert(u, walker_spot);
+                                        }
+                                        let blame = if std::env::var_os("BASTION_NO_WALKER_BLAME").is_none() {
+                                            stall_blame(repeated_spot)
+                                        } else {
+                                            StallBlame::Target
+                                        };
+                                        if blame == StallBlame::Walker {
+                                            let n = WALKER_BLAMED_STALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if n <= 4 || n.is_power_of_two() {
+                                                info!(
+                                                    job = active.job,
+                                                    kind = ?job.kind,
+                                                    colonist = walker_uid.map(|u| u.0.get()),
+                                                    spot = ?walker_spot,
+                                                    blamed = n,
+                                                    "bastion: STALL BLAMED ON THE WALKER — the same spot as the last stall; the target is innocent and is not shunned; the job is released (W8-g)"
+                                                );
+                                            }
+                                        }
                                         // ★ A STALLED TARGET IS SHUNNED (see `STALLED_TARGET_SHUN_TICKS`).
-                                        if std::env::var_os("BASTION_NO_TARGET_SHUN").is_none() {
+                                        if blame == StallBlame::Target && std::env::var_os("BASTION_NO_TARGET_SHUN").is_none() {
                                             let shun_cell = ip.map(|e| e.floor() as i32);
                                             board.goal_verdicts.insert(shun_cell, tick.0 + STALLED_TARGET_SHUN_TICKS);
                                             TARGETS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -52478,6 +52528,15 @@ mod tests {
         assert!(!route_fault_at_stall("committed_walker", true), "a cached trunk route is not this row");
         assert!(!route_fault_at_stall("no_head", true), "no head: nothing to drop");
         assert!(!route_fault_at_stall("eligible", true), "an eligible assist is the assist's row");
+    }
+
+    /// ★ W8-g pinned: a stall at a new spot blames the target; a stall at the
+    /// same spot as the last one blames the walker. Planted defect: always
+    /// the target -> red.
+    #[test]
+    fn a_repeated_stall_spot_blames_the_walker() {
+        assert_eq!(stall_blame(false), StallBlame::Target, "a first stall here: the target is suspect");
+        assert_eq!(stall_blame(true), StallBlame::Walker, "the same spot again: the walker is wedged");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.
