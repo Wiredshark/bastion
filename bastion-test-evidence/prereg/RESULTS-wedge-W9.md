@@ -338,6 +338,18 @@ W9-c is the answer already in the chain. (The first body-height
 histogram read 100% above four blocks and was wrong: the script took
 the dump's y field as z; corrected below.)
 
+At ten minutes (04:03, 3,072 routes): `mean_nodes=18.4 mean_len=65.5
+mean_straight=25.2 detour_ratio=2.60 lifted_up=2595 lifted_down=0
+sidestepped=1159 rejected_solid=536 rejected_dz=1027`. Body heights
+from the position dump (19,737 colonist-ticks, every 30th tick):
+within one block of a grade 89.5%, two to three blocks above 10.5%,
+four or more 0. Both regression lines crossed: a trunk route walks 2.6
+times its straight line, 0.84 nodes per route are lifted UP and none
+down, a tenth of every body's time is spent two or three blocks above
+the street, and a third of routes (1,027 of 3,072) are rejected for a
+step over six blocks that the lifts manufacture. These are the
+before-numbers for W9-c, whose reader prints the same fields.
+
 ## W9-c, a node stands on ground, not on a wall (registered 03:45; queued on W9-i's stage, ahead of W10)
 
 The regression, read on b1's E1-f day 1 (03:36): 67 WEDGE PROBE
@@ -369,6 +381,39 @@ Falsified if works stay near 230 with the histogram already under 3%
 (honest walking: the work drop is the price of no phasing), or
 rejections climb past 2,000 a day (the ground rule refuses real
 floors).
+
+W9-c landed as 0b0acffedc (04:00; check clean, pin green; staged
+04:15). Falsified at the commit: the ground minimum at two (a wall top
+passes) turned `a_node_stands_on_ground_not_on_a_wall` red at
+`bastion_jobs.rs:53220` (04:18); the tree restored clean. b2 restarted
+on it at 04:16 with the position dump; its profile and histogram
+follow under "W9-c live".
+
+### W9-c live (b2, 0b0acffedc)
+
+| read | W9-i +4 (1,024 routes) | W9-c +4 (1,024) | W9-i +10 (3,072) | W9-c +10 (2,048) |
+|---|---|---|---|---|
+| detour_ratio | 2.20 | 1.90 | 2.60 | 2.14 |
+| lifted_up per route / lifted_down | 0.96 / 0 | 0.66 / 0 | 0.84 / 0 | 0.53 / 0 |
+| sidestepped per route | 0.46 | 2.68 | 0.38 | 2.70 |
+| rejected_solid / rejected_dz | 280 / 401 | 622 / 169 | 536 / 1,027 | 1,174 / 311 |
+| bodies 2-3 above a grade (two-grade frame) | 11.0% | 10.8% | 10.5% | 10.0% |
+| EMBED WATCH | 4 | 3 | 13 | 6 |
+| ITEM 39 p95 | 462 us | 447 us | 469 us | 442 us |
+
+Disposition: W9-c does what it says -- wall-top lifts fall by a third
+per route, the manufactured steep steps by 70%, embeds by half -- and
+the two numbers it was aimed at barely move. The detour ratio near 2
+is now read as mostly honest: a trunk route follows the road graph
+between six-block tile centres, and a road route through a town is
+1.5-2 times its straight line where the old routes phased through
+walls at 1.0; the sidesteps (2.7 a route) add their zigzag. The 10%
+"above a grade" is the instrument's frame, not the town's: b2 has
+slopes between its 181 and 186 grades, and a body walking one reads
+as two above the lower grade. Both need the right frame before another
+mover row: W9-i2 (queued at the end of the chain) counts colonists by
+height above the natural surface of their OWN column, which is what a
+wall top or a roof is and a slope is not.
 
 ## W10-b and W10-a, registered 02:20 (queued behind R3, before the binaries)
 

@@ -99,9 +99,29 @@ Day 1 on b1 (03:36; the pair carries W9, W9-b and E1-f):
 | EMBED WATCH / stall probes / rejected (solid) | 12 / -- / 4,096+ | 25 / 67 / 2,048 |
 | house placed / panics | -- / 0 | 6 / 0 |
 
-The reach gate costs nothing (no food search fails, the starving read
-is the same single walker) and shows no benefit of its own on this
-arm: the starving tail it was aimed at was the wedge, closed by W9.
+The reach gate costs nothing to eating, but E1-f's other half cost
+the town its builders. The eighth restart test's first boot (R3 pair,
+03:30): 98 Build jobs open from PLOT PLAN QUEUED, Build arrivals 0 in
+26 minutes (the seventh test's boot, before E1-f: 27 arrivals and 25
+cells placed in six); Mine 107, Farm 197, Haul 229 arrivals on the
+same boot; `CONNECTIVITY rebuilt cells=57,766` against 69,170 on the
+R2 boot. `conn_standable` now delegates to `colonist_walkable`, which
+calls a fence or a crop solid, so the reachability flood fill cannot
+cross the town's fence line and the house plot beyond it is gated as
+unreachable, while the router vaults the same hurdle (W4). b1's E1-f
+day 1 placed 6 with builders=0; the P-zero-hours boot before it placed
+26. E1-g (`fix-e1g.py`, queued on W9-c's stage): the fill crosses a
+hurdle to the standing cell beyond it, as the router does
+(`CONN_HURDLES_VAULTED`, `hurdles_vaulted` in the CONNECTIVITY
+witness), refactored generic so its pin
+(`the_index_vaults_a_fence_as_the_router_does`) runs on the mock world;
+planted: the vault removed. Bars on b1 (house lever): cells back above
+65,000 with vaults in the hundreds; Build arrivals above 10 and placed
+above 15 within ten minutes of the plan; eating unchanged. Falsified
+if cells stay near 58,000 or arrivals stay 0 with cells restored.
+
+The reach gate itself shows no benefit of its own on this arm: the
+starving tail it was aimed at was the wedge, closed by W9.
 The gate stays on (it refuses an item a body cannot stand beside, which
 W9's world no longer offers often). E1-f holds. The rise in stall
 probes (67) and embeds (25, the terrace class) belongs to W9-b's

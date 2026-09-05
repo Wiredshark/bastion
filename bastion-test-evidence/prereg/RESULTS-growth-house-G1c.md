@@ -293,9 +293,29 @@ day-1 read and before the eighth restart test; its section follows.
 | day-1 placement | near 180 | 26 (`build/Completed` 26; BUILD PROGRESS placed=21 remaining=1888 at the day line; z 180-182) | FAIL, confounded |
 | panics | 0 | 0 | -- |
 
-The placement miss is not this row's: the boot carries W9, whose
-rejected trunk routes queue on the search pump and leave walkers
-standing (`RESULTS-wedge-W9.md`, the 61 stalls); W9-b and W10 are the
-rows that answer it, and the per-builder rate is re-read on their
-pair. P-zero-hours' own claim -- an idle day names nobody, a newcomer
-takes the scarcest lane -- holds on this boot.
+The placement miss is this row's after all, read right at 04:20: since
+P-zero-hours a fresh town has NO builder until its first midnight
+draft. b1 on the E1-f pair: 6 cells on day 0; `BUILD DRAFT SIZED` at
+the midnight boundary 07:35 named a crew of five; 96 cells went up
+between 07:49 and 07:58 -- game hours 11 to 18, the work day -- and
+none until the next midnight draft at 08:18, with open Build jobs a
+constant 98 all day. The eighth restart test's first boot placed 0 in
+the 40 minutes after its plan (the seventh's, before P-zero-hours: 25
+in six -- the zero-hour argmax had named accidental builders at boot,
+the very thing P-zero-hours removed). The sixth test's restored boot
+placed 0 all day for the same reason. The day-1 bar of ~180 was set
+before HUMAN HOURS; a crew of six between hours 8 and 16 places ~100.
+
+P-zero-hours-b (`fix-pzb.py`, queued behind R3-b): when a plan is
+queued and no colonist counts as a builder, the day's naming block
+runs on the next tick (`board.profession_day` reset; `draft_at_plan`,
+pinned; witness `BUILD DRAFT CALLED AT THE PLAN`). Bars on b1 and the
+ninth restart test: the draft called within a second of the plan,
+`BUILD DRAFT SIZED wanted=6` the same second, Build arrivals above 10
+and placed cells above 15 within ten minutes of the plan, on a fresh
+boot and on a restored one; day-1 placement re-registered at ~100.
+Falsified if the draft is called and nothing is placed in ten minutes,
+or the second pass renames settled colonists.
+
+P-zero-hours' own claim -- an idle day names nobody, a newcomer takes
+the scarcest lane -- holds on this boot; its cost was the day-0 crew.

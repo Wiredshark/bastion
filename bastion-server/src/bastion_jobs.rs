@@ -1560,7 +1560,20 @@ pub static TRUNK_ROUTES_REJECTED: core::sync::atomic::AtomicU64 =
 /// approximation and rejecting every mildly steep route would push the whole
 /// town onto the search pump, which is the failure mode to avoid. This
 /// refuses only steps no body could ever take.
-pub const TRUNK_REJECT_DZ: i32 = 6;
+/// ★ W10-b (2026-09-05): the body's step, not the cliff's. Six was set
+/// against 22-block cliffs; a five-block terrace drop passed it and the
+/// pure glide walked the face (seven EatFrom stalls at one terrace edge on
+/// b2's W9 day 1; an on-segment embed on b3). A body steps down two (the
+/// surface probe's window, the router's Falls arm); anything steeper is the
+/// pump's to price.
+pub const TRUNK_REJECT_DZ: i32 = 2;
+
+/// ★ W10-b: the one predicate the trunk's step filter uses, so a pin can
+/// hold it. `worst_dz` is the largest |dz| between consecutive nodes after
+/// `lift_over_ground` has inserted its ground-following intermediates.
+pub(crate) fn trunk_step_walkable(worst_dz: i32) -> bool {
+    worst_dz <= TRUNK_REJECT_DZ
+}
 
 /// bastion (2026-08-31): the BASE RATE of a solid previous waypoint across
 /// every router-following colonist, embedded or not — the control for the
@@ -33970,7 +33983,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         worst as u64,
                                         core::sync::atomic::Ordering::Relaxed,
                                     );
-                                    if worst > TRUNK_REJECT_DZ {
+                                    if !trunk_step_walkable(worst) {
                                         let r = TRUNK_ROUTES_REJECTED.fetch_add(
                                             1,
                                             core::sync::atomic::Ordering::Relaxed,
@@ -33978,6 +33991,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         if r.is_power_of_two() {
                                             info!(
                                                 worst_dz = worst,
+                                                step_limit_blocks = TRUNK_REJECT_DZ,
                                                 waypoints = wps.len(),
                                                 rejected = r,
                                                 "bastion: TRUNK ROUTE REJECTED — its                                                  waypoints step further than a body can                                                  walk; falling through to the search pump"
@@ -53230,6 +53244,19 @@ mod tests {
         // a fence line along y == 5
         let fence = |c: Vec3<i32>| c.z == 180 && c.y == 5;
         assert!(!on_ground_not_a_wall(&fence, Vec3::new(10, 5, 181)), "a fence top: two");
+    }
+
+    /// ★ W10-b pinned: a trunk step of two is a body's step; three is a
+    /// cliff and rejects the route. Planted defect: the limit back at six ->
+    /// the three-block step passes -> red.
+    #[test]
+    fn a_trunk_segment_drops_at_most_two() {
+        assert!(trunk_step_walkable(0), "flat");
+        assert!(trunk_step_walkable(1), "a step");
+        assert!(trunk_step_walkable(2), "two: the body's step down");
+        assert!(!trunk_step_walkable(3), "three is a cliff face: the pump prices it");
+        assert!(!trunk_step_walkable(5), "the terrace at (7715,6342): five");
+        assert!(!trunk_step_walkable(22), "the measured worst");
     }
 
     /// ★ W9-b pinned: a node whose column is a wall moves to the first

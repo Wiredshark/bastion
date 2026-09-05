@@ -337,6 +337,44 @@ commit: the store filter dropped (road litter saved) turned
 (03:33); the tree restored clean. The eighth restart test runs on b3
 from 03:30; its section follows.
 
+### The eighth restart test (R3 pair 6126ef4001, b3, 03:30-04:27)
+
+| bar | registered | read | verdict |
+|---|---|---|---|
+| STORE SNAPSHOT SAVED units, boot 1 | ≈ STORAGE SUMMARY | cells=290 units=12,701 (summary 12,927; 46 saves) | PASS |
+| STORE READ FROM SAVE / STORE RESTORED | 1 / 1, same units | entries=293 units=12,698 / 293, 12,698 | PASS |
+| DELIVERED units, boot 2 | ≈ restored | 12,698 over 293 lines | PASS |
+| discriminator in_stockpile, boot 2 | within 15% of boot 1 | **266** of on_ground_total 4,344 (tick 3,600); 294 of 4,351 at tick 4,800 | FAIL |
+| SETTLER GATE CLOSED (famine), day 0 | 0 | 1 | FAIL |
+| food frame (F-i2) at day 0 | -- | food_stock 0, food_locked 3,795, food_anywhere 4,084 | the larder is in a house |
+| placed cells before the stop / already_standing | 20+ / 8,640+ | 0 (see P-zero-hours-b) / 8,664 | -- |
+| R1d's bars | held | COLONY RESTORED 1, orders replayed 72, ADOPT-IN-PLACE 58, colonists 50, panics 0; jobs 3,495 (Chop 3,224), p95 991 us | held, with a Chop storm |
+
+The larder came back and went to the wrong shelf. Every DELIVERED line
+read `store="private"`: STORE READ, STORE RESTORED and all 293
+deliveries fired at 08:18:56, the second the first stockpile zone
+registered and the first house adopted in place, while the 72 saved
+orders replayed over 08:18:56-58 (still_waiting 70, 54, 43, 20, 2, 0).
+`founding_stock_store` takes the first stockpile region not inside a
+house; with two of 58 Bed regions known, zone 0 -- a house's own shelf
+-- read as general, and once the houses landed the town's food was
+inside one (STORAGE CENSUS zone=0 kind="private" units=12,296). R3's
+mechanism held; its timing put the food where the town cannot draw.
+R3-b (`fix-r3b.py`, queued): the saved larder joins the delivery queue
+only when every saved order has replayed (`larder_delivery_due`,
+pinned; witness `STORE RESTORE WAITING`). Bars for the ninth test:
+STORE RESTORED after the last `still_waiting=0`, every delivery
+`store="general"`, food_stock within 15% of food_anywhere at five
+minutes, famine gate 0. The Chop storm (3,224 from one replayed work
+zone against 1,049 at the founding: the generator counts every tree
+once the whole region is streamed) is its own later row.
+
+The placed-cells bar read 0 on boot 1 for a different reason: since
+P-zero-hours, a fresh town has no builder until its first midnight
+draft (`RESULTS-growth-house-G1c.md`, P-zero-hours-b), so the eighth
+test stopped after 40 minutes with nothing placed; the ninth test
+carries that fix too.
+
 Also seen on that boot, an instrument gap and not a defect:
 `HOUSEHOLDS` prints only when a bed assignment changed that pass
 (`assigned > 0 || released > 0`), so a restored boot with a settled

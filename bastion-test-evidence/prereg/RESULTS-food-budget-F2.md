@@ -378,3 +378,23 @@ Disposition: F3 PASSES. Every harvested unit rode in a basket (644 of
 the town's food outside its stores is 14 units against ~600 a day of
 litter before the row. The eaters' chase onto the terraces has nothing
 left to chase.
+
+### T1, the trade mission (registered 04:15; queued at the end of the night's chain)
+
+On the 160-day arms the food par (9,879) sits above the founding
+larder, so ITEM 29 mints trade missions -- and the price book's
+nearest priced site to the store is the colony's OWN site: b3's R3
+boot minted two missions to (7696,6288,182), the spawn; job 568's
+walker, carrying 11 wood, stood at 7.99 blocks from that cell (inside
+a structure) and printed 3,965 `arrived at job site, working (B5)`
+lines in eight minutes until a need preempt released it; job 129
+printed 1,717 and completed one exchange. `fix-t1.py`: the book drops
+any site inside the colony's settlement bounds
+(`price_book_admits`, pinned in the server crate); the mission's
+target is the first standable cell in ring order within eight blocks
+of the site (`trade_mission_pos`, pinned; the mint witness carries
+`mission_stand`); the arrival line prints once per job. Bars on b1:
+the book reads one site fewer (11 -> 10), no mission to the spawn,
+arrivals per mission under 5, exchanges per mission minted. Falsified
+if missions still mint to (7696,6288) or arrivals per mission stay in
+the hundreds.
