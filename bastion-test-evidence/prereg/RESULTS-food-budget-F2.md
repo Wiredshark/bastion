@@ -417,3 +417,23 @@ arrivals-per-mission bars are a NULL read here. They are read on b1,
 which mints missions on the 160-day year (1,329 TradeMission
 arrivals in two days on the E2-b pair without T1), from its E2-c boot
 (the first pair on b1 that carries T1).
+
+Live on b1 (E2-c pair 26fbfc3d08, boot 10:21, +15 min): the book
+refreshed at 14:20:55 log time with sites=11 and at 14:21:23 with
+sites=10 -- the first refresh runs at tick 23, before adoption sets
+the bounds at about tick 300, and admits the home; between the two,
+ITEM 29 minted job=3 to site=(7696, 6288, 182), the spawn, with
+mission_stand=(7696, 6288, 180) (the ring search's fallback to the
+site itself); TradeMission arrivals 0 at +15 (the walker had not
+arrived). T1's first bar holds from the second refresh; its second
+and third were defeated by the boot's first minute. **T1-b, registered
+10:40** (keyed on the W9-i3 stage, the end of the chain):
+`price_book_ready(home)` -- no bounds, no book; the refresh returns
+without a book while the bounds are unknown (a WAITS line every 6,000
+ticks). Pin `the_price_book_waits_for_the_bounds`; planted defect: the
+book built without bounds, red. Prediction (b1 fresh, +15 and day 1):
+the boot's first refresh reads sites=10; every mission's site lies
+outside the bounds and its stand differs from the site cell; arrivals
+per mission under 5; exchanges per mission. Falsified if a mission
+still mints inside the bounds, or arrivals per mission stay in the
+tens with the site outside.

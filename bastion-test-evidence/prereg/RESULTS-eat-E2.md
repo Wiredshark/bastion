@@ -313,6 +313,15 @@ no_shelf, the starving by clock, days 1-2) run from the stage; read
 with the E2-b caveat (the stack strand E2-d corrects lands one pair
 later).
 
+E2-d landed 3765c74e87 at 10:43: check clean, both pins green (its
+own and E2's), staged 10:43, shipped to lab-bin 10:43. Falsified at
+the commit: the cap removed turned the pin red (0 passed, 1 failed),
+tree restored clean at 10:46. The b1 reader (`wait-e2d-b1.sh`: the bag series, BAG CENSUS, the rounds'
+skips and sweeps, the food frame, the starving by clock, days 1-2)
+run from the stage; the b1 restart ends E2-c's own reader before its
+day-1 line, so E2-c's shelves are read on this pair (SHELF ADDED, the
+round's no_shelf).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

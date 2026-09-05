@@ -1898,6 +1898,19 @@ pub(crate) fn trunk_crossing_segment(
     wps.windows(2).position(|w| segment_crosses_solid(solid, w[0], w[1]))
 }
 
+/// ★ W10-e: with no route, a body may glide only at a target within this
+/// many blocks (and only when the line to it is clear); farther, it holds
+/// for the path.
+pub const NO_PATH_GLIDE_MAX: f32 = 3.0;
+pub(crate) static GLIDES_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ W10-e pinned: NO PATH, NO GLIDE. With no route in the cache, the
+/// chaser holds at its own position when the target is farther than
+/// NO_PATH_GLIDE_MAX or the straight line to it crosses a solid.
+pub(crate) fn glide_held_for_path(dist_xy: f32, line_crosses: bool) -> bool {
+    dist_xy > NO_PATH_GLIDE_MAX || line_crosses
+}
+
 pub(crate) fn first_leg_needs_search(feet: Vec3<f32>, node0: Vec3<i32>) -> bool {
     let c = node0.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
     feet.xy().distance(c.xy()) > TRUNK_FIRST_LEG_MAX
@@ -34680,6 +34693,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // the route to the exact pump.
                                 .filter(|wps| {
                                     let solid = |q: Vec3<i32>| terrain.get(q).map(|b| b.is_solid()).unwrap_or(false);
+                                    // ★ W10-e: counted, not refused -- the refusal
+                                    // killed the trunk (2% accepted) and cut no embed;
+                                    // the embeds were the pre-path glide.
                                     match trunk_crossing_segment(&solid, wps) {
                                         None => true,
                                         Some(i) => {
@@ -34693,11 +34709,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     to = ?wps[i + 1],
                                                     waypoints = wps.len(),
                                                     rejected_crossing = r,
-                                                    "bastion: TRUNK ROUTE REJECTED (crossing) — a leg's straight \
-                                                     line passes through a solid; the exact pump paths it"
+                                                    "bastion: TRUNK ROUTE CROSSING (counted) — a leg's straight \
+                                                     line passes through a solid; the route stands (W10-e)"
                                                 );
                                             }
-                                            false
+                                            true
                                         },
                                     }
                                 });
@@ -34888,6 +34904,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             if exhausted {
                                 board.path_cache.remove(&u);
+                            }
+                            // ★ W10-e: NO PATH, NO GLIDE -- with no route the
+                            // steer was the raw target, and a walker whose
+                            // trunk was refused glided straight at a goal forty
+                            // blocks away through whatever stood between (b2,
+                            // W10-d: eight of ten embeds). It holds for the
+                            // path unless the goal is near and the line clear.
+                            if board.path_cache.get(&u).is_none() {
+                                let dist_xy = pos.0.xy().distance(target.xy());
+                                let crosses = dist_xy <= NO_PATH_GLIDE_MAX && {
+                                    let solid = |q: Vec3<i32>| terrain.get(q).map(|b| b.is_solid()).unwrap_or(false);
+                                    first_leg_crosses_solid(&solid, pos.0, target.map(|e| e.floor() as i32))
+                                };
+                                if glide_held_for_path(dist_xy, crosses) {
+                                    let n = GLIDES_HELD.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                    if n.is_power_of_two() {
+                                        info!(
+                                            uid = u.0.get(),
+                                            dist_xy,
+                                            crosses,
+                                            pending = board.path_searches.contains_key(&u.0.get()),
+                                            held_ticks = n,
+                                            "bastion: GLIDE HELD FOR THE PATH — no route yet, the body \
+                                             waits where it stands instead of walking straight at its goal"
+                                        );
+                                    }
+                                    steer = pos.0;
+                                }
                             }
                             steer
                         } else {
@@ -54167,6 +54211,17 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ W10-e pinned: far with no route holds; near with a clear line
+    /// glides; near through a wall holds. Planted defect: the distance
+    /// limit removed (far glides freely) -> red.
+    #[test]
+    fn no_path_no_glide() {
+        assert!(glide_held_for_path(40.0, false), "forty blocks with no path: hold");
+        assert!(!glide_held_for_path(2.0, false), "two blocks, clear: glide");
+        assert!(glide_held_for_path(2.0, true), "two blocks through a wall: hold");
+        assert!(glide_held_for_path(NO_PATH_GLIDE_MAX + 0.1, false), "just past the limit: hold");
     }
 
     /// ★ W10-d pinned: a fence mid-way on a flat leg is crossed; a one-block
