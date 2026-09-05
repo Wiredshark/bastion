@@ -309,6 +309,27 @@ impl ItemInstanceAllocator {
 
 // T0.49: monotonicity + namespace-constancy pin.
 #[cfg(test)]
+mod bastion_persistence_gate {
+    /// ★ R1b pinned: the founding's "a colony stands" mark must be a PERSISTED
+    /// field. `bastion_designations` is serde(default); `bastion_home_anchor`
+    /// is serde(skip) and reads None on every load. Planted defect: swap the
+    /// attributes -> red.
+    #[test]
+    fn the_colony_orders_persist_and_the_home_anchor_does_not() {
+        let src = include_str!("mod.rs");
+        let orders = src.find("pub bastion_designations:").expect("field exists");
+        let before = &src[orders.saturating_sub(40)..orders];
+        assert!(before.contains("#[serde(default)]"), "bastion_designations is persisted");
+        let anchor = src.find("pub bastion_home_anchor:").expect("field exists");
+        let before = &src[anchor.saturating_sub(40)..anchor];
+        assert!(
+            before.contains("#[serde(skip)]"),
+            "bastion_home_anchor is ephemeral -- never key a restore on it"
+        );
+    }
+}
+
+#[cfg(test)]
 mod t0_49_tests {
     use super::ItemInstanceAllocator;
 

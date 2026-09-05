@@ -6149,13 +6149,16 @@ impl Server {
                     // ★ R1 (2026-09-04): a kept world is not founded twice. The
                     // save's home anchor says a colony stands; then the marker
                     // wait and the founding both stand down and the orders replay.
-                    let colony_saved = self
-                        .state
-                        .ecs()
-                        .read_resource::<rtsim::RtSim>()
-                        .state()
-                        .data()
-                        .bastion_home_anchor;
+                    // ★ R1b (2026-09-04): `bastion_home_anchor` is `#[serde(skip)]`,
+                    // None on every load, so R1 never fired live (b3: households
+                    // 58 -> 116 across a -KeepWorld boot). The persisted mark is
+                    // the colony's saved orders (`bastion_designations`,
+                    // serde(default)) -- the ones G1d replays on every kept boot.
+                    let colony_saved: Option<usize> = {
+                        let rt = self.state.ecs().read_resource::<rtsim::RtSim>();
+                        let n = rt.state().data().bastion_designations.len();
+                        (n > 0).then_some(n)
+                    };
                     let wait_for_marker = std::env::var_os("BASTION_ADOPT_WAIT_FOR_MARKER")
                         .is_some()
                         && colony_saved.is_none();
@@ -6255,10 +6258,10 @@ impl Server {
                         // ★ R1: the save holds a colony -- restored, not founded.
                         SPAWNED.store(true, Ordering::Relaxed);
                         tracing::warn!(
-                            anchor = ?colony_saved,
+                            saved_orders = ?colony_saved,
                             dtick,
                             decision = bastion_founding_decision(true, dtick, blocked_on_marker),
-                            "bastion: COLONY RESTORED, NOT FOUNDED — the save holds a colony (home anchor set); the autofound and the town pick stand down and the saved orders replay"
+                            "bastion: COLONY RESTORED, NOT FOUNDED — the save holds a colony (R1b: keyed on the saved orders, the persisted mark); the autofound and the town pick stand down and the saved orders replay"
                         );
                     } else if dtick >= 30 && !blocked_on_marker {
                         SPAWNED.store(true, Ordering::Relaxed);
@@ -8976,6 +8979,24 @@ pub(crate) fn bastion_founding_decision(colony_saved: bool, dtick: u64, blocked_
 #[cfg(test)]
 mod bastion_founding_tests {
     use super::bastion_founding_decision;
+
+    /// ★ R1b pinned: the founding branch keys `colony_saved` on the PERSISTED
+    /// orders, never on the serde(skip) home anchor (which read None on every
+    /// load and let the town found twice). Planted defect: put the anchor
+    /// back into the binding -> red.
+    #[test]
+    fn the_saved_colony_is_read_from_a_persisted_field() {
+        let src = include_str!("lib.rs");
+        let start = src
+            .find("let colony_saved: Option<usize> = {")
+            .expect("the R1b binding exists");
+        let block = &src[start..start + 400];
+        assert!(block.contains("bastion_designations"), "the binding reads the persisted orders");
+        assert!(
+            !block.contains("bastion_home_anchor"),
+            "the binding must not read the serde(skip) anchor"
+        );
+    }
 
     /// ★ R1 pinned: a saved colony is restored, never founded again, whatever
     /// the tick or the marker; without one the old rules hold. Planted defect:

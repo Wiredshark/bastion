@@ -229,3 +229,24 @@ colonist Build, that name carries priorities but no hours, so the draft
 may staff wanted plus the accidental names until the plan closes.
 
 Live evidence: the b3 house-day boot on this pair (below).
+
+#### The house day on the G1c-e pair (b3, d054ec6c40, 19:53-)
+
+Day 0: the plan queued at hour 11; 5 cells placed by colonist 142 before
+the first morning; `unclaimed designation swept ... Designated(Build)` 0
+(the G1c-e-a sweep fix holds).
+
+Day-1 morning: `BUILD DRAFT SIZED wanted=6 builders_now=1 named_build=5
+plan_cells=1904 open_build_cells=1909 roster_now=49` and `BUILDERS
+DRAFTED ... drafted=["103:Cook", "120:Cook", "134:Cook", "139:Cook",
+"906:Cook"]`. The draft fired for the first time since G1c-c: wanted 6
+on the plan's cells (was 1 on the open jobs), builders_now counted the
+one colonist with build hours and not the four zero-hour names.
+
+Two things to read at day 2: the placement rate with a crew (the
+control is 62 cells by two accidental builders), and how many distinct
+builders place cells -- the four zero-hour names carry `in_lane(Build)`
+priorities from the argmax and may build beside the drafted five (the
+known edge: up to 10 on a cap of 6). The draft took five cooks; the
+kitchen cap admits two at a time, so the four cooks left are enough
+(read `cooked_today` at day 2 against day 1's 90 on b1 to be sure).

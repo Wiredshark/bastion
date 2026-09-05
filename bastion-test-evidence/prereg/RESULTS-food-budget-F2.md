@@ -217,3 +217,40 @@ the day (the planted cells' ripening share outran 49 eaters). The
 day-1 budget bar (>= 9,000) stays failed by design pending Ben's bridge
 ruling; the day-7 starving bar is read on this pair (b1 keeps it to day
 7; b2 moves to the F2c'-c pair when it stages).
+
+A hypothesis raised and refuted the same evening: that the dense
+planting (tomato 1.65 and carrot 0.18 are `is_solid` to the
+pathfinder) walls the fields against the farmers. b2's day-1 work
+hours completed 152 harvests with ~2,500 cells matured (the F2c' pair
+had 17 by its day 2 with 41 matured); the night before, with 50 jobs
+minted and 2 claimed, was the night. What the read did establish is
+the harvest capacity: about 15 cells per farmer-day (a harvest is
+travel-priced like a build cell; 6 open jobs per plot, 8 plots). On
+the eight-day year maturity outruns the harvest; on the 160-day year
+ripening spreads across the season.
+
+### Day 2 on the F2c'-b pair: the harvest never reaches the store
+
+| day 2 | b1 (160-day year) | b2 (8-day year) |
+|---|---|---|
+| food_stock (day 1 -> 2) | 3,745 -> 3,698 | 3,639 -> 3,565 |
+| harvested_today (units) | 0 | 604 |
+| matured_today | 0 | 1,189 |
+| cooked_today | 40 (day 1: 90) | 95 |
+| meals / targets_shunned | 106 / 110 | 109 / 26 |
+| starving (evening line) | 8 of 50 | 3 of 51 |
+| store_units (day 1 -> 2) | -- | 12,423 -> 12,386 |
+
+b2 harvested 604 units and its store did not move. The harvest
+completion emits one ground drop per unit at the cell (four per wheat
+cell, scattered); the haul generator read `seen_pickups=403 admitted=0
+pending=202 cap=204`; eight haulers completed ~136 hauls a day, mostly
+curry and stone; four carrots reached the store all boot. F3 (the
+harvest rides in the farmer's basket: the yield into the bag, a
+deposit run at a basket of twelve or at shift end) is registered
+against this: crop deposits track the harvest within a day, the store
+rises by roughly the harvest.
+
+b1's collapse is a different mechanism: the cook trap at the store
+approach (W8-f) shunned the store cells 110 times in a day and halved
+the kitchen; the eight starving at the evening line are its tail.
