@@ -401,6 +401,12 @@ follow under "W9-c live".
 | EMBED WATCH | 4 | 3 | 13 | 6 |
 | ITEM 39 p95 | 462 us | 447 us | 469 us | 442 us |
 
+Day 1 on W9-c (04:48, 7,168 routes): detour 2.18, lifted_up 0.56 a
+route, sidestepped 2.5 a route, rejected_solid 3,750, rejected_dz 808;
+EMBED WATCH 10 for the day (W9-i: 13 by boot +10 alone); STALL
+BLAMED ON THE WALKER 4, ROUTE FAULT 5; food_stock 3,274, 20.9 days;
+meals 46; panics 0.
+
 Disposition: W9-c does what it says -- wall-top lifts fall by a third
 per route, the manufactured steep steps by 70%, embeds by half -- and
 the two numbers it was aimed at barely move. The detour ratio near 2
@@ -414,6 +420,29 @@ as two above the lower grade. Both need the right frame before another
 mover row: W9-i2 (queued at the end of the chain) counts colonists by
 height above the natural surface of their OWN column, which is what a
 wall top or a roof is and a slope is not.
+
+### W10-b landed (c6d9d9f55e, 04:43)
+
+Check clean, pin `a_trunk_segment_drops_at_most_two` green (1 passed),
+staged 04:43, shipped to lab-bin 04:44. Falsified at the commit: the
+limit planted back at six turned the pin red (0 passed, 1 failed),
+tree restored clean at 04:46. The live read waits for W10-a's pair on
+b2 (`wait-w10a-b2.sh`), where the two rows are read together.
+
+## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
+
+An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground
+(feet on the block above the surface, or below it), 1 a step up, 2 two
+or more above (a wall top, a fence, a roof, a pile). Every 300 ticks a
+BODY HEIGHT CENSUS counts the colonist join by that class against
+`column_surface_z` under each body; unseen columns are counted, never
+folded in. Pin: `a_height_is_measured_from_its_own_ground`; planted
+defect: measured from the surface block itself, red.
+
+Prediction (b2 fresh on the pair): two_plus_above under 3% at every
+census after boot +4 min, unseen 0. Falsified if two_plus_above holds
+above 5% -- then bodies really do stand on walls and the next mover
+row is a route row.
 
 ## W10-b and W10-a, registered 02:20 (queued behind R3, before the binaries)
 

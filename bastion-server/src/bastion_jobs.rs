@@ -1290,6 +1290,14 @@ pub static TRUNK_NODES_LIFTED: core::sync::atomic::AtomicU64 =
 /// had no standable cell in reach (a tile centre inside a wall line).
 pub static TRUNK_NODES_SIDESTEPPED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+/// ★ W10-a: first legs sent to the pump, stitched at completion, and given
+/// up (the tail committed alone, as before).
+pub static TRUNK_FIRST_LEG_SEARCHED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_FIRST_LEG_STITCHED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_FIRST_LEG_UNREACHABLE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 /// ★ W9-i: the trunk's routes, profiled. Lifts split by direction (a node
 /// lifted UP onto something is the wall-top question); the walked length
 /// and the straight line summed in hundredths of a block so the detour
@@ -1767,6 +1775,26 @@ pub(crate) fn on_ground_not_a_wall(solid: &impl Fn(Vec3<i32>) -> bool, q: Vec3<i
         .filter(|(dx, dy)| solid(Vec3::new(below.x + dx, below.y + dy, below.z)))
         .count()
         >= GROUND_NEIGHBOURS_MIN
+}
+
+/// ★ W10-a: THE FIRST LEG IS SEARCHED. The trunk's node 0 is the centre of
+/// the nearest ROAD tile; a walker who starts off the network -- in the
+/// store, in a house, at the spot a restored world saved it -- is 12-47
+/// blocks from it and glides that leg raw, through the wall (eleven of a
+/// restored boot's first twelve embeds). Farther than a tile: the leg is
+/// searched exactly and stitched onto the trunk.
+pub const TRUNK_FIRST_LEG_MAX: f32 = 6.0;
+
+pub(crate) fn first_leg_needs_search(feet: Vec3<f32>, node0: Vec3<i32>) -> bool {
+    let c = node0.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+    feet.xy().distance(c.xy()) > TRUNK_FIRST_LEG_MAX
+}
+
+/// The approach, then the trunk, the shared node once.
+pub(crate) fn stitch_first_leg(mut approach: Vec<Vec3<i32>>, tail: Vec<Vec3<i32>>) -> Vec<Vec3<i32>> {
+    let skip = usize::from(approach.last().is_some_and(|a| tail.first() == Some(a)));
+    approach.extend(tail.into_iter().skip(skip));
+    approach
 }
 
 pub(crate) fn trunk_node_fix(
@@ -14058,6 +14086,10 @@ pub struct JobBoard {
     /// every 300 ticks from the same pickup-item join; the rtsim tick copies
     /// it into the save.
     pub store_snapshot: Vec<(Vec3<i32>, String, u32)>,
+    /// ★ W10-a: trunk routes held while the pump searches their first leg
+    /// (feet -> node 0): (node 0 the search was made for, the trunk's
+    /// nodes, the route's target). Consumed at that search's completion.
+    pub trunk_tail: HashMap<Uid, (Vec3<i32>, Vec<Vec3<i32>>, Vec3<f32>)>,
     /// ★ R3: the saved larder read back by the rtsim tick at boot, drained
     /// ONCE by this system into [`PendingSeedItems`] (the founding's own
     /// deferred-delivery queue), which lands it in the town's store when the
@@ -34066,7 +34098,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         WORLD_BUILDS
                                             .load(core::sync::atomic::Ordering::Relaxed),
                                     );
-                                    board.path_cache.insert(u, (wps, 0, target));
+                                    // ★ W10-a: THE FIRST LEG IS SEARCHED. Node 0
+                                    // is the nearest road tile's centre; from
+                                    // farther than a tile the approach goes to
+                                    // the pump and the trunk waits as a tail.
+                                    let node0 = wps.first().copied();
+                                    if let Some(n0) = node0
+                                        && first_leg_needs_search(pos.0, n0)
+                                        && !board.path_searches.contains_key(&u.0.get())
+                                    {
+                                        TRUNK_FIRST_LEG_SEARCHED
+                                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                        board.trunk_tail.insert(u, (n0, wps, target));
+                                        board.path_searches.insert(
+                                            u.0.get(),
+                                            PendingSearch {
+                                                search: common::path::FullPathSearch::new(
+                                                    common::path::PathLength::Small,
+                                                ),
+                                                startf: pos.0,
+                                                target: n0.map(|e| e as f32)
+                                                    + Vec3::new(0.5, 0.5, 0.0),
+                                                cfg,
+                                                lane: SearchLane::Fill,
+                                            },
+                                        );
+                                    } else {
+                                        board.path_cache.insert(u, (wps, 0, target));
+                                    }
                                 } else {
                                     // → the SEARCH PUMP: enqueue, never
                                     // compute inline (the collapse class).
@@ -41208,16 +41267,57 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // it first — trunk or an earlier
                                     // delivery — owns the leg until the
                                     // fill's own staleness replaces it.
-                                    if board.path_cache.get(&u).is_none() {
-                                        board
-                                            .path_cache
-                                            .insert(u, (wps, 0, ps.target));
+                                    // ★ W10-a: an approach stitches onto the
+                                    // tail it was searched for (node 0 matched);
+                                    // any other tail is stale and dropped.
+                                    let tgt_cell = ps.target.map(|e| e.floor() as i32);
+                                    match board.trunk_tail.remove(&u) {
+                                        Some((n0, tail, tgt)) if n0 == tgt_cell => {
+                                            let n = TRUNK_FIRST_LEG_STITCHED.fetch_add(
+                                                1,
+                                                core::sync::atomic::Ordering::Relaxed,
+                                            ) + 1;
+                                            if n.is_power_of_two() {
+                                                info!(
+                                                    uid = u.0.get(),
+                                                    approach_nodes = wps.len(),
+                                                    trunk_nodes = tail.len(),
+                                                    stitched = n,
+                                                    searched = TRUNK_FIRST_LEG_SEARCHED
+                                                        .load(core::sync::atomic::Ordering::Relaxed),
+                                                    unreachable = TRUNK_FIRST_LEG_UNREACHABLE
+                                                        .load(core::sync::atomic::Ordering::Relaxed),
+                                                    "bastion: FIRST LEG STITCHED — the approach \
+                                                     from the feet was searched exactly and joined \
+                                                     onto the trunk"
+                                                );
+                                            }
+                                            let stitched = stitch_first_leg(wps, tail);
+                                            board.path_cache.insert(u, (stitched, 0, tgt));
+                                        },
+                                        _ => {
+                                            if board.path_cache.get(&u).is_none() {
+                                                board
+                                                    .path_cache
+                                                    .insert(u, (wps, 0, ps.target));
+                                            }
+                                        },
                                     }
                                 },
                                 (
                                     SearchLane::Fill,
                                     common::path::FullPathOutcome::Unreachable,
                                 ) => {
+                                    // ★ W10-a: no exact approach -- the trunk
+                                    // as it was, first leg raw (identity).
+                                    if let Some((n0, tail, tgt)) = board.trunk_tail.remove(&u)
+                                        && n0 == ps.target.map(|e| e.floor() as i32)
+                                    {
+                                        TRUNK_FIRST_LEG_UNREACHABLE
+                                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                        board.path_cache.insert(u, (tail, 0, tgt));
+                                        continue;
+                                    }
                                     board.path_cache.remove(&u);
                                     // ★ THE VERDICT REACHES THE JOB (Ben's
                                     // wall-press cluster: the search said
@@ -53244,6 +53344,27 @@ mod tests {
         // a fence line along y == 5
         let fence = |c: Vec3<i32>| c.z == 180 && c.y == 5;
         assert!(!on_ground_not_a_wall(&fence, Vec3::new(10, 5, 181)), "a fence top: two");
+    }
+
+    /// ★ W10-a pinned: farther than a tile from node 0 the first leg is
+    /// searched; the approach stitches onto the trunk with the shared node
+    /// once; an empty approach is the trunk. Planted defect: the approach
+    /// dropped at the stitch -> red.
+    #[test]
+    fn the_first_leg_is_searched_and_stitched() {
+        let n0 = Vec3::new(7670, 6337, 181);
+        assert!(!first_leg_needs_search(Vec3::new(7672.5, 6339.5, 181.0), n0), "three blocks: the tile's own leg");
+        assert!(first_leg_needs_search(Vec3::new(7667.2, 6348.9, 181.5), n0), "twelve blocks, from inside the store");
+        assert!(!first_leg_needs_search(Vec3::new(7670.5, 6337.5, 186.0), n0), "height alone is not distance");
+        let approach = vec![Vec3::new(7667, 6348, 181), Vec3::new(7668, 6345, 181), n0];
+        let tail = vec![n0, Vec3::new(7676, 6337, 181), Vec3::new(7682, 6337, 181)];
+        let stitched = stitch_first_leg(approach.clone(), tail.clone());
+        assert_eq!(stitched.first(), approach.first(), "the route starts with the approach");
+        assert_eq!(stitched.len(), 5, "the shared node once");
+        assert_eq!(stitched.last(), tail.last(), "and ends with the trunk");
+        assert_eq!(stitch_first_leg(Vec::new(), tail.clone()), tail, "no approach: the trunk as it was");
+        let apart = vec![Vec3::new(7667, 6348, 181)];
+        assert_eq!(stitch_first_leg(apart, tail.clone()).len(), 4, "no shared node: nothing dropped");
     }
 
     /// ★ W10-b pinned: a trunk step of two is a body's step; three is a
