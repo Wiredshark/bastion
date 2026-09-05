@@ -336,6 +336,31 @@ pub(crate) fn start_condition(feet_solid: bool, neighbours_solid: [bool; 4]) -> 
 }
 pub(crate) static UNREACHABLE_APPROACHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// ★ W12-i2: where an unreachable approach from inside a house fails.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ExitVerdict {
+    /// The house region holds no door sprite at the feet's storey.
+    NoDoor,
+    /// The nearest door cell is itself unreachable from the feet: the
+    /// interior is sealed (the doorstep, the neighbour rule, the floor).
+    SealedInside,
+    /// The door is reachable and the target is not: the way out is fine,
+    /// the way on is the defect.
+    ExitOpenTargetUnreachable,
+}
+
+/// ★ W12-i2 pinned: no door -> NoDoor; a door the probe could not reach ->
+/// SealedInside; a door the probe reached -> ExitOpenTargetUnreachable.
+pub(crate) fn door_probe_verdict(door_found: bool, door_reached: bool) -> ExitVerdict {
+    if !door_found {
+        ExitVerdict::NoDoor
+    } else if !door_reached {
+        ExitVerdict::SealedInside
+    } else {
+        ExitVerdict::ExitOpenTargetUnreachable
+    }
+}
+
 /// ★ W10-i1 pinned: the pump's deliveries since the last census -- by
 /// kind, with the wait (ticks from enqueue to delivery) summed and its
 /// maximum kept -- and the steps it took.
@@ -42637,17 +42662,74 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 .map(|(r, _)| *r)
                                                 .collect();
                                             let to = ps.target.map(|e| e.floor() as i32);
+                                            let from_house = houses.iter().find(|r| r.contains_point_xy(feet)).copied();
                                             info!(
                                                 uid = u.0.get(),
                                                 from = ?feet,
                                                 to = ?to,
                                                 first_leg = board.trunk_tail.get(&u).is_some_and(|(n0, _, _)| *n0 == to),
                                                 start = ?start,
-                                                from_in_house = houses.iter().any(|r| r.contains_point_xy(feet)),
+                                                from_in_house = from_house.is_some(),
                                                 to_in_house = houses.iter().any(|r| r.contains_point_xy(to)),
                                                 unreachable = n,
                                                 "bastion: UNREACHABLE APPROACH — the exact search from the feet found no way; what the feet stood in"
                                             );
+                                            // ★ W12-i2: THE UNREACHABLE APPROACH PROBES ITS DOOR.
+                                            if let Some(h) = from_house {
+                                                let is_door = |q: Vec3<i32>| {
+                                                    terrain.get(q).ok().and_then(|b| b.get_sprite()).is_some_and(|sp| {
+                                                        matches!(
+                                                            sp,
+                                                            common::terrain::sprite::SpriteKind::Door
+                                                                | common::terrain::sprite::SpriteKind::DoorDark
+                                                                | common::terrain::sprite::SpriteKind::DoorWide
+                                                        )
+                                                    })
+                                                };
+                                                let mut doors: Vec<Vec3<i32>> = Vec::new();
+                                                for x in h.min.x..=h.max.x {
+                                                    for y in h.min.y..=h.max.y {
+                                                        for z in (feet.z - 1)..=(feet.z + 2) {
+                                                            let q = Vec3::new(x, y, z);
+                                                            if is_door(q) {
+                                                                doors.push(q);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                doors.sort_by_key(|d| ((d.x - feet.x).abs() + (d.y - feet.y).abs(), d.x, d.y, d.z));
+                                                let door = doors.first().copied();
+                                                let door_reached = door.is_some_and(|d| {
+                                                    matches!(
+                                                        common::path::bastion_full_path_ext(
+                                                            &*terrain,
+                                                            ps.startf,
+                                                            d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+                                                            &ps.cfg,
+                                                            common::path::PathLength::Medium,
+                                                        ),
+                                                        common::path::FullPathOutcome::Path(_)
+                                                    )
+                                                });
+                                                let verdict = door_probe_verdict(door.is_some(), door_reached);
+                                                let walk = |q: Vec3<i32>| common::path::colonist_walkable(&*terrain, q);
+                                                let (w_at, w_below, w_above) = door
+                                                    .map(|d| (walk(d), walk(d - Vec3::unit_z()), walk(d + Vec3::unit_z())))
+                                                    .unwrap_or((false, false, false));
+                                                info!(
+                                                    uid = u.0.get(),
+                                                    from = ?feet,
+                                                    house_min = ?h.min,
+                                                    doors = doors.len(),
+                                                    door = ?door,
+                                                    door_reached,
+                                                    verdict = ?verdict,
+                                                    door_walkable_at = w_at,
+                                                    door_walkable_below = w_below,
+                                                    door_walkable_above = w_above,
+                                                    "bastion: UNREACHABLE APPROACH DOOR PROBE — a second search from the same feet to the house's nearest door"
+                                                );
+                                            }
                                         }
                                     }
                                     // ★ W10-a: no exact approach -- the trunk
@@ -54846,6 +54928,19 @@ mod tests {
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.1, 0.0), 1000 + OVERRIDE_WALL_TICKS), Failed, "still: failed");
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.8, 0.0), 1000 + OVERRIDE_WALL_TICKS), Anchor, "moved: re-anchor");
         assert_eq!(override_verdict(a, node, feet, 1000 + OVERRIDE_ANCHOR_STALE_TICKS + 1), Anchor, "stale");
+    }
+
+    /// ★ W12-i2 pinned: no door is NoDoor whatever the probe; a door the
+    /// probe did not reach is SealedInside; a door it reached is
+    /// ExitOpenTargetUnreachable. Planted defect: the sealed and the open
+    /// swapped -> red.
+    #[test]
+    fn the_unreachable_approach_probes_its_door() {
+        use ExitVerdict::*;
+        assert_eq!(door_probe_verdict(false, false), NoDoor);
+        assert_eq!(door_probe_verdict(false, true), NoDoor, "no door: the probe's word is void");
+        assert_eq!(door_probe_verdict(true, false), SealedInside);
+        assert_eq!(door_probe_verdict(true, true), ExitOpenTargetUnreachable);
     }
 
     /// ★ W12-i1 pinned: the feet cell solid is InSolid whatever the

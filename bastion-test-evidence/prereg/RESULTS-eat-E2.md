@@ -667,6 +667,13 @@ night meals stayed at nine, and two bodies starve in bed through the
 night as before. The carrying is done; the eating is the row -- the
 night-meal rule's own conditions (read next).
 
+E2-g's cost, second replicate (b2 on the E2-h pair 9cbeb09719, which
+carries the noon lift; the day-1 line at 16:13): works 154, hauls
+123, haul_share 44%, private_units 39 -- against b2's own E2-f day
+(336 works, 106 hauls) and W10-g day (345 / 73). Two worlds, the
+same direction: the noon lift takes half the day's works. E2-g-b
+(the walk-home window) is the re-cut.
+
 ### E2-h landed (9cbeb09719, staged 15:31)
 
 Check clean, the pin green (E2-d's re-stated), both halves staged
@@ -682,6 +689,18 @@ loads=58 no_shelf=0 skipped_no_small=0 (E2-g's day 0: 54 loads,
 0 skipped -- the day-0 store still holds small stacks, so day 0 does
 not test the fallback). The row's test is the day-1 round (E2-e's
 day 1: 23 skipped, 31 loads), read at hour 13 of day 1 (~16:35).
+
+After night 1 (b2, hour 6 of day 1, 16:21): the day-0 round's loads
+58, arrivals to private shelves before the sweep 38 (general 3),
+SUPPER CARRIED HOME 16, SWEPT 26, NIGHT MEAL AT HOME 6, no_food_found
+282, meals 48, YEAR day=1 food_stock 3,976 / 25.4 days; in_bags
+62-128 by day (E2-f in the pair). Starving by clock: RestAt/Arrived
+5, 8, 11, 16 at hours 0-3 with RestAt/Waiting 7, 7 at 0-1 and
+RestAt/Traveling 6-7 at 2-3; distinct starving sleepers 3; the
+evening EatFrom/Waiting 11, 11, 7, 6 at 17-20 (a queue at the food,
+a state E2-e's nights did not show). The second world's night says
+what b1's E2-g night said: the shelves are stocked and two or three
+bodies starve in bed regardless. E2-i1 reads the night shelf.
 
 ## E2-i1, registered 15:55 (keyed on the W12-i2 stage, the end of the chain, before the binary)
 
@@ -726,6 +745,16 @@ HOME falls under 5 with shelves still short. Rejected: a per-hour
 cap on the eaters (a queue is the work day); a lift only in Leisure
 (the last work hour is when the store is on the way). NOT evidenced:
 night 2; the night watch's walk home.
+
+### E2-g-b landed (4ded49d334, staged 16:15)
+
+Check clean, the pin green, both halves staged 16:15. The falsifier
+(the walk home from noon) and the b1 reader (`wait-e2gb-b1.sh`: after
+W11-b's day-1 read, a fresh b1 with the fresh-boot guard; the lanes'
+works, SUPPER CARRIED HOME, the round, the shelf arrivals, the sweep,
+night meals and the starving at hour 6 of days 1 and 2) run from the
+stage; the W12-i2 chain keys on it. The falsifier went red and
+restored clean at 16:17; lab-bin carries the pair from 16:15.
 
 ### E2-e's second replicate: b2 on the W10-i1 pair (65db6d4cab, which carries E2-e), day-1 line at 13:52
 
