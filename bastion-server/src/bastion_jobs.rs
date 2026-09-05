@@ -312,6 +312,30 @@ pub enum PumpOutcome {
     Exhausted,
 }
 
+/// ★ W12-i1: what the feet stood in when an exact search from them
+/// proved unreachable.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StartCondition {
+    /// The feet cell itself is solid: the body stands in a wall.
+    InSolid,
+    /// All four horizontal neighbours are solid at the feet's z or z+1.
+    Boxed,
+    Open,
+}
+
+/// ★ W12-i1 pinned: the feet cell solid -> InSolid whatever the
+/// neighbours; four solid neighbours -> Boxed; three or fewer -> Open.
+pub(crate) fn start_condition(feet_solid: bool, neighbours_solid: [bool; 4]) -> StartCondition {
+    if feet_solid {
+        StartCondition::InSolid
+    } else if neighbours_solid.iter().all(|b| *b) {
+        StartCondition::Boxed
+    } else {
+        StartCondition::Open
+    }
+}
+pub(crate) static UNREACHABLE_APPROACHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// ★ W10-i1 pinned: the pump's deliveries since the last census -- by
 /// kind, with the wait (ticks from enqueue to delivery) summed and its
 /// maximum kept -- and the steps it took.
@@ -323,6 +347,10 @@ pub struct PumpCensus {
     pub wait_sum: u64,
     pub wait_max: u64,
     pub steps: u32,
+    /// ★ W12-i1: the unreachable deliveries by what the feet stood in.
+    pub unreachable_start_solid: u32,
+    pub unreachable_boxed: u32,
+    pub unreachable_open: u32,
 }
 
 impl PumpCensus {
@@ -42395,6 +42423,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     mean_wait = c.mean_wait(),
                     max_wait = c.wait_max,
                     steps = c.steps,
+                    unreachable_start_solid = c.unreachable_start_solid,
+                    unreachable_boxed = c.unreachable_boxed,
+                    unreachable_open = c.unreachable_open,
                     "bastion: PUMP CENSUS — the search pump's last 300 ticks: what is pending \
                      and for how long, what was delivered and how long it waited"
                 );
@@ -42508,6 +42539,46 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     SearchLane::Fill,
                                     common::path::FullPathOutcome::Unreachable,
                                 ) => {
+                                    // ★ W12-i1: THE UNREACHABLE APPROACH NAMES ITS START.
+                                    {
+                                        let feet = ps.startf.map(|e| e.floor() as i32);
+                                        let solid = |q: Vec3<i32>| terrain.get(q).map(|b| b.is_solid()).unwrap_or(false);
+                                        let feet_solid = solid(feet);
+                                        let nb = |d: Vec3<i32>| solid(feet + d) || solid(feet + d + Vec3::unit_z());
+                                        let neighbours = [
+                                            nb(Vec3::new(1, 0, 0)),
+                                            nb(Vec3::new(-1, 0, 0)),
+                                            nb(Vec3::new(0, 1, 0)),
+                                            nb(Vec3::new(0, -1, 0)),
+                                        ];
+                                        let start = start_condition(feet_solid, neighbours);
+                                        match start {
+                                            StartCondition::InSolid => board.pump_census.unreachable_start_solid += 1,
+                                            StartCondition::Boxed => board.pump_census.unreachable_boxed += 1,
+                                            StartCondition::Open => board.pump_census.unreachable_open += 1,
+                                        }
+                                        let n = UNREACHABLE_APPROACHES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                        if n <= 8 || n.is_power_of_two() {
+                                            let houses: Vec<Region> = board
+                                                .designated
+                                                .iter()
+                                                .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                                                .map(|(r, _)| *r)
+                                                .collect();
+                                            let to = ps.target.map(|e| e.floor() as i32);
+                                            info!(
+                                                uid = u.0.get(),
+                                                from = ?feet,
+                                                to = ?to,
+                                                first_leg = board.trunk_tail.get(&u).is_some_and(|(n0, _, _)| *n0 == to),
+                                                start = ?start,
+                                                from_in_house = houses.iter().any(|r| r.contains_point_xy(feet)),
+                                                to_in_house = houses.iter().any(|r| r.contains_point_xy(to)),
+                                                unreachable = n,
+                                                "bastion: UNREACHABLE APPROACH — the exact search from the feet found no way; what the feet stood in"
+                                            );
+                                        }
+                                    }
                                     // ★ W10-a: no exact approach -- the trunk
                                     // as it was, first leg raw (identity).
                                     if let Some((n0, tail, tgt)) = board.trunk_tail.remove(&u)
@@ -54694,6 +54765,19 @@ mod tests {
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.1, 0.0), 1000 + OVERRIDE_WALL_TICKS), Failed, "still: failed");
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.8, 0.0), 1000 + OVERRIDE_WALL_TICKS), Anchor, "moved: re-anchor");
         assert_eq!(override_verdict(a, node, feet, 1000 + OVERRIDE_ANCHOR_STALE_TICKS + 1), Anchor, "stale");
+    }
+
+    /// ★ W12-i1 pinned: the feet cell solid is InSolid whatever the
+    /// neighbours; four solid neighbours is Boxed; three is Open. Planted
+    /// defect: Boxed at three of four -> red.
+    #[test]
+    fn the_unreachable_approach_names_its_start() {
+        use StartCondition::*;
+        assert_eq!(start_condition(true, [false; 4]), InSolid, "standing in a wall");
+        assert_eq!(start_condition(true, [true; 4]), InSolid, "in a wall, boxed too: the wall names it");
+        assert_eq!(start_condition(false, [true; 4]), Boxed, "four solid neighbours");
+        assert_eq!(start_condition(false, [true, true, true, false]), Open, "three of four: a way out");
+        assert_eq!(start_condition(false, [false; 4]), Open, "open ground");
     }
 
     /// ★ W10-i1 pinned: two deliveries waiting 10 and 30 ticks count two

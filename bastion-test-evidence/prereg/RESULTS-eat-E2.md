@@ -457,6 +457,31 @@ the holders, the food frame, the hauls and the meals at +10 and day
 Whole test inverted) went red and restored clean at 14:25; lab-bin
 carries the pair from 14:21.
 
+b2 +10 min (hour 13 of day 0, boot 14:22, read 14:32): A LOAD, NOT
+THE STACK 9 witness lines, splits=16 (took=16 left=16, 16/11, 16/8,
+16/14, 16/16, 1/3); in_bags 451 at the boot line (the founding
+loadout, as every pair), then 103, 113, 130, 106 through hours 8-11
+with in_stockpile 3,917-3,941; BAG CENSUS 2 lines; the largest
+holder 32 units (uid 120: two loads); "job claimed" 370, arrivals
+499, working=6 moving=40; panics 0. The morning matches E2-d's
+(27-80 at hours 9-16 on b1); the bar is day 1, where E2-d's b1 held
+400-686 all day, read at the day line (~15:05).
+
+Day 1 in the evening frame (hour 0 of day 1, read 14:52): A LOAD,
+NOT THE STACK splits=32; in_bags 103, 113, 130, 106, 97, 140, 89,
+81, 36, 45, 27, 24 through hours 8-21 (one line, hour 14's 140, over
+the bar of 120; E2-d's b1 day 0: 27-80); in_stockpile 3,841-3,984;
+BAG CENSUS 2 lines; the largest holder 32; YEAR day=1 food_stock
+3,969 / 25.3 days; meals 44, no_food_found 598; the town's day line
+works 336, hauls 106 (its W10-g day: 345 / 73; its E2-e day: 248 /
+131) -- the works are back to the W10-g level with the loads split;
+"job claimed" 443, arrivals 790, working=33; panics 0. This frame
+is the FIRST day (hours 7-23 of day 0); E2-d's 400-686 came on the
+SECOND day, when the store's small stacks are gone and every fetch
+is from a stack of hundreds. The comparable read is b2's day-1
+series at the day-2 line (`read-e2f-day2.sh`, ~15:35); the W12-i1
+reader is re-keyed behind it.
+
 ## E2-e, registered 11:15 (keyed on the T1-b stage, the end of the chain, before the binary)
 
 The claim scoring gave a supper load the Haul base priority, then a
@@ -577,6 +602,16 @@ land on the largest stacks and the store's food frame drops by more
 than the loads' units (the split did not bound the carry).
 Rejected: raising SUPPER_STACK_MAX (the cap was the E2-d fix for the
 whole-stack strand; E2-f bounds the carry at the pickup instead).
+
+### E2-g landed (3abbbdcf3d, staged 14:45)
+
+Check clean, the pin green, both halves staged 14:45. The falsifier
+(the lift removed) and the b1 reader (`wait-e2g-b1.sh`: after W11's
+day-1 read, a fresh b1 with the fresh-boot guard; SUPPER CARRIED
+HOME, the round, the shelf arrivals, the sweep, night meals and the
+starving at hour 6 of days 1 and 2) run from the stage; the W12-i1
+chain keys on it. The falsifier went red and restored clean at 14:48;
+lab-bin carries the pair from 14:46.
 
 ### E2-e's second replicate: b2 on the W10-i1 pair (65db6d4cab, which carries E2-e), day-1 line at 13:52
 
