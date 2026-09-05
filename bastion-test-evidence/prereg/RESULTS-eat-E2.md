@@ -524,6 +524,48 @@ more loads will not deliver. The next lever is not the lane: the
 eater carries its own supper home (E2-g, registered below once the
 round's destination and the home lookup are read).
 
+### E2-e's second replicate: b2 on the W10-i1 pair (65db6d4cab, which carries E2-e), day-1 line at 13:52
+
+STORAGE SUMMARY day=1 private_units=52 (b1's E2-e run: 21; E2-d: 0
+and 12) -- the shelves are stocked at midnight on both worlds. The
+town's day line: works 248, hauls 131, haul_share 34%, against b2's
+own W10-g day (345 works, 73 hauls, 17%). The errands at priority 5
+doubled the day's hauls and took a quarter of its works: a cost the
+E2-e bars did not name (its falsifier watched for hauls falling to
+zero, not works). E2-g moves the carrying to the eaters at their
+shift's end; its bar "the day's works not down by a third" now has
+this number to beat, and the works on the W10-i1 pair's day 2 are
+the control.
+
+## E2-g, registered 13:45 (keyed on the E2-f stage, the end of the chain, before the binary)
+
+Why only haulers took E2-e's loads: the claim scoring's base is the
+claimant's lane weight for the job's work, a miner's or a cook's Haul
+weight is zero, and the zero skip (priority_zero) runs BEFORE E2-e's
+errand lift. Mechanism: the round records each load's eaters (the
+bed owners of its house) in `board.supper_eaters`;
+`own_supper_priority(base, own)` = 6 for a load whose eaters include
+the claimant, placed before the haul gate (skipped for it), the guard
+door (skipped) and the zero skip; SUPPER_ROUND_LOADS_MAX 36 -> 64 so
+every short house gets a load; the claim commit counts SUPPER
+CARRIED HOME. Prior art: RimWorld's meal for the road, the Sims'
+own fridge, Banished families stocking their own house. Pin
+`supper_is_carried_home_by_its_eater`; planted: the lift removed,
+red. Prediction (b1 fresh, night 1 at hour 6 of day 1,
+`wait-e2g-b1.sh`): SUPPER CARRIED HOME at least 25 (0); shelf
+arrivals before the sweep at least 40 of the loads (21 of 36); SWEPT
+under 10 (18); NIGHT MEAL AT HOME at least 15 (8); in-bed starving
+at most 6 an hour at hours 1-3 (14-22) and sleepers at most 2 (5);
+the Haul lane's hauls at least 20 (35); food_stock within 200 of
+4,052; bags under 400 but for the Guard's night stack (E2-f's).
+Falsified if the eaters claim and the shelf arrivals stay under 30
+(they claim and do not carry), or if the day's works fall by a third
+(the errand pulls the eaters off their trade: the window, not the
+rule). Rejected: more haulers (row 48's cap), a bigger load (E2-b's
+collapse), a morning round, a dedicated supper hauler. NOT
+evidenced: night 2; houses whose eaters are all off-shift at the
+window (the night watch), whose loads fall to the haulers' errand.
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

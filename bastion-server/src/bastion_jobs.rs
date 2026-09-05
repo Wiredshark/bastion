@@ -4668,6 +4668,35 @@ pub(crate) const HAUL_CHAIN_RADIUS: f32 = 12.0;
 /// conservative, they deposit with the rest either way).
 pub(crate) const HAUL_CHAIN_MAX_LOAD: u32 = 16;
 
+/// ★ E2-f: what one pickup takes from a ground stack -- the row-20 load,
+/// the unit the chain, the backlog and the deposit cell already use. A
+/// whole-stack pickup put a cook's 520 and a guard's 1,444 units into bags
+/// for hours (b1, E2-d day 1: in_bags 400-686, the larder down 700).
+pub const PICKUP_LOAD_UNITS: u32 = HAUL_CHAIN_MAX_LOAD;
+pub(crate) static PICKUPS_SPLIT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PickupTake {
+    /// The ground holds no more than the room aboard: take it whole.
+    Whole,
+    /// Split this many units off the ground stack.
+    Split(u32),
+    /// No room aboard: take nothing.
+    Nothing,
+}
+
+/// ★ E2-f pinned.
+pub(crate) fn pickup_take(total: u32, aboard: u32, load: u32) -> PickupTake {
+    let room = load.saturating_sub(aboard);
+    if room == 0 {
+        PickupTake::Nothing
+    } else if total <= room {
+        PickupTake::Whole
+    } else {
+        PickupTake::Split(room)
+    }
+}
+
 /// ★ BATCHED HAULS (Ben, live 2026-09-01: "a farmer should till the field
 /// and only haul at the end of the day or when there's a sizable backlog;
 /// the same for all jobs"). A colonist whose lane is not Haul may claim a
@@ -32806,6 +32835,66 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         continue;
                                     }
                                     if d < 2.8 {
+                                        // ★ E2-f: a fetch takes a load, not the
+                                        // stack; the split releases the
+                                        // reservation (the item stays) and the
+                                        // claim re-checks its materials carried.
+                                        let fetched: Option<(Vec<Item>, u32)> =
+                                            id_maps.uid_entity(u).and_then(|ie| {
+                                                let total = pickup_items.get(ie).map(|pi| pi.amount()).unwrap_or(0);
+                                                match pickup_take(total, 0, PICKUP_LOAD_UNITS) {
+                                                    PickupTake::Split(n) => pickup_items
+                                                        .get_mut(ie)
+                                                        .and_then(|mut pi| pi.split_off_n(&ability_map, &msm, n))
+                                                        .map(|items| (items, total)),
+                                                    _ => None,
+                                                }
+                                            });
+                                        if let Some((items, total)) = fetched {
+                                            let took: u32 = items.iter().map(|i| i.amount()).sum();
+                                            let mut rng = toss_scatter_rng(tick.0, job.pos, 0xE2F0_0002);
+                                            for it in items {
+                                                let pushed = match inventories.get_mut(entity) {
+                                                    Some(mut inv) => inv.push(it).map_err(|(it, _)| it),
+                                                    None => Err(it),
+                                                };
+                                                if let Err(it) = pushed {
+                                                    crate::bastion_actions::emit_drop(
+                                                        &mut item_drop_emitter,
+                                                        pos.0.map(|e| e.floor() as i32),
+                                                        it,
+                                                        *program_time,
+                                                        &mut rng,
+                                                    );
+                                                }
+                                            }
+                                            if let Some(item) = board.reservations.remove(&rid)
+                                                && let hashbrown::hash_map::Entry::Occupied(mut e) =
+                                                    board.reservations_by_item.entry(item)
+                                            {
+                                                e.get_mut().retain(|&r| r != rid);
+                                                if e.get().is_empty() {
+                                                    e.remove();
+                                                }
+                                            }
+                                            job.reservation = None;
+                                            job.needs_materials = true;
+                                            board.fetch_started.remove(&active.job);
+                                            board.fetch_progress.remove(&active.job);
+                                            let k = PICKUPS_SPLIT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if k <= 8 || k.is_power_of_two() {
+                                                info!(
+                                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                                    job = active.job,
+                                                    def = ?job.required_item,
+                                                    took,
+                                                    left = total.saturating_sub(took),
+                                                    splits = k,
+                                                    "bastion: A LOAD, NOT THE STACK — the fetch split its load off the ground stack; the rest stays where it lay"
+                                                );
+                                            }
+                                            continue;
+                                        }
                                         crate::bastion_actions::emit_pickup(
                                             &mut inv_manip_emitter,
                                             entity,
@@ -38826,7 +38915,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         if job.progress < 0.5 {
                             // LEG 1: standing at the item.
-                            if let Some(item_entity) = id_maps.uid_entity(item) {
+                            // ★ E2-f: a load aboard ends the pickup leg; the
+                            // deposit leg below runs on what is aboard.
+                            let aboard_now: u32 = job
+                                .required_item
+                                .and_then(|r| {
+                                    inventories.get(entity).map(|inv| {
+                                        inv.slots()
+                                            .flatten()
+                                            .filter(|i| i.item_definition_id().itemdef_id() == Some(r))
+                                            .map(|i| i.amount())
+                                            .sum()
+                                    })
+                                })
+                                .unwrap_or(0);
+                            if let Some(item_entity) = id_maps.uid_entity(item)
+                                && aboard_now < PICKUP_LOAD_UNITS
+                            {
                                 // ENGOPT6 round-4 finding (FALLEN-ITEM
                                 // RETARGET): dropped items are physical and
                                 // FALL — a haul job aiming at the stale drop
@@ -38850,10 +38955,50 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         continue;
                                     }
                                 }
-                                // Emit the VANILLA pickup (a re-emit against
-                                // a consumed uid no-ops in the handler); the
-                                // entity vanishing is the confirmation,
-                                // checked next tick.
+                                // ★ E2-f: A LOAD, NOT THE STACK -- split the
+                                // load off the ground stack; the rest stays
+                                // where it lay. A stack no bigger than the
+                                // room goes whole (the vanilla pickup; the
+                                // entity vanishing is the confirmation).
+                                let total_on_ground: u32 =
+                                    pickup_items.get(item_entity).map(|pi| pi.amount()).unwrap_or(0);
+                                if let PickupTake::Split(n) =
+                                    pickup_take(total_on_ground, aboard_now, PICKUP_LOAD_UNITS)
+                                    && let Some(items) = pickup_items
+                                        .get_mut(item_entity)
+                                        .and_then(|mut pi| pi.split_off_n(&ability_map, &msm, n))
+                                {
+                                    let took: u32 = items.iter().map(|i| i.amount()).sum();
+                                    let mut rng = toss_scatter_rng(tick.0, job.pos, 0xE2F0_0001);
+                                    for it in items {
+                                        let pushed = match inventories.get_mut(entity) {
+                                            Some(mut inv) => inv.push(it).map_err(|(it, _)| it),
+                                            None => Err(it),
+                                        };
+                                        if let Err(it) = pushed {
+                                            crate::bastion_actions::emit_drop(
+                                                &mut item_drop_emitter,
+                                                pos.0.map(|e| e.floor() as i32),
+                                                it,
+                                                *program_time,
+                                                &mut rng,
+                                            );
+                                        }
+                                    }
+                                    let k = PICKUPS_SPLIT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                    if k <= 8 || k.is_power_of_two() {
+                                        info!(
+                                            uid = uids.get(entity).map(|u| u.0.get()),
+                                            job = active.job,
+                                            def = ?job.required_item,
+                                            took,
+                                            left = total_on_ground.saturating_sub(took),
+                                            splits = k,
+                                            "bastion: A LOAD, NOT THE STACK — the pickup split its load off the ground stack; the rest stays where it lay"
+                                        );
+                                    }
+                                    continue;
+                                }
                                 crate::bastion_actions::emit_pickup(
                                     &mut inv_manip_emitter,
                                     entity,
@@ -54478,6 +54623,20 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ E2-f pinned: a stack of 520 with nothing aboard splits sixteen; ten
+    /// units go whole; with ten aboard six are split; with a load aboard
+    /// nothing is taken; exactly a load goes whole. Planted defect: the
+    /// Whole test inverted (520 taken whole) -> red.
+    #[test]
+    fn a_pickup_takes_a_load_not_the_stack() {
+        use PickupTake::*;
+        assert_eq!(pickup_take(520, 0, 16), Split(16), "a stack splits a load");
+        assert_eq!(pickup_take(10, 0, 16), Whole, "a small stack goes whole");
+        assert_eq!(pickup_take(520, 10, 16), Split(6), "the room aboard");
+        assert_eq!(pickup_take(520, 16, 16), Nothing, "a load aboard takes nothing");
+        assert_eq!(pickup_take(16, 0, 16), Whole, "exactly a load goes whole");
     }
 
     /// ★ W11 pinned: no anchor anchors; another node anchors; within the

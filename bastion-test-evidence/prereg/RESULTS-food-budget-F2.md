@@ -464,3 +464,15 @@ a town that does not walk. Disposition: the bounds bar and the
 sites bar pass; the stand bar is re-stated for the E2-e read (the
 stand is standable and within two blocks of the site); the arrival
 and exchange bars are read there.
+
+Re-read on b1's E2-e run (a walking town: 624 claims, 929 arrivals
+by day 1 hour 8; 13:39): book WAITS 1, the refresh sites=10, one
+mission minted with site=(7280, 7824, 182) = mission_stand (the stand
+is the site: the bar re-stated as "standable, within two blocks"
+passes trivially and says nothing); TradeMission arrivals 0,
+exchanges 0. The site lies about 1,300 blocks from the town's bounds
+(7518-7873 x 6068-6549): a mission minted at hour 7 has not arrived
+by the next morning. NOT evidenced: whether it arrives at all (a
+day-2 read), and whether a mission that far is a mission or a
+disappearance -- T1-c's question (the nearest site, or a cap on the
+distance a trade walks).

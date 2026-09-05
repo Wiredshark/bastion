@@ -1837,6 +1837,33 @@ impl PickupItem {
     /// `Item::clone` (see that method's own warning: cloning shares the
     /// persistent database identity `Arc`, which two independently
     /// pickup-able units must not do).
+    /// ★ E2-f: split up to `n` units off this pickup -- from the last entry
+    /// when it holds more than `n` (the entry keeps the rest), else the last
+    /// entry whole when another entry remains. None when the pickup holds
+    /// `n` or fewer units (take it whole) or `n` is zero. The invariant
+    /// that every entry but the last sits at max_amount holds: only the
+    /// last entry is touched or removed.
+    pub fn split_off_n(
+        &mut self,
+        ability_map: &AbilityMap,
+        msm: &MaterialStatManifest,
+        n: u32,
+    ) -> Option<Vec<Item>> {
+        if n == 0 || self.amount() <= n {
+            return None;
+        }
+        let len = self.items.len();
+        let last = self.items.last_mut()?;
+        if last.amount() > n {
+            let taken = last.take_amount(ability_map, msm, n)?;
+            Some(vec![taken])
+        } else if len > 1 {
+            self.items.pop().map(|it| vec![it])
+        } else {
+            None
+        }
+    }
+
     pub fn split_off_one(
         &mut self,
         ability_map: &AbilityMap,

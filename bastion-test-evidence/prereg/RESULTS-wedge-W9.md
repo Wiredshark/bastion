@@ -1027,6 +1027,57 @@ from the stage; the W11 chain keys on it. The falsifier (the maximum
 not kept) went red and restored clean at 13:32; lab-bin carries the
 pair from 13:29.
 
+b2 +10 min (hour 15 of day 0, read 13:40; 50 census lines): the last
+PUMP CENSUS pending=27 oldest_wait=95 delivered_path=4
+delivered_unreachable=10 delivered_exhausted=0 mean_wait=24
+max_wait=170 steps=600 (two a tick); over the run the worst max_wait
+442 and the largest pending 47. Bars: mean_wait under 300 MET;
+max_wait under 2,000 MET; exhausted under a third MET (none);
+pending under 20 NOT met (27-47). **The pump is not slow**: a
+search waits a second and a half on average, five seconds at worst;
+what it delivers is UNREACHABLE seven times in ten. The hold of
+W10-e/W10-f waited, in the end, for answers that said "no route"
+-- and the trunk's first leg falls back to the tail when the
+approach is unreachable, so the body glides that leg anyway. The
+row after W11: W12-i1, an UNREACHABLE APPROACH witness (feet, node0,
+whether the feet stand inside a house region, the house's door
+count, the search's admission that refused) to name why the exact
+search from indoors finds no way out; then the fix at the admission
+(the door, the threshold, or the feet cell), not at the pump. Same
+read: EMBED WATCH 8 at +10 (4 chaser-pure-glide, 4
+bridge-refused-rock), routes=3072, arrived 474, working=8, p95 476.
+
+### W11 landed (af70369a91, staged 13:55)
+
+Check clean, the pin green, both halves staged 13:55. The falsifier
+(the movement test inverted) and the b1 reader (`wait-w11-b1.sh`:
+after E2-e's night-2 read, a fresh b1; OVERRIDE FAILED AT A WALL, the
+override loops' wall-seconds, the eat timeouts, the starving streaks
+at +10 and at day 1 hour 12) run from the stage; the E2-f chain keys
+on it. The falsifier went red and restored clean at 13:58; lab-bin
+carries the pair from 13:55.
+
+## W12-i1, registered 13:45 (keyed on the E2-g stage, the end of the chain, before the binary)
+
+An instrument row from W10-i1's census (seven of ten deliveries
+Unreachable, the pump fast). At the Fill+Unreachable delivery,
+`start_condition(feet_solid, four neighbours solid at z or z+1)` ->
+InSolid / Boxed / Open, counted into the PUMP CENSUS
+(unreachable_start_solid, unreachable_boxed, unreachable_open);
+UNREACHABLE APPROACH (uid, from, to, first_leg, start, from_in_house,
+to_in_house against the Bed-designated regions) at the first eight
+and powers of two. Pin `the_unreachable_approach_names_its_start` (in
+a wall is InSolid whatever the neighbours; four solid is Boxed; three
+is Open); planted: Boxed at three of four, red. Prediction (b2 fresh,
+`wait-w12i1-b2.sh`, +10 and day 1): the three counts sum to
+delivered_unreachable on every line; InSolid + Boxed at least 60% of
+the unreachable (the embedded start, W11's class); from_in_house on
+at least half of the first eight witnesses. If Open passes 70%, the
+TARGET is the defect and the next row is the route's node placement,
+not the feet. Rejected: more pump slices (the census says enough);
+logging every unreachable. NOT evidenced: a closed doorway against a
+wall (a Boxed start inside a house does not tell them apart).
+
 ## W11, registered 11:45 (keyed on the W10-i1 stage, the end of the chain, before the binary)
 
 The E2 "day trip" class named. b1 on the E2-d pair (3765c74e87),
