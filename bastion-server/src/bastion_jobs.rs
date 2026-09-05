@@ -1810,6 +1810,37 @@ pub(crate) static FIRST_LEG_NEAR: std::sync::atomic::AtomicU64 = std::sync::atom
 pub(crate) static FIRST_LEG_BLOCKED_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static FIRST_LEG_TAIL_DROPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+pub(crate) static FIRST_LEG_CROSSED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ W10-a-b: does the straight first leg pass through a solid? The
+/// segment from the feet to node 0's centre is sampled every half block
+/// at the feet's z and the head's z; the body's own cell is skipped (a
+/// doorway is not a wall); a segment shorter than half a block is clear.
+/// Unseen terrain reads as clear (identity for an unloaded chunk).
+pub(crate) fn first_leg_crosses_solid(
+    solid: &impl Fn(Vec3<i32>) -> bool,
+    feet: Vec3<f32>,
+    node0: Vec3<i32>,
+) -> bool {
+    let start = Vec2::new(feet.x, feet.y);
+    let end = Vec2::new(node0.x as f32 + 0.5, node0.y as f32 + 0.5);
+    let d = end - start;
+    let len = d.magnitude();
+    if len < 0.5 {
+        return false;
+    }
+    let steps = (len / 0.5).ceil().max(1.0) as i32;
+    let z = feet.z.floor() as i32;
+    let own = Vec2::new(feet.x.floor() as i32, feet.y.floor() as i32);
+    (1..=steps).any(|i| {
+        let t = i as f32 / steps as f32;
+        let q = start + d * t;
+        let cell = Vec2::new(q.x.floor() as i32, q.y.floor() as i32);
+        cell != own
+            && (solid(Vec3::new(cell.x, cell.y, z)) || solid(Vec3::new(cell.x, cell.y, z + 1)))
+    })
+}
+
 pub(crate) fn first_leg_needs_search(feet: Vec3<f32>, node0: Vec3<i32>) -> bool {
     let c = node0.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
     feet.xy().distance(c.xy()) > TRUNK_FIRST_LEG_MAX
@@ -34196,8 +34227,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let node0 = wps.first().copied();
                                     // ★ W10-a-i: every arm of the gate counts.
                                     let gate = node0.map(|n0| {
+                                        // ★ W10-a-b: far OR through a wall.
+                                        let crosses = first_leg_crosses_solid(
+                                            &|q: Vec3<i32>| terrain.get(q).map(|b| b.is_solid()).unwrap_or(false),
+                                            pos.0,
+                                            n0,
+                                        );
+                                        if crosses {
+                                            FIRST_LEG_CROSSED
+                                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                        }
                                         first_leg_gate(
-                                            first_leg_needs_search(pos.0, n0),
+                                            first_leg_needs_search(pos.0, n0) || crosses,
                                             board.path_searches.contains_key(&u.0.get()),
                                         )
                                     });
@@ -34217,6 +34258,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             info!(
                                                 routes,
                                                 near = FIRST_LEG_NEAR.load(Relaxed),
+                                                crossed = FIRST_LEG_CROSSED.load(Relaxed),
                                                 blocked_pending = FIRST_LEG_BLOCKED_PENDING.load(Relaxed),
                                                 searched = TRUNK_FIRST_LEG_SEARCHED.load(Relaxed),
                                                 stitched = TRUNK_FIRST_LEG_STITCHED.load(Relaxed),
@@ -53544,6 +53586,24 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ W10-a-b pinned: a wall on the line between the feet and node 0
+    /// is crossed; an open line is not; a wall beside the line is not; the
+    /// body's own cell is not a wall. Planted defect: the line is never
+    /// walked -> red.
+    #[test]
+    fn the_first_leg_is_walked_before_it_is_assumed() {
+        let wall = |c: Vec3<i32>| c.x == 2 && c.y == 0 && (c.z == 10 || c.z == 11);
+        let feet = Vec3::new(0.5, 0.5, 10.0);
+        let n0 = Vec3::new(4, 0, 10);
+        assert!(first_leg_crosses_solid(&wall, feet, n0), "a wall on the line");
+        assert!(!first_leg_crosses_solid(&|_| false, feet, n0), "an open line");
+        let beside = |c: Vec3<i32>| c.x == 2 && c.y == 3;
+        assert!(!first_leg_crosses_solid(&beside, feet, n0), "a wall beside the line");
+        let own = |c: Vec3<i32>| c.x == 0 && c.y == 0;
+        assert!(!first_leg_crosses_solid(&own, feet, n0), "the body's own cell is not a wall");
+        assert!(!first_leg_crosses_solid(&wall, Vec3::new(4.4, 0.4, 10.0), n0), "already there");
     }
 
     /// ★ W10-a-i pinned: a near first node never searches; a far one with

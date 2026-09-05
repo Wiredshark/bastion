@@ -319,3 +319,43 @@ or the second pass renames settled colonists.
 
 P-zero-hours' own claim -- an idle day names nobody, a newcomer takes
 the scarcest lane -- holds on this boot; its cost was the day-0 crew.
+
+### P-zero-hours-b landed (5382e809b0, 06:21)
+
+Check clean, pin `a_plan_with_no_builder_calls_the_draft` green (1
+passed), staged 06:21. The chain first refused at 05:58 on a stale
+pin anchor (it had been written to sit after T1's pin, and T1 now
+follows it in the queue); re-anchored on the R3-b pin, dry-run on
+HEAD, relaunched 06:00, tree untouched by the refusal. Falsified at
+the commit: the draft never called turned the pin red, tree restored
+clean at 06:25. The live read is the
+ninth restart test on b3 (both boots: BUILD DRAFT CALLED AT THE PLAN
+within a second of PLOT PLAN QUEUED, cells placed within ten minutes)
+and b1 fresh when the E2 pair reaches it.
+
+### The ninth test's first boot, and P-zero-hours-c (registered 06:32)
+
+Boot 1 on b3 (06:22): PLOT PLAN QUEUED and BUILD DRAFT CALLED AT THE
+PLAN in the same second (plan=81 cells=1909 builders_now=0
+drafts_at_plan=1) -- the call half of P-zero-hours-b PASSED. Then no
+BUILD DRAFT SIZED line at all, no HAUL LANE CEILING line, one cell
+placed at +2 min, two Build arrivals. The daily block did run (it runs
+every 300 ticks when today != profession_day); it sizes the ceiling,
+the reserve and the draft from `board.professions.len()`, near empty
+at a fresh boot's first pass, so `builders_wanted`'s
+`roster / COLONISTS_PER_BUILDER` reads 0 and the draft wants nobody --
+and the SIZED witness is gated on wanted or builders_now being
+positive, so the pass that wanted nobody left no line. The size half
+FAILED for a reason the instrument could not show.
+
+P-zero-hours-c: `draft_roster(named, alive)` = max(names given,
+colonists alive) is the roster for all three; the draft pass prints
+BUILD DRAFT PASS unconditionally (roster, named, plot_plan_open,
+open_build_cells, wanted, builders_now, drafts_at_plan). Pin
+`the_draft_counts_heads_not_names`; planted defect: names only, red.
+Keyed after W10-a-b, before E2; read on b1 fresh on the E2 pair
+(`wait-pzc-b1.sh`): BUILD DRAFT PASS within ten seconds of the call
+with roster >= 40 and wanted = 6, SIZED naming a crew, Build arrivals
+above 10 and cells placed above 15 within ten minutes of the plan.
+Falsified if roster >= 40 and wanted 0 (plot_plan_open names it), or
+wanted 6 and nothing placed (a route row).

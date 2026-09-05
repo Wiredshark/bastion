@@ -476,6 +476,13 @@ two blocks a step are refused) or the 2-3x day-to-day swing the
 three-replicate law exists for. Not a result until b2 shows it twice
 more; noted so the W10-a-i reads can carry the same line.
 
+Third replicate (W10-a-i pair, day 1, 06:17): works 298 / hauls 108
+over 43, travel per claim 45.2, far 47%, travel share of work 58%. The
+three day-1 lines on the same arm now read works 262 / 516 / 298 and
+travel 35.8 / 25.4 / 45.2: the 516 was the swing, not W10-b. Withdrawn
+as a signal; the works figure needs a different instrument than one
+day line.
+
 ## W10-a-i, registered 05:30 (keyed on the R3-b stage, before the binary)
 
 An instrument row. `first_leg_gate(needs_search, search_pending)` ->
