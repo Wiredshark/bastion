@@ -16,6 +16,13 @@ same flat world.
 
 | b1 W8-f b4a1eb9aa6, whole boot to day 2 (23:41) | 3,389 | -- | six settlers (uids 131-145) x 3,166 at (7639,6279,174); uid 34 x 397 at (7687,6447,181) | -- |
 | b3 R1d 43008d9fdb, restored boot, first 6 min | 20 | -- | (7686.3,6447.5,181) again, from the first minute | -- |
+| b2 F3 48fd9c1390, boot to day 1 (00:33) | 614 | -- | uid 43 x 365 at (7687,6447,181); uid 131 x 210 at (7639,6279,174) | -- |
+
+b1's day 2.9 (04:32 log time) puts the cost in people: `STARVING
+COLONISTS starving=9`, all on RestAt at their beds with hunger 0.00,
+four of them (90, 131, 133, 135) the settlers wedged at (7639,6279,174)
+for the whole day (687, 513, 478 and 242 fires). The starving tail of
+the 160-day arm is, in this boot, the wedge.
 
 The fourth boot names the same two cells, and b1's second day puts
 3,166 of its 3,389 fires at one of them, from the six settlers who

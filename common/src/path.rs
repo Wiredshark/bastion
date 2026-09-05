@@ -595,6 +595,11 @@ pub struct ChaserDiagnosticSnapshot {
     /// motion snapping back once per node, every node).
     pub route_ahead: Option<Vec3<i32>>,
     pub route_next_idx: Option<usize>,
+    /// ★ W8-ii: the node BEFORE the head (the one just passed) and the next
+    /// four from the head on -- the window a stall probe needs to see whether
+    /// the route itself is walkable where the body stands still.
+    pub route_prev: Option<Vec3<i32>>,
+    pub route_next4: Vec<Vec3<i32>>,
     pub path_state: PathState,
     pub recent_state_count: usize,
 }
@@ -1156,6 +1161,21 @@ impl Chaser {
                 route.get_path().nodes().get(route.next_idx() + 1).copied()
             }),
             route_next_idx: self.route.as_ref().map(|(route, _, _)| route.next_idx()),
+            route_prev: self.route.as_ref().and_then(|(route, _, _)| {
+                route
+                    .next_idx()
+                    .checked_sub(1)
+                    .and_then(|i| route.get_path().nodes().get(i).copied())
+            }),
+            route_next4: self
+                .route
+                .as_ref()
+                .map(|(route, _, _)| {
+                    let nodes = route.get_path().nodes();
+                    let i = route.next_idx();
+                    nodes.iter().skip(i).take(4).copied().collect()
+                })
+                .unwrap_or_default(),
             path_state: self.path_state,
             recent_state_count: self.recent_states.len(),
         }
@@ -1228,6 +1248,16 @@ where
         && !admission_fixes_off()
         && [a, b].iter().any(|blk| blocks_colonist_body(blk));
     (on_ground || in_liquid) && !a.is_solid() && !b.is_solid() && !through_window
+}
+
+/// ★ W8-ii: the colonist walkable verdict for one cell, for diagnostics
+/// (the stall probe prints it for the route's nodes). The target is treated
+/// as loaded and the colonist rules apply.
+pub fn colonist_walkable<V>(vol: &V, pos: Vec3<i32>) -> bool
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    walkable(vol, pos, true, true)
 }
 
 /// ★ THE SHARED BODY-CELL RULE (Ben, live: "i just saw them try to go

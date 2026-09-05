@@ -246,3 +246,51 @@ Bars for the seventh restart test (b3, `g1d-restart-test7.sh`):
 Falsified if already_standing reads 8,640 with TERRAIN PERSISTED > 0
 (recorded but not re-applied on chunk load), or TERRAIN PERSISTED stays
 0 (the setting did not reach the server).
+
+## R3: a kept world keeps its larder (registered 00:31, before the binary)
+
+The sixth test's restored boot, read further: `FOOD-WIPE DISCRIMINATOR
+tick=300 in_stockpile=65 on_ground_total=65` (a fresh boot: 3,636);
+`SETTLER GATE CLOSED — famine day=0 roster=49 food_stock=0`, then
+`day=1 food_stock=256 days_of_food=1.6`; `STARVING COLONISTS` by day 1;
+`YEAR CENSUS day=1 store_units=529 store_seeds=6` (fresh: ~12,000 and
+8,400). The colony restores and starves: the larder only ever lived in
+`PickupItem` entities in store cells, and the server persists no item
+entity. Every kept world loses the founding larder, every harvest and
+every haul at each boot.
+
+Mechanism: `JobBoard.store_snapshot` (every pickup item in a store
+cell, from the discriminator's join at its tick, aggregated per
+(cell, def) by `store_snapshot_from`, sorted); rtsim
+`Data.bastion_store_items` (`#[serde(default)]`) written from it at
+every save (`STORE SNAPSHOT SAVED cells= units=`); read once at boot
+into `JobBoard.pending_store_restore` (`STORE READ FROM SAVE`) and
+drained once into `PendingSeedItems`, the founding's deferred-delivery
+queue (`STORE RESTORED`), which lands the items in the town's general
+store when its chunks load (`deferred seed items DELIVERED`). Pin
+`a_kept_world_keeps_its_larder` (bastion-server); planted defect: the
+store filter dropped, road litter saved.
+
+Bars for the eighth restart test (b3, `g1d-restart-test8.sh`):
+
+| bar | sixth test | R3 bar |
+|---|---|---|
+| STORE SNAPSHOT SAVED units, boot 1 | -- | within a few hundred of STORAGE SUMMARY general_units (~12,000) |
+| STORE READ FROM SAVE / STORE RESTORED, boot 2 | -- | 1 / 1, the same units |
+| DELIVERED units, boot 2 | -- | ≈ the restored units |
+| discriminator in_stockpile, boot 2 (tick 300-900 / +5 min) | 65 | within 15% of boot 1's last read |
+| SETTLER GATE CLOSED (famine) on boot 2, day 0 | 1 | 0 |
+| R1d's and R2's bars | -- | still held |
+
+Falsified if STORE RESTORED prints and the discriminator stays under
+1,000 (held or dropped delivery), or the saved units read far below the
+summary (the store filter misses the town's stores). Not evidenced by
+this row: private shelves (they come back into the general store),
+bags, a save taken mid-delivery.
+
+Also seen on that boot, an instrument gap and not a defect:
+`HOUSEHOLDS` prints only when a bed assignment changed that pass
+(`assigned > 0 || released > 0`), so a restored boot with a settled
+roster never prints it; `BED-HOUSE CENSUS` on the same boot reads
+`beds_total=116 beds_owned=49 household_members=49 houses=58`, which
+is the restored roster in its houses.

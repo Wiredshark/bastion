@@ -31373,6 +31373,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             }
                                             (near, near3)
                                         };
+                                        // ★ W8-ii: the route's own nodes around the head, each with
+                                        // the colonist walkable verdict (W walkable, X not). A stall
+                                        // with an X in this window is the route's fault, not the
+                                        // walker's.
+                                        let route_nodes: String = snap
+                                            .as_ref()
+                                            .map(|sn| {
+                                                sn.route_prev
+                                                    .iter()
+                                                    .chain(sn.route_next4.iter())
+                                                    .map(|n| {
+                                                        let w = common::path::colonist_walkable(&*terrain, *n);
+                                                        format!(
+                                                            "({},{},{}):{}",
+                                                            n.x,
+                                                            n.y,
+                                                            n.z,
+                                                            if w { 'W' } else { 'X' }
+                                                        )
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ")
+                                            })
+                                            .unwrap_or_default();
                                         info!(
                                             job = active.job,
                                             kind = ?job.kind,
@@ -31380,6 +31404,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             to_item = ?to_item,
                                             nearby_bodies,
                                             nearby_bodies_3,
+                                            route_nodes = %route_nodes,
                                             // The walker's own route (P1b): the first cut read
                                             // `fetch_steer` here, before the fetch assigns it,
                                             // and printed None on every probe.

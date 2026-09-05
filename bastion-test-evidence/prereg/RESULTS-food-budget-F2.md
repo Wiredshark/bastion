@@ -314,3 +314,50 @@ settler gate and the famine logic key on the census's number, and the
 the next day line names which frame is wrong; until then the daily
 `food_stock` values in this file are consistent with themselves and
 not yet trustworthy against the discriminator.
+
+### b1 (160-day year) on the W8-f pair, days 1-3 (read 00:20)
+
+| day | food_stock | days_of_food (roster 51) | harvested_today | cooked_today | store_units |
+|---|---|---|---|---|---|
+| 1 | 1,508 | 9.6 | 0 | 89 | 10,247 |
+| 2 | 3,136 | 19.6 | 0 | 46 | 11,946 |
+| 3 | 2,726 | 16.7 | 0 | 56 | 11,566 |
+
+At day 3 the discriminator agrees with the census (`in_stockpile=2726
+on_ground_total=2732`) and reads `in_bags=1279`: over a thousand food
+units are riding in bags at the day line, which neither the census nor
+the discriminator's stockpile count sees, and which is the size of the
+day-1 gap. The census's frame at a day boundary is the stockpile at
+that instant; what the haulers and cooks are carrying is off its books.
+Two day-0 reads this night (the F3 boot of b2: census 1,132 against a
+discriminator of 3,636 seconds later) were the same thing at the
+founding: the census printed while the deliveries were still landing.
+Rule for this file: a day-0 line is never a stock; a day line is the
+stockpile, not the town's food.
+
+No harvest since the founding on the 160-day year (the fields are
+weeks from ripe); at 3.2 raw units a head the town eats ~163 a day,
+and the founding larder carries it to about day 20. That is the bridge
+judgement still open with Ben (larder on the full roster, denser
+fields, or both).
+
+### F3 (48fd9c1390, the harvest rides in the basket) -- b2 day 1, 00:33
+
+Falsified at the commit (a basket of one -> the pin red, 00:05). Day 1
+on b2 (8-day year, boot 00:02):
+
+| read | value |
+|---|---|
+| harvested (cell returns) | 9 cells, `basketed=4` on every line, emit_drop fallbacks 0 |
+| harvested_today / matured_today | 36 / 938 (the 938 ripen for day 2) |
+| food_stock / discriminator | 4,118 / 4,117 (in_bags 46) |
+| store_units day 0 -> day 1 | 12,164 delivered -> 12,926 |
+| cooked / meals / targets_shunned | 85 / 49 / 11 |
+| starving at the last census | 1 (uid 25, RestAt) |
+| SETTLER GATE CLOSED / panics | 0 / 0 |
+
+The basket holds at nine harvests; the scale test is day 2, when the
+938 matured cells are cut (the pre-F3 boots dropped ~600 units a day on
+the ground there). The day-0 census line of this boot (food 1,132,
+store 2,928) was the mid-delivery snapshot described above and is not
+a stock.
