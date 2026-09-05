@@ -90,6 +90,19 @@ different branch (the sort, the arbiter, the cooldown, a gate before
 the census) the chain is killed by its pid file before it fires and
 the row is rewritten; the shelf half stays true either way.
 
+## E2 landed (3ce9276f42, 07:32)
+
+Check clean, pin `the_supper_round_fills_the_shortfall_once_a_day`
+green (1 passed), staged 07:32, shipped to lab-bin 07:32, with the
+dead census counter (E2-i) in the same commit. Falsified at the
+commit: the round running every pass turned the pin red (0 passed, 1
+failed), tree restored clean at 07:35. The live read is b1 fresh on
+the pair
+(`wait-e2-b1.sh`: SUPPER ROUND, NIGHT MEAL AT HOME, STORAGE SUMMARY
+private_units, FED at the day boundaries, the starving by clock, at
++10 min and days 1-3), with the P-zero-hours-c draft read beside it
+(`wait-pzc-b1.sh`).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

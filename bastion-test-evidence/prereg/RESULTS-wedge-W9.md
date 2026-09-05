@@ -594,6 +594,14 @@ the stage.
 | profile detour / rejected_solid / rejected_dz | 2.02 / 375 / 533 | 2.24 / 999 / 843 | -- |
 | panics | 0 | 0 | 0 |
 
+Day 1 (07:18, hour 0): FIRST LEG GATE routes=512 near=471 crossed=41
+blocked_pending=19 searched=22 stitched=19 unreachable=0
+tail_dropped=3 (STITCHED lines 5); EMBED WATCH 6 for the day (W10-a
+15, W10-a-i 11, W9-c 10), idx0 5; STALL BLAMED 5, ROUTE FAULT 4;
+profile routes 6,144, detour 2.31, rejected_solid 3,268, rejected_dz
+2,152; p95 509 us; starving 3 at the day line; panics 0. The blocked
+share is 46% of crossings at the day line (43% at +10).
+
 **W10-a-b PASSED** its registered bars. The first leg is searched
 exactly where the straight line would cross a wall, the stitch fires
 (13 in the first 256 accepted routes), and the first-node embed class

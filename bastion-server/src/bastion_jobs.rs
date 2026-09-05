@@ -1795,7 +1795,25 @@ pub(crate) enum FirstLegGate {
     BlockedPending,
     /// The approach goes to the pump; the trunk waits as a tail.
     Searched,
+    /// ★ W10-a-c: a Fill search was pending for this colonist and the
+    /// approach replaces it (both deliver into path_cache; the trunk
+    /// being built is the route the old search was for).
+    ReplacedFill,
 }
+
+/// ★ W10-a-c pinned: the gate by lane. `pending`: None = nothing pending;
+/// Some(true) = a Fill search pending (replaced); Some(false) = a Detour
+/// search pending (blocked, as before). A near first node never searches.
+pub(crate) fn first_leg_gate_lanes(needs_search: bool, pending: Option<bool>) -> FirstLegGate {
+    match (needs_search, pending) {
+        (false, _) => FirstLegGate::Near,
+        (true, None) => FirstLegGate::Searched,
+        (true, Some(true)) => FirstLegGate::ReplacedFill,
+        (true, Some(false)) => FirstLegGate::BlockedPending,
+    }
+}
+
+pub(crate) static FIRST_LEG_REPLACED_FILL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) fn first_leg_gate(needs_search: bool, search_pending: bool) -> FirstLegGate {
     match (needs_search, search_pending) {
@@ -34397,9 +34415,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             FIRST_LEG_CROSSED
                                                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                                         }
-                                        first_leg_gate(
+                                        first_leg_gate_lanes(
                                             first_leg_needs_search(pos.0, n0) || crosses,
-                                            board.path_searches.contains_key(&u.0.get()),
+                                            board
+                                                .path_searches
+                                                .get(&u.0.get())
+                                                .map(|ps| matches!(ps.lane, SearchLane::Fill)),
                                         )
                                     });
                                     {
@@ -34412,6 +34433,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             Some(FirstLegGate::BlockedPending) => {
                                                 FIRST_LEG_BLOCKED_PENDING.fetch_add(1, Relaxed);
                                             },
+                                            Some(FirstLegGate::ReplacedFill) => {
+                                                FIRST_LEG_REPLACED_FILL.fetch_add(1, Relaxed);
+                                            },
                                             Some(FirstLegGate::Searched) => {},
                                         }
                                         if routes % 256 == 0 {
@@ -34420,6 +34444,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 near = FIRST_LEG_NEAR.load(Relaxed),
                                                 crossed = FIRST_LEG_CROSSED.load(Relaxed),
                                                 blocked_pending = FIRST_LEG_BLOCKED_PENDING.load(Relaxed),
+                                                replaced_fill = FIRST_LEG_REPLACED_FILL.load(Relaxed),
                                                 searched = TRUNK_FIRST_LEG_SEARCHED.load(Relaxed),
                                                 stitched = TRUNK_FIRST_LEG_STITCHED.load(Relaxed),
                                                 unreachable = TRUNK_FIRST_LEG_UNREACHABLE.load(Relaxed),
@@ -34432,7 +34457,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                     }
                                     if let Some(n0) = node0
-                                        && gate == Some(FirstLegGate::Searched)
+                                        && matches!(
+                                            gate,
+                                            Some(FirstLegGate::Searched | FirstLegGate::ReplacedFill)
+                                        )
                                     {
                                         TRUNK_FIRST_LEG_SEARCHED
                                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -53762,6 +53790,17 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ W10-a-c pinned: nothing pending searches; a pending Fill is
+    /// replaced; a pending Detour blocks; a near node never searches
+    /// whatever is pending. Planted defect: a pending Fill blocks -> red.
+    #[test]
+    fn a_pending_fill_search_yields_to_the_approach() {
+        assert_eq!(first_leg_gate_lanes(true, None), FirstLegGate::Searched);
+        assert_eq!(first_leg_gate_lanes(true, Some(true)), FirstLegGate::ReplacedFill, "a Fill yields");
+        assert_eq!(first_leg_gate_lanes(true, Some(false)), FirstLegGate::BlockedPending, "a Detour blocks");
+        assert_eq!(first_leg_gate_lanes(false, Some(true)), FirstLegGate::Near, "near wins");
     }
 
     /// ★ W10-a-b pinned: a wall on the line between the feet and node 0
