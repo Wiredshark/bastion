@@ -1278,6 +1278,19 @@ pub static ASSIST_RIVAL_WRITES_DROPPED: core::sync::atomic::AtomicU64 =
 pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ W9 (2026-09-04): trunk nodes lifted off a solid cell at route build;
+/// trunk routes rejected because a node's column had no cell a body can
+/// stand in within reach; committed glides refused because their steer
+/// node is inside rock (the route dropped and searched again from the
+/// feet). Two cells produced 1,900 embed fires across three boots, every
+/// one `route_head_solid=true` and `chaser-pure-glide`.
+pub static TRUNK_NODES_LIFTED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_ROUTES_REJECTED_SOLID: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static COMMITTED_GLIDE_DROPS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// ★★ REPLICATED (2026-09-01) — and the replication CORRECTED my own
 /// precision while confirming the effect. Single runs of this measurement
 /// vary by 25x, so no one figure is the level:
@@ -1647,6 +1660,40 @@ pub(crate) fn alarm_exempts_from_shelter(kind: &common::bastion::JobKind) -> boo
 /// must hold). Only the second is a defect, so only the second is refused.
 pub(crate) fn glide_would_enter_rock(feet_solid: bool, head_solid: bool) -> bool {
     feet_solid || head_solid
+}
+
+/// ★ W9: A TRUNK NODE STANDS WHERE A BODY CAN STAND (2026-09-04). The
+/// trunk's z is "topmost natural block + 1"; a built block or a solid
+/// sprite on natural ground puts that cell inside the mass. The node is
+/// moved to the first cell the router's own walkable rule accepts: level
+/// first, then one to three up (a step, a stoop, a raised floor), then one
+/// or two down (a dug pit). Nothing in reach: the column is a wall and the
+/// route is not this trunk's to give -- `None` rejects it to the exact
+/// search. Four up is a wall, not a step.
+pub(crate) const TRUNK_NODE_LIFT_ORDER: [i32; 6] = [0, 1, 2, 3, -1, -2];
+
+pub(crate) fn trunk_node_z(walkable: impl Fn(i32) -> bool, z0: i32) -> Option<i32> {
+    TRUNK_NODE_LIFT_ORDER.iter().map(|dz| z0 + dz).find(|z| walkable(*z))
+}
+
+/// ★ W9: THE PREMISE HAS A LIFETIME. A committed route glides by pure
+/// interpolation because "the route was admissible when the router
+/// computed it"; a steer node that is inside rock NOW says the premise
+/// failed (a bad node, or the world built or sowed over it since), and the
+/// answer is to drop the route and search again from the feet -- never to
+/// walk in. `Step` keeps today's glide exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommittedGlide {
+    Step,
+    DropRoute,
+}
+
+pub(crate) fn committed_glide_verdict(node_in_rock: bool) -> CommittedGlide {
+    if node_in_rock {
+        CommittedGlide::DropRoute
+    } else {
+        CommittedGlide::Step
+    }
 }
 
 pub(crate) fn census_is_wedged(speed: f32, stuck_time: f32) -> bool {
@@ -31058,6 +31105,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // last moved the body, so attribution is measured, not reasoned.
         let mut pending_kinematic: Vec<(specs::Entity, Vec3<f32>, Vec3<f32>, &'static str)> =
             Vec::new();
+        // ★ W9: committed routes whose steer node is inside rock, dropped
+        // after the pass (the board is borrowed for reading inside it).
+        let mut routes_to_drop: Vec<Uid> = Vec::new();
         let mut upkeep_iter = (
             &entities,
             &mut colonists,
@@ -33382,6 +33432,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // route along roads and through doors; the
                                 // exact target rides as the final hop. The
                                 // block-search pump is only the fallback.
+                                // ★ W9: nodes whose column had no standable
+                                // cell in reach (the route is rejected below).
+                                let trunk_solid_nodes = core::cell::Cell::new(0u32);
                                 let trunked = board
                                     .tile_graph
                                     .as_ref()
@@ -33512,6 +33565,60 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             wps = lift_over_ground(&wps, |x, y, hint| {
                                                 column_surface_z(&terrain, x, y, hint)
                                             });
+                                            // ★ W9: A TRUNK NODE STANDS WHERE
+                                            // A BODY CAN STAND. `column_surface_z`
+                                            // is the topmost NATURAL block, so
+                                            // a built block or a solid sprite
+                                            // on natural ground put the node
+                                            // inside it (two cells, 1,900
+                                            // embeds, every one head-solid).
+                                            // Each node is judged by the
+                                            // router's own walkable rule and
+                                            // lifted to the nearest cell it
+                                            // accepts; doors keep their probed
+                                            // cell; an unloaded column keeps
+                                            // today's node (fallback is
+                                            // identity); a column with nothing
+                                            // in reach rejects the route.
+                                            for wp in wps.iter_mut() {
+                                                let Ok(blk) = terrain.get(*wp) else {
+                                                    continue;
+                                                };
+                                                let is_door = blk.get_sprite().is_some_and(|sp| {
+                                                    matches!(
+                                                        sp,
+                                                        common::terrain::SpriteKind::Door
+                                                            | common::terrain::SpriteKind::DoorDark
+                                                            | common::terrain::SpriteKind::DoorWide
+                                                    )
+                                                });
+                                                if is_door {
+                                                    continue;
+                                                }
+                                                let (cx, cy) = (wp.x, wp.y);
+                                                match trunk_node_z(
+                                                    |zz| {
+                                                        common::path::colonist_walkable(
+                                                            &*terrain,
+                                                            Vec3::new(cx, cy, zz),
+                                                        )
+                                                    },
+                                                    wp.z,
+                                                ) {
+                                                    Some(zz) if zz == wp.z => {},
+                                                    Some(zz) => {
+                                                        TRUNK_NODES_LIFTED.fetch_add(
+                                                            1,
+                                                            core::sync::atomic::Ordering::Relaxed,
+                                                        );
+                                                        wp.z = zz;
+                                                    },
+                                                    None => {
+                                                        trunk_solid_nodes
+                                                            .set(trunk_solid_nodes.get() + 1);
+                                                    },
+                                                }
+                                            }
                                             wps.push(
                                                 target.map(|e| e.floor() as i32),
                                             );
@@ -33553,6 +33660,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // existing `else` and the pump paths it
                                 // exactly. No new machinery, and the reject
                                 // is counted so it can never be silent.
+                                // ★ W9: a node with no standable cell in reach
+                                // is a wall; the trunk cannot route around a
+                                // wall inside its own tile, the pump can.
+                                let trunked = trunked.filter(|wps: &Vec<Vec3<i32>>| {
+                                    let solid = trunk_solid_nodes.get();
+                                    if solid == 0 {
+                                        return true;
+                                    }
+                                    let r = TRUNK_ROUTES_REJECTED_SOLID
+                                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+                                        + 1;
+                                    if r.is_power_of_two() {
+                                        info!(
+                                            solid_nodes = solid,
+                                            waypoints = wps.len(),
+                                            rejected = r,
+                                            lifted_total = TRUNK_NODES_LIFTED
+                                                .load(core::sync::atomic::Ordering::Relaxed),
+                                            "bastion: TRUNK ROUTE REJECTED — a waypoint's \
+                                             column has no cell a body can stand in; \
+                                             falling through to the search pump"
+                                        );
+                                    }
+                                    false
+                                });
                                 let trunked = trunked.filter(|wps: &Vec<Vec3<i32>>| {
                                     let worst = wps
                                         .windows(2)
@@ -34415,7 +34547,56 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let mut chaser_sub = "chaser-probed";
                                     if pure_glide {
                                         chaser_sub = "chaser-pure-glide";
-                                        new_pos = Some(try_pos);
+                                        // ★ W9: THE PREMISE HAS A LIFETIME. The
+                                        // committed glide is the one branch
+                                        // with no rock gate ("the route was
+                                        // admissible when the router computed
+                                        // it"); 204 of 206 embeds on b2 wore
+                                        // this tag with a solid head. The
+                                        // NODE is tested, not the interpolated
+                                        // step (a step up crosses the riser's
+                                        // cell and must not be refused): a
+                                        // steer node in rock drops the route
+                                        // and the walker plans again from its
+                                        // feet; the hold below keeps the body
+                                        // still this tick.
+                                        let rock = |q: Vec3<i32>| {
+                                            terrain.get(q).is_ok_and(|b| {
+                                                b.is_solid()
+                                                    || common::path::blocks_colonist_body(b)
+                                            })
+                                        };
+                                        let node_in_rock = glide_would_enter_rock(
+                                            rock(steer_node),
+                                            rock(steer_node + Vec3::unit_z()),
+                                        );
+                                        match committed_glide_verdict(node_in_rock) {
+                                            CommittedGlide::Step => {
+                                                new_pos = Some(try_pos);
+                                            },
+                                            CommittedGlide::DropRoute => {
+                                                if let Some(u) = uids.get(entity).copied() {
+                                                    routes_to_drop.push(u);
+                                                }
+                                                let n = COMMITTED_GLIDE_DROPS.fetch_add(
+                                                    1,
+                                                    core::sync::atomic::Ordering::Relaxed,
+                                                ) + 1;
+                                                if n.is_power_of_two() {
+                                                    info!(
+                                                        uid = uids
+                                                            .get(entity)
+                                                            .map(|u| u.0.get()),
+                                                        node = ?steer_node,
+                                                        feet = ?pos.0,
+                                                        drops = n,
+                                                        "bastion: COMMITTED GLIDE REFUSED — the \
+                                                         route's steer node is inside rock; route \
+                                                         dropped, searched again from the feet"
+                                                    );
+                                                }
+                                            },
+                                        }
                                     } else if phased.xy().magnitude() <= 0.05 {
                                         // Pure-vertical settle (xy arrived):
                                         // z is the node's own promise — no
@@ -39292,6 +39473,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         v.0 = Vec3::zero();
                     }
                 }
+            }
+            // ★ W9: a committed glide that would have walked into its own
+            // node drops the route here; the walker plans again next tick.
+            for u in routes_to_drop.drain(..) {
+                board.path_cache.remove(&u);
+                board.route_built_at.remove(&u);
             }
             for (entity, new_pos, vel, site) in pending_kinematic.drain(..) {
                 if let Some(u) = uids.get(entity) {
@@ -52688,6 +52875,29 @@ mod tests {
     fn a_repeated_stall_spot_blames_the_walker() {
         assert_eq!(stall_blame(false), StallBlame::Target, "a first stall here: the target is suspect");
         assert_eq!(stall_blame(true), StallBlame::Walker, "the same spot again: the walker is wedged");
+    }
+
+    /// ★ W9 pinned: a trunk node is lifted to the first cell a body can
+    /// stand in (level, then up to three up, then two down); a column with
+    /// none rejects the route. Planted defect: the node kept as it stands
+    /// (`Some(z0)` always) -> red.
+    #[test]
+    fn a_trunk_node_stands_where_a_body_can_stand() {
+        assert_eq!(trunk_node_z(|z| z == 181, 181), Some(181), "already standable: unchanged");
+        assert_eq!(trunk_node_z(|z| z == 182, 181), Some(182), "a solid sprite on the ground: one up");
+        assert_eq!(trunk_node_z(|z| z == 184, 181), Some(184), "three up is the reach");
+        assert_eq!(trunk_node_z(|z| z == 179, 181), Some(179), "two down: a dug pit");
+        assert_eq!(trunk_node_z(|_| false, 174), None, "inside a structure: nothing in reach, the route is rejected");
+        assert_eq!(trunk_node_z(|z| z == 185, 181), None, "four up is a wall, not a step");
+        assert_eq!(trunk_node_z(|z| z == 181 || z == 183, 181), Some(181), "level wins over up");
+    }
+
+    /// ★ W9 pinned: a committed glide whose steer node is in rock drops the
+    /// route; a clear node steps. Planted defect: always step -> red.
+    #[test]
+    fn a_committed_glide_into_a_solid_node_drops_the_route() {
+        assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
+        assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
     }
 
     /// ★ R1d pinned: a saved Bed order re-registers in place, a saved Build

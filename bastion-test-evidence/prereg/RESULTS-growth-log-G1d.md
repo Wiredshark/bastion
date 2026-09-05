@@ -293,4 +293,6 @@ Also seen on that boot, an instrument gap and not a defect:
 (`assigned > 0 || released > 0`), so a restored boot with a settled
 roster never prints it; `BED-HOUSE CENSUS` on the same boot reads
 `beds_total=116 beds_owned=49 household_members=49 houses=58`, which
-is the restored roster in its houses.
+is the restored roster in its houses. R3 carries the rider (R3-i): the
+line also prints on the first pass of each game day, so the eighth
+test reads `houses=58` on the restored boot's first day line.
