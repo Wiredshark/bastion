@@ -372,6 +372,80 @@ arrivals after the round 9, of which 2 to private shelves -- so
 supper reached two houses. The haul lane's day: 8 haulers, 23 hauls,
 20 works. The claim scoring is read next (E2-e).
 
+### E2-d day 2 (the evening frame: day 1 whole and night 1), read 11:48
+
+SUPPER ROUND day=1 hour=14 houses=50 shortfall=100 loads=36
+stale_removed=35; SWEPT day=2 swept=35; NIGHT MEAL AT HOME 2 in two
+days; no_food_found 6,317 on the day-2 census (day 1: 777; the wake
+rush at hour 4 is 42 starving samples walking to eat); distinct
+starving sleepers 6; meals 111. **The bag bar FAILS on day 1**:
+in_bags 686 at d1h07, then 400, 636, 548, 428, 376, 471 through the
+day against 27-80 on day 0, and in_stockpile fell 4,100 -> 3,400-3,600
+with it. BAG CENSUS 122 lines. The holders are not the supper round:
+uid 68 (Cook, 28 Cook fetches) held 520 units from tick 51,000 to
+54,300 and beyond (twelve censuses); uid 52 (Guard, no fetches) 1,444
+once; uid 34 (Build, 9 material fetches) 945 twice; uid 69 (a Haul
+with 16 Cook fetches) 364; uid 46 (Guard) 366; uid 37 (Chop) 360; uid
+80 (Haul, 14 Haul fetches) 318. Every pickup takes the whole item
+entity (#89: the reservation is u32::MAX; the site `inv.push(item)`)
+-- a cook fetching four mushrooms carries five hundred, a guard
+eating one unit carries a thousand, a builder fetching stones carries
+the pile -- and while it walks, the larder is in a bag: the E2-b
+collapse class through every lane, not the supper's. E2-d's stack
+cap covered the supper loads only. Disposition: E2-d stands for the
+supper round (sweep, cap, shelves) and its day-1 bag bar was met by
+day 0 alone; the whole-stack pickup is its own row (E2-f, "A PICKUP
+TAKES THE NEED, NOT THE STACK": split the item at the pickup to the
+job's need -- the recipe amount, a meal, a load -- and leave the rest
+where it lay), registered below once the pickup site is read.
+
+### E2-d after night 2 (read at day 2 hour 6, 11:56; `read-e2d-night2.sh`)
+
+Cumulative through two nights: RestAt/Arrived starving samples at
+hours 0-3 = 18, 25, 33, 52 (night 2 alone: 4, 9, 19, 28, worse than
+night 1 at hours 2-3); RestAt/Traveling 30 at hour 3 (walking to bed
+hungry); EatFrom/Traveling 51 at hour 4 (the rise before the block
+ends); distinct starving sleepers 13 (night 2 added seven). NIGHT MEAL
+AT HOME 2 in two days. YEAR day=2 food_stock 3,525 / food_anywhere
+3,546 / 22.5 days (day 1: 4,067 / 4,080 / 25.9): down 540 in a day
+against ~111-160 eaten, with 465-470 in bags at every line from d1h21
+to d1h02. **E2-d FAILS both nights' bars** (under 6 an hour, sleepers
+at most 3); the supper round as built does not feed the night, and
+the larder rides in bags. Two rows carry it: E2-e (the loads claimed
+first, the window wider) and E2-f (a pickup takes one load).
+
+## E2-f, registered 12:00 (keyed on the W11 stage, the end of the chain, before the binary)
+
+Every pickup takes the whole ground entity (`emit_pickup` at the haul
+site and the material-fetch site; the eat site already splits one).
+`PickupItem::split_off_n(n)` (common): from the last entry when it
+holds more than n (`take_amount`), else the last entry whole when
+there is another (the invariant that every entry but the last is at
+max holds), else None. Server: `PICKUP_LOAD_UNITS = HAUL_CHAIN_MAX_LOAD`
+(16, row 20's load, the same unit the chain and the deposit cell use);
+`pickup_take(total, aboard, load)` -> Nothing when no room, Whole when
+the ground holds no more than the room, Split(room) otherwise. The
+haul's pickup block is entered only while less than a load is aboard;
+a Split pushes the items into the bag (a push that fails drops them
+where the colonist stands) and the deposit leg begins next tick on
+what is aboard; the fetch's Split releases its reservation and the
+claim re-checks its materials carried. Witness A LOAD, NOT THE STACK
+(uid, job, def, took, left) at the first eight and powers of two.
+Pin `a_pickup_takes_a_load_not_the_stack`; planted: the Whole test
+inverted (a stack of 520 taken whole), red. Prediction (b2 fresh,
+`wait-e2f-b2.sh`, day 1 in the evening frame): in_bags under 120 at
+every line after the boot line (E2-d day 1: 400-686), BAG CENSUS
+lines under 10 (122), no holder above 64 in any census; in_stockpile
+at day 1 within 250 of the boot's (E2-d: 4,100 -> 3,400); the Haul
+lane's day-1 hauls at least 15 (23) and cook meals at least 80 (111);
+A LOAD, NOT THE STACK fires (a null with no fires means the sites are
+not the producers). Falsified if hauls halve (the load is too small
+for the lane's day) or the bags stay above 300 with the witness
+firing (a third producer: the harvest basket or the deposit run).
+Rejected: a bigger load (the chain, the backlog and the deposit cell
+already agree on 16); splitting at the store's drop instead (the walk
+is where the larder is invisible).
+
 ## E2-e, registered 11:15 (keyed on the T1-b stage, the end of the chain, before the binary)
 
 The claim scoring gave a supper load the Haul base priority, then a

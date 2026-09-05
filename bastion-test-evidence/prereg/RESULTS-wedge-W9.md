@@ -887,6 +887,55 @@ pump slices (the pump's budget is the tick's). W9-i3's pair
 town and its height context is read under that confound; the
 lab-bin pairs from aa05aa373c until W10-f ships are not to be played.
 
+### W10-f landed (ca5fc654a5, staged 11:52; falsifier red 11:55)
+
+Check clean, the pin green, both halves built and staged 11:52; the
+falsifier (the leg not cut) went red and restored clean at 11:55.
+lab-bin carries the pair from 11:53. b2 restarted on it at 11:54;
+the +4, +10 and day-1 reads follow (`wait-w10f-b2.sh`).
+
+### W10-f FAILED LIVE (b2 fresh on ca5fc654a5, boot 11:54, read 11:57-12:03)
+
+The same freeze, and its true shape. +4 min: GLIDE HELD AT A WALL
+held_ticks=262,144, EXPERIENCE working=0 moving=49, ARRIVED 0. Hour
+13: the claim refusal census colonists_seen=0 considered=0 at every
+sample from tick 300 (every colonist holds its boot deposit run and
+never finishes it); "job claimed" 0; "arrived at job site" 0; TRUNK
+ROUTE PROFILE 0 lines and FIRST LEG GATE 0 lines (no trunk route was
+ever built); all 19 witness lines across 17 bodies carry
+pending=true; POS-WRITE 5 lines in the run; UNREACHABLE PROVEN 177
+lines, all job 45. The colonists start inside their houses; the line
+to the store crosses the house wall within six blocks; the approach
+search is pending and never delivers a usable route; the hold keeps
+them indoors. On the W10-d pair the same boot glided them out,
+through the wall now and then (the embed class, ten a day). The
+hold fixed ten embeds a day by stopping the town. The W10-e read was
+this same shape (its "far walker" story was the rule's, not the
+town's). Disposition: the hold is withdrawn in both forms.
+
+## W10-g, registered 12:05 (keyed on the T1-b stage; inserted ahead of E2-e; before the binary)
+
+`no_path_steer(feet, target, leg_crosses) = target`: with no route the
+body glides again (W10-d and every pair before). `glide_leg_end` and
+`first_leg_crosses_solid` stay as the COUNT: GLIDE INTO A WALL
+(counted) (uid, dist_xy, leg, pending, glides_into_wall), the base
+rate for W11, which catches the body at the wall by its feet and
+drops the route. GLIDES_HELD becomes GLIDES_INTO_WALL. Pin
+`no_path_glides_and_the_wall_is_counted` (W10-f's re-stated: the
+leg cut at six; the steer is the target whether the leg crosses or
+not); planted: the hold restored, red. Prediction (b2 fresh,
+`wait-w10g-b2.sh`): "job claimed" at least 40 by +4 (0); arrivals
+at least 20 by +10 (0); working at least 8 at +10 (0); TRUNK ROUTE
+PROFILE at least one line by +10 (0); GLIDE INTO A WALL fires and its
+day-1 count is the base rate; EMBED WATCH at most 12 by day 1 (W10-d:
+10); p95 under 700 us. Falsified if the claims stay under 40 with
+the glide back (the freeze was never the hold; the W9-i3/E2-d lineage
+on this world is the suspect, and the next boot is the E2-d pair on
+b2), or if EMBED WATCH passes 30 by day 1. Rejected: a hold with a
+timeout; a boot-only exception; more pump slices before the pump has
+a witness (W10-i1). NOT evidenced: why the approach search from a
+house delivers no route (W10-i1's census answers it); the door's part.
+
 ## W10-i1, registered 11:30 (keyed on the E2-e stage, the end of the chain, before the binary)
 
 An instrument row. The pump had no witness: W10-e's failure was read

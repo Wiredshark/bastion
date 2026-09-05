@@ -8978,6 +8978,17 @@ impl Server {
             // to (7696,6288) on one boot, 5,682 arrival lines, one walker
             // frozen eight minutes at a cell inside a structure).
             let home = ecs.read_resource::<bastion_jobs::JobBoard>().settlement_bounds;
+            // ★ T1-b: no bounds, no book -- the first refresh of a boot ran
+            // before adoption set the bounds and admitted the home site.
+            if !price_book_ready(home) {
+                if tick % 6000 == 23 {
+                    tracing::info!(
+                        tick,
+                        "bastion: ITEM 29 trade price book WAITS for the settlement bounds"
+                    );
+                }
+                return;
+            }
             data.sites
                 .iter()
                 .filter_map(|(_, site)| {
@@ -9141,6 +9152,25 @@ pub(crate) fn bastion_record_applied_changes(
 /// ★ T1: a priced site inside the colony's own settlement bounds is the
 /// colony itself and is never a trading partner. No bounds yet (before
 /// the founding): every site admits, as before.
+/// ★ T1-b pinned: the price book is built only once the settlement bounds
+/// exist; before that every site would be admitted, the home site with them.
+pub(crate) fn price_book_ready(home: Option<(Vec2<i32>, Vec2<i32>)>) -> bool {
+    home.is_some()
+}
+
+#[cfg(test)]
+mod t1b_tests {
+    use super::*;
+
+    /// ★ T1-b pinned: no bounds, no book; bounds, a book. Planted defect: the
+    /// book built without bounds -> red.
+    #[test]
+    fn the_price_book_waits_for_the_bounds() {
+        assert!(!price_book_ready(None), "no bounds yet: no book");
+        assert!(price_book_ready(Some((Vec2::new(7518, 6068), Vec2::new(7873, 6549)))), "bounds: a book");
+    }
+}
+
 pub(crate) fn price_book_admits(wpos: Vec2<i32>, home: Option<(Vec2<i32>, Vec2<i32>)>) -> bool {
     !home.is_some_and(|(mn, mx)| {
         wpos.x >= mn.x && wpos.x <= mx.x && wpos.y >= mn.y && wpos.y <= mx.y
