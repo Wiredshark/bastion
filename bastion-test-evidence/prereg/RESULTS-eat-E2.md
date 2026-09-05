@@ -125,6 +125,16 @@ window for eating supper and the wrong one for hauling it. Beside it:
 row), and 12 loads against 32 shelved houses is a quarter of an
 evening.
 
+Second replicate, b2 (W10-a-c pair be49881c8e, E2 inside, boot
+07:56, day-1 line 08:20): SUPPER ROUND day=0 hour=20 houses=49
+shortfall=53 loads=12 no_shelf=17; Haul arrivals after the round 0,
+NIGHT MEAL AT HOME 0. The day-1 STORAGE SUMMARY reads private_units
+117 there -- not the round's (no haul arrived) and not the founding
+delivery's (0 private deliveries); whatever lands on shelves by other
+paths on the eight-day arm fed no sleeper, since the night scan found
+none (b2's night 1 had no starving sleepers to feed: EatFrom/Traveling
+7 and 4 at hours 21-22, sleepers 0). Same mechanism, same failure.
+
 ## E2-b, registered 08:02 (keyed on the P-zero-hours-d stage, before the binary; T1 re-keyed behind it)
 
 `shift_end_hour(night_watch, uid, hour)`: Work now and Work does not

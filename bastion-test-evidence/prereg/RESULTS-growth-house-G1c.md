@@ -384,6 +384,15 @@ earlier fresh boots read 0-6 cells on day 0; the ninth test's 24 on
 b3 came from a different arm (forced plot request) and are not the
 control for this.
 
+At plan +30 min (08:04, hour 5 of day 1): the day-1 line's pass at
+11:56:38 read roster=50 named=49 plot_plan_open=true
+open_build_cells=1926 wanted=6 builders_now=2 -- once the founders had
+hours, the map filled and the draft had a pool; Build arrivals still 1
+and cells placed 1 at the read, eight minutes after that pass and in
+the Sleep block. The crew the draft names at the day line builds from
+hour 8, which is the day-0 crew P-zero-hours-d exists to name at the
+plan.
+
 ### P-zero-hours-d, registered 07:52 (keyed on the W10-a-c stage, before the binary; T1 re-keyed behind it)
 
 The day line's naming loop iterates `tops`, built from lane_counts
@@ -409,3 +418,24 @@ HAUL LANE CEILING demotes nobody at the first pass. Falsified if one
 lane takes more than half the roster (the recount is not reaching the
 verdict) or if named_build >= 5 and nothing is placed in ten minutes
 (a route row).
+
+Landed 30181a5eac at 08:17: check clean, both pins green (its own and
+P-zero-hours'), staged 08:17, shipped to lab-bin 08:18. Falsified at
+the commit: the recount removed turned the pin red (0 passed, 1
+failed), tree restored clean at 08:20. The b3 reader
+(`wait-pzd-b3.sh`: fresh boot with the plot request
+forced, NAMED BY NEED, the draft pass and sizing, the ceiling, the
+arrivals by lane and cells placed at plan +10 and +25) run from the
+stage.
+
+Live on b3 (boot 08:17, plan at 12:17:52 log time, read at plan +5
+min, hour 11): NAMED BY NEED named_by_need=48 total=48 at the first
+pass; BUILD DRAFT PASS roster=48 named=48 wanted=6 builders_now=0;
+BUILD DRAFT SIZED wanted=6 builders_now=0 named_build=5 (five founders
+already given Build by the spread); no HAUL LANE CEILING line at the
+first pass (nobody to demote); arrivals by lane in five minutes: Mine
+120, Build 72, DepositRun 70, Haul 39, Cook 21 (and TradeMission 924,
+the storm T1 is queued for); BUILD CELL PLACED 63. **PASSED** every
+registered bar (arrivals above 10, cells above 15 within ten minutes;
+no lane above half the roster, by the arrivals' spread) at half the
+time allowed. The +10 and +25 reads follow.

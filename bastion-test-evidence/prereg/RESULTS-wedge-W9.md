@@ -645,6 +645,70 @@ failed), tree restored clean at 07:57. The b2 reader
 `replaced_fill`, idx0 embeds, STALL BLAMED, at +4, +10, days 1-2)
 run from the stage.
 
+### W10-a-c live (b2, be49881c8e, boot 07:56)
+
+| read | +4 min (hour 11) | +10 min (hour 15) | bar |
+|---|---|---|---|
+| FIRST LEG GATE | (not yet at 256; STITCHED 16 of 22 searched) | routes=512 near=476 crossed=36 blocked_pending=1 replaced_fill=17 searched=35 stitched=28 unreachable=0 tail_dropped=2 | blocked at most 2; searched + replaced >= crossed - blocked; stitched >= 0.8 x |
+| idx0 embeds / EMBED WATCH | 1 / 3 | 2 / 6 | 0-1 / at most 2 |
+| STALL BLAMED / ROUTE FAULT | 1 / 0 | 1 / 0 | no higher than 4 / 2 |
+| ITEM 39 p95 | 463 us | 491 us | under 600 |
+| profile detour / rejected_solid / rejected_dz | 1.97 / 404 / 498 | 2.15 / 2,152 / 1,396 | -- |
+| panics | 0 | 0 | 0 |
+
+Day 1 (08:21, hour 0): FIRST LEG GATE routes=768 near=726 crossed=42
+blocked_pending=1 replaced_fill=18 searched=41 stitched=33
+tail_dropped=2; EMBED WATCH 9 for the day (W10-a-b 6, W10-a-i 11,
+W10-a 15, W9-c 10), idx0 5 (W10-a-b 5); STALL BLAMED 4, ROUTE FAULT 0;
+profile routes 7,168, detour 2.13, rejected_solid 4,097, rejected_dz
+2,094; p95 570 us; starving 3 at the day line; panics 0.
+
+Disposition at day 1: the mechanism half PASSED on both reads
+(blocked_pending 19 -> 1 over the day, the replaced arm carrying 18,
+stitched 33 of 41), and the outcome half is NOT separable from
+W10-a-b (9 / 5 against 6 / 5, inside the swing). The first-node
+embeds that remain are not first-leg glides -- the first leg is now
+searched and stitched on every crossing -- which is what the six
+embed lines already said (chaser-pure-glide, entry_vel z +3.8, mid-
+route). W10-d carries that class.
+
+Disposition at +10: the mechanism half PASSED -- blocked_pending
+12 -> 1 with the Fill arm replaced 17 times, searched equals
+crossed minus blocked to the unit, stitched 28 of 35 (the 0.8 bar
+exactly), no stall or route-fault rise, the pump under 500 us. The
+outcome half did NOT pass at this replicate: idx0 embeds 2 and EMBED
+WATCH 6 against W10-a-b's 1 and 2 at the same read (W10-a-i 5 / 7,
+W10-a 7 / 11, W9-c 6). One replicate on a count that swings 2-3x; the
+day-1 line (W10-a-b: 5 / 6) is the comparison that decides whether
+the remaining first-node embeds are first-leg glides at all.
+
+The six embeds themselves (b2, +10): every one
+writer_site="chaser-pure-glide", route_head_solid=false,
+back_along_route=true, entry_vel z=+3.8, relocated_to two blocks above
+embedded_at -- the glide met a wall between two ground nodes mid-route
+and the step-up lodged the body in the wall's top; uid 47 three times
+at (7567, 6386). Not the first leg: the other twenty-odd segments were
+still straight lines assumed clear.
+
+## W10-d, registered 08:12 (keyed on the T1 stage, before the binary; W9-i2 re-keyed behind it)
+
+`segment_crosses_solid(solid, a, b)` walks every trunk segment's line
+every half block, feet and head, at a height that follows the segment
+(a one-block terrace step is a step, not a wall);
+`trunk_crossing_segment` names the first crossing leg; a route with
+one is refused to the exact pump like the ground rule and the step
+limit refuse theirs -- TRUNK ROUTE REJECTED (crossing) at powers of
+two, `rejected_crossing` on the profile. Pin
+`every_leg_is_walked_before_it_is_assumed`; planted defect: the
+height not following the segment (a step reads as a wall), red.
+
+Prediction (b2 fresh, +10 and day 1): rejected_crossing between 3%
+and 20% of routes; EMBED WATCH at +10 at most 2 and at day 1 at most
+3 (W10-a-b 6); idx0 at day 1 at most 2 (W10-a-b 5); p95 under 800 us;
+the accepted share no lower than 15%. Falsified if rejected_crossing
+is under 1% and the embeds hold (the wall is off the trunk's lines),
+or if p95 passes 800 us (the pump's budget is the row).
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground

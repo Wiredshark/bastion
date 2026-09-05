@@ -8031,9 +8031,11 @@ pub const SUPPER_LINE: f32 = 0.6;
 /// hold at the supper hour, per head (a supper and a breakfast; the town
 /// eats ~3.2 a head a day). The round tops the shelf up to this, never past.
 pub const SUPPER_UNITS_PER_HEAD: u32 = 2;
-/// Loads one supper round may mint (the haul ceiling is 12 haulers; a
-/// round is one evening's errand, not a warehouse move).
-pub const SUPPER_ROUND_LOADS_MAX: u32 = 12;
+/// Loads one supper round may mint. Twelve haulers (the lane's ceiling)
+/// over the last two Work hours at about a minute a load carry roughly
+/// thirty; b1 has 32 shelved houses to stock. A round is one afternoon's
+/// errand, not a warehouse move -- the shortfall caps it below this.
+pub const SUPPER_ROUND_LOADS_MAX: u32 = 36;
 pub(crate) static SUPPER_LOADS_MINTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// ★ E2 pinned: the shelf's shortfall against its household -- zero when
@@ -8050,6 +8052,21 @@ pub(crate) fn supper_round_due(supper_now: bool, last_day: Option<i64>, today: i
 /// True in the two hours before this colonist's Sleep block (and not in
 /// it): the town's 20-21 on the default schedule, a night watchman's own
 /// evening on his.
+/// ★ E2-b pinned: the last two Work hours of this colonist's schedule --
+/// the haulers' last errand of the day runs here, on shift, with time to
+/// deliver before supper. On the default schedule that is 14 and 15.
+pub(crate) fn shift_end_hour(
+    night_watch: &HashSet<common::uid::Uid>,
+    uid: Option<&common::uid::Uid>,
+    hour: u32,
+) -> bool {
+    let block = |h: u32| colonist_schedule_block(night_watch, uid, h % 24);
+    let work_now = matches!(block(hour), ScheduleBlock::Work);
+    work_now
+        && (!matches!(block(hour + 1), ScheduleBlock::Work)
+            || !matches!(block(hour + 2), ScheduleBlock::Work))
+}
+
 pub(crate) fn supper_hour(
     night_watch: &HashSet<common::uid::Uid>,
     uid: Option<&common::uid::Uid>,
@@ -27805,7 +27822,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let tod = rtsim.rt_state().data().time_of_day.0;
             let hour = hour_of_day(tod);
             let today = (tod / common::resources::DAY).floor() as i64;
-            if supper_round_due(supper_hour(&board.night_watch, None, hour), board.supper_round_day, today) {
+            // ★ E2-b: at shift end (the haulers are on shift), not at the
+            // supper hour (nobody works then; b1 night 1: 12 loads, 0 hauled).
+            if supper_round_due(shift_end_hour(&board.night_watch, None, hour), board.supper_round_day, today) {
                 board.supper_round_day = Some(today);
                 let houses: Vec<Region> = board
                     .designated
@@ -53894,6 +53913,21 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2-b pinned: on the default schedule the round's window is 14
+    /// and 15 -- not 13 (two more Work hours follow), not 16 (Leisure),
+    /// not 20 (the supper hour, nobody hauls), not 3 (asleep). Planted
+    /// defect: the Work test inverted -> red.
+    #[test]
+    fn the_supper_round_runs_at_shift_end() {
+        let nw = HashSet::new();
+        for h in [14u32, 15] {
+            assert!(shift_end_hour(&nw, None, h), "hour {h}: the last two Work hours");
+        }
+        for h in [13u32, 16, 20, 3] {
+            assert!(!shift_end_hour(&nw, None, h), "hour {h}: not shift end");
+        }
     }
 
     /// ★ E2 pinned: a household of three with one unit on the shelf wants
