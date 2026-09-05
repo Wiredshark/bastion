@@ -12428,6 +12428,11 @@ pub struct JobBoard {
     /// carrying a row's acceptance signal must not be buried under
     /// thousands of copies of itself.
     pub courtship_logged_day: Option<i64>,
+    /// ★ R3-i: the game day the HOUSEHOLDS line last printed. It printed only
+    /// when a bed assignment changed that pass, so a restored boot with a
+    /// settled roster never printed it and the restart tests could not read
+    /// `houses=58`; it now also prints on the first pass of each day.
+    pub households_logged_day: Option<i64>,
     /// ROW 33 (watch coverage): the last eight alarm-cry positions —
     /// the town's own record of where danger arrives; the approach
     /// post derives from their centroid.
@@ -13970,6 +13975,16 @@ pub struct JobBoard {
     /// in this system (the fulfil step appends, `PLOT BUILT` flips), and this
     /// system holds rtsim by a READ handle only (`RtSimAccess::rt_state`).
     pub growth_log: Vec<common::bastion::BastionGrownPlotV1>,
+    /// ★ R3: the stores' items at the last census -- (cell, def, units) --
+    /// the larder a kept world gets back. Refreshed with the discriminator
+    /// every 300 ticks from the same pickup-item join; the rtsim tick copies
+    /// it into the save.
+    pub store_snapshot: Vec<(Vec3<i32>, String, u32)>,
+    /// ★ R3: the saved larder read back by the rtsim tick at boot, drained
+    /// ONCE by this system into [`PendingSeedItems`] (the founding's own
+    /// deferred-delivery queue), which lands it in the town's store when the
+    /// chunks load.
+    pub pending_store_restore: Vec<(Vec3<i32>, String, u32)>,
     /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
     /// `None` when there is nothing left to replay.
     ///
@@ -16624,6 +16639,31 @@ pub struct MineReadbackQueue(pub Vec<MineReadbackEntry>);
 #[derive(Default)]
 pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 
+/// ★ R3 (2026-09-05): A KEPT WORLD KEEPS ITS LARDER. Dropped items are
+/// entities and none survives a restart; the sixth restart test's restored
+/// boot read 65 food units where the fresh boot had 3,600, and closed the
+/// settler gate for famine on day 0. The snapshot is every pickup item in a
+/// store cell, aggregated per (cell, def), zeros dropped, sorted so the save
+/// is the same bytes for the same larder (determinism by construction:
+/// the aggregate is a hash map). What is NOT in a store -- litter on a
+/// road, a bag -- is not the larder and is not saved.
+pub(crate) fn store_snapshot_from(
+    items: impl IntoIterator<Item = (Vec3<i32>, String, u32)>,
+    in_store: impl Fn(Vec3<i32>) -> bool,
+) -> Vec<(Vec3<i32>, String, u32)> {
+    let mut agg: HashMap<(Vec3<i32>, String), u32> = HashMap::new();
+    for (cell, def, n) in items {
+        if n == 0 || !in_store(cell) {
+            continue;
+        }
+        *agg.entry((cell, def)).or_insert(0) += n;
+    }
+    let mut out: Vec<(Vec3<i32>, String, u32)> =
+        agg.into_iter().map(|((c, d), n)| (c, d, n)).collect();
+    out.sort_by(|a, b| (a.0.x, a.0.y, a.0.z, &a.1).cmp(&(b.0.x, b.0.y, b.0.z, &b.1)));
+    out
+}
+
 /// bastion (ITEM 29): the trade price book — (site position, food received
 /// per wood sold), refreshed by the SERVER (which can see `world`'s site
 /// economies; this leaf crate cannot) and READ by the mission generator.
@@ -18809,6 +18849,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // LOADED terrain, witness the delivery with the count, and keep
             // waiting entries. `terrain.get` Ok is the load probe (the
             // surface drain's own test).
+            // ★ R3: the saved larder joins the founding's delivery queue, once.
+            if !board.pending_store_restore.is_empty() {
+                let items = std::mem::take(&mut board.pending_store_restore);
+                let units: u32 = items.iter().map(|(_, _, n)| *n).sum();
+                info!(
+                    entries = items.len(),
+                    units,
+                    "bastion: STORE RESTORED — the saved larder is queued for delivery into \
+                     the town's store once its chunks load"
+                );
+                pending_seed_items.0.extend(items);
+            }
             if !pending_seed_items.0.is_empty() {
                 let pending = std::mem::take(&mut pending_seed_items.0);
                 let mut still_waiting = Vec::new();
@@ -19199,6 +19251,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     colonists = (&colonists).join().count(),
                     "bastion FOOD-WIPE DISCRIMINATOR — the same food counted four ways"
                 );
+                // ★ R3: the larder snapshot -- same join, same tick, every
+                // item kind (seeds, stone and wood are the town's too).
+                let snap = store_snapshot_from(
+                    (&pickup_items, &positions).join().filter_map(|(pi, ipos)| {
+                        let def = pi.item().item_definition_id().itemdef_id()?.to_string();
+                        Some((ipos.0.map(|e| e.floor() as i32), def, pi.item().amount() as u32))
+                    }),
+                    |c| board.stockpiles.iter().any(|(_, r)| r.contains_point_xy(c)),
+                );
+                board.store_snapshot = snap;
                 // THE EXPERIENCE CENSUS (Ben direct, 2026-08-21: "you need
                 // to actually play test the game"). Mechanisms passing while
                 // the colony LOOKS broken is the failure class every witness
@@ -26117,7 +26179,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                     }
                 }
-                if assigned > 0 || released > 0 {
+                // ★ R3-i: once a day as well as on change, so a restored boot
+                // with nothing to reassign still says what it holds.
+                let today_h = (rtsim.rt_state().data().time_of_day.0 / common::resources::DAY)
+                    .floor() as i64;
+                let first_pass_h = board.households_logged_day != Some(today_h);
+                if assigned > 0 || released > 0 || first_pass_h {
+                    board.households_logged_day = Some(today_h);
                     info!(
                         houses = households.len(),
                         occupied,
@@ -53026,6 +53094,34 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ R3 pinned: the larder snapshot is every item in a store cell,
+    /// aggregated per (cell, def), zeros dropped, litter outside every
+    /// store left out, sorted. Planted defect: the store filter dropped ->
+    /// the road litter is saved -> red.
+    #[test]
+    fn a_kept_world_keeps_its_larder() {
+        let store = |c: Vec3<i32>| c.x >= 10 && c.x <= 20 && c.y >= 10 && c.y <= 20;
+        let items = vec![
+            (Vec3::new(12, 12, 181), "food.carrot".to_string(), 16),
+            (Vec3::new(12, 12, 181), "food.carrot".to_string(), 16),
+            (Vec3::new(12, 12, 181), "bastion.wheat_seeds".to_string(), 8),
+            (Vec3::new(11, 12, 181), "food.carrot".to_string(), 4),
+            (Vec3::new(5, 5, 181), "food.carrot".to_string(), 9),
+            (Vec3::new(13, 13, 181), "log.wood".to_string(), 0),
+        ];
+        let snap = store_snapshot_from(items, store);
+        assert_eq!(
+            snap,
+            vec![
+                (Vec3::new(11, 12, 181), "food.carrot".to_string(), 4),
+                (Vec3::new(12, 12, 181), "bastion.wheat_seeds".to_string(), 8),
+                (Vec3::new(12, 12, 181), "food.carrot".to_string(), 32),
+            ],
+            "two carrot stacks on one cell aggregate; seeds ride too; the road litter at (5,5) and the empty wood do not; sorted by cell then def"
+        );
+        assert!(store_snapshot_from(Vec::new(), store).is_empty(), "no items: nothing");
     }
 
     /// ★ R1d pinned: a saved Bed order re-registers in place, a saved Build

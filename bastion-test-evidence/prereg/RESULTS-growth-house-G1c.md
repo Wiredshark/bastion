@@ -283,3 +283,19 @@ the commit: the idle-day switch planted turned
 at `bastion_jobs.rs:53003` (02:16); the tree restored clean. The
 house-day read on b3 (`wait-pz-b3-b.sh`) boots after the restored-boot
 day-1 read and before the eighth restart test; its section follows.
+
+### The house day on b3 (pz pair 2e0b063b53, boot 02:25, day 1 at 02:57)
+
+| bar | registered | read | verdict |
+|---|---|---|---|
+| the morning draft's names | named_build within the crew (no zero-hour names beyond it) | `BUILD DRAFT SIZED wanted=6 builders_now=2 named_build=5` at the day-1 boundary | PASS (G1c-e grew four accidental builders a morning; here the names stay under the crew) |
+| the crew | 6 (7 at most) | wanted 6, named 5 | PASS |
+| day-1 placement | near 180 | 26 (`build/Completed` 26; BUILD PROGRESS placed=21 remaining=1888 at the day line; z 180-182) | FAIL, confounded |
+| panics | 0 | 0 | -- |
+
+The placement miss is not this row's: the boot carries W9, whose
+rejected trunk routes queue on the search pump and leave walkers
+standing (`RESULTS-wedge-W9.md`, the 61 stalls); W9-b and W10 are the
+rows that answer it, and the per-builder rate is re-read on their
+pair. P-zero-hours' own claim -- an idle day names nobody, a newcomer
+takes the scarcest lane -- holds on this boot.

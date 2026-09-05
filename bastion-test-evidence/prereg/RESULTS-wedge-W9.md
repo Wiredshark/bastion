@@ -220,6 +220,88 @@ W9-b landed as fb14467af7 (02:23; check clean, pin green; staged
 the tree restored clean. b2 restarted on it at 02:36; its reads follow
 under "W9-b live".
 
+### W9-b live (b2, fb14467af7)
+
+| read | W9 boot +4 min | W9-b boot +4 min (02:40) |
+|---|---|---|
+| TRUNK rejected (solid) / lifted / sidestepped | 512 / 1,037 / -- | 256 / 743 / 511 |
+| COMMITTED GLIDE REFUSED (drops) | 64 | 256 |
+| EMBED WATCH | 0 | 5 (four at the terrace edge (7714-7716, 6342-6344, 182-183), `back_along_route=true`, no solid node) |
+| the two cells as a route head | 0 / 0 | 0 / 0 |
+| rejected (dz) | 15 | 18 |
+| ITEM 39 p95 | 507 us | 486 us |
+
+Half the rejections gone to sidesteps at four minutes; the embeds
+that appeared are the terrace-edge class (W10-b's cliff), which a
+sidestepped node may now reach the lip of. The ten-minute and day-1
+reads decide W9-b's bars (rejections under 100 per ten minutes, embeds
+under 40 a day).
+
+Placed on their segments (02:48, eight embeds by then): uids 67, 60,
+60 and 62 sit at t = 0.35-0.39, within 0.4 of the line from
+(7717,6345,186) to heads at (7714-7716, 6342-6344, 182-183) -- a
+three- or four-block drop over 3.2-4.2 blocks that the six-block limit
+admits and W10-b's two-block limit rejects; one (uid 14) is a flat
+seven-block segment at z=186 with the body at 185 (ground rising above
+the line, `lift_over_ground`'s class); two (55, 66) are first legs
+11-15 blocks off any segment (W10-a). None is a solid node: W9-b did
+not put a node into anything; it let a route reach a cliff it used to
+reject for a wall.
+
+| read | W9 boot +10 min | W9-b boot +10 min (02:46) |
+|---|---|---|
+| TRUNK rejected (solid) / lifted / sidestepped | 1,024 / 2,026 / -- | 512 / 1,531 / 1,026 |
+| COMMITTED GLIDE REFUSED (drops) | 512 | 1,024 |
+| EMBED WATCH | 1 | 9 (the terrace edge five, first legs, one ground rise) |
+| rejected (dz) / STALL BLAMED | 18 / 0 | 22 / 2 |
+| ITEM 39 p95 | 571 us | 497 us |
+
+Rejections halved at ten minutes; drops doubled (more routes survive
+to be dropped at the store wall) and the embeds are the cliff W10-b
+rejects. The day-1 census decides the work bar.
+
+### W9-b day 1 on b2 (03:04) against its bars
+
+| bar | W9 day 1 | W9-b day 1 | verdict |
+|---|---|---|---|
+| TRUNK rejected (solid), the day | 4,096+ | 1,024 (lifted 4,016; sidestepped 1,960) | -75%, above the bar of ~100 per ten minutes |
+| EMBED WATCH, the day | 2 | 18 (the terrace cliff, first legs, one ground rise; no solid node) | under 40, PASS |
+| the two cells as a route head | 0 / 0 | 0 / 0 | PASS |
+| WEDGE PROBE stalls | 61 in 1.6 days | 10 (no_head 5, head_far 2), none exhausted | down |
+| COMMITTED GLIDE REFUSED (drops) | 2,048+ | 2,048+ | unchanged |
+| works (lane None) / travel per claim | 206 / 40.8 | 227 / 39.8 (control 550 / 24.5) | FAIL |
+| cooked / meals / shunned / no_food_found | 83 / 48 / 2 / 0 | 81 / 48 / 7 / 0 | held |
+| food_stock / locked / anywhere | 3,860 / 0 / 3,868 | 3,902 / 45 / 3,963 | the frames agree |
+| ITEM 39 p95 / panics | 591 us / 0 | 484 us / 0 | -- |
+
+Disposition: W9-b keeps the wedge closed, cuts the rejections by three
+quarters and the stalls by most, and does not move the work. With
+stalls down to ten a day the pump is no longer the explanation for
+227 against 550; the trips themselves are 60% longer per claim on both
+W9 and W9-b. Whether that is bodies walking around walls they used to
+phase through (honest, and the end of the "phase" class) or routes
+that now climb and detour (a regression the counters cannot see) is
+the next instrument: W9-i, a trunk route profile (length against the
+straight line, nodes lifted up, down and aside) and a body-height
+histogram from the authoritative position dump, read on b2 before any
+further mover row.
+
+## W9-i, the route profile (instrument, registered 03:15; queued on R3's stage, ahead of W10)
+
+`route_profile(wps)` -> (walked xy length, straight line) in hundredths
+of a block, summed over every trunk route with its node count;
+`TRUNK ROUTE PROFILE` every 1,024 routes: mean_nodes, mean_len,
+mean_straight, detour_ratio, lifted_up, lifted_down, sidestepped,
+rejected_solid, rejected_dz. The b2 reader boots with
+`BASTION_AUTH_POS_LOG` and histograms colonist z against the grades
+181 and 186 (within one block; two to three above; four or more
+above). Pinned (`a_route_profile_is_its_length_against_its_line`;
+planted: the straight line reported as the length). Registered: honest
+walking reads detour_ratio under 1.5, lifted_up a small share, bodies
+two or more above a grade under 3%; the regression reads detour_ratio
+above 2 or lifted_up rivalling sidestepped, bodies two or more above a
+grade over 10%. The next mover row is aimed at whichever number.
+
 ## W10-b and W10-a, registered 02:20 (queued behind R3, before the binaries)
 
 W10-b (`fix-w10b.py`): `TRUNK_REJECT_DZ` 6 -> 2 through

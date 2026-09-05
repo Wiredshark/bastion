@@ -66,3 +66,24 @@ After W8-f: the same census on its boot -- do the starving ids still
 repeat, and are they still `EatFrom:Traveling`? If the tail moves to
 `none:idle` or `RestAt`, the remaining row is the need scan; if it stays
 `Traveling`, W8-ii's node verdicts name the next mover fix.
+
+## What the night answered (W8-f through W9-b, 2026-09-05)
+
+The starving tail on b1's W8-f boot was the wedge: nine starving at
+bedtime on day 2, four of them the settlers wedged at (7639,6279,174)
+all day (`RESULTS-wedge-W9.md`); on W9 the two trap cells vanished
+from both arms (embeds 646 -> 2 on b2, 3,190 -> 21 on b1 by day 2),
+and b1's starving read 1 at the day-2 census. What remains on W9 is
+pump latency (walkers standing on `no_head`/`head_far` while rejected
+trunk routes are searched), which W9-b halves and the W10 rows finish.
+
+## E1-f (b2f3f48d3f): one standability, the item-reach gate on
+
+Landed 02:48 (check clean, both pins green), staged 02:58. Falsified
+at the commit: the gate off by default (`.is_none()` -> `.is_some()`)
+turned `the_item_reach_gate_is_on_by_default` red at
+`bastion_jobs.rs:53129` (03:02); the tree restored clean. The live
+read runs on b1 (the 160-day arm, restarted 02:59 on the pair;
+`wait-e1f-b1.sh`): the STARVING census at day 1, `no_food_found`, the
+item-reach lines, against b1's W9 day 1 (starving 1 at the census,
+meals 47, shunned 13).

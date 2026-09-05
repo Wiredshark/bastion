@@ -964,6 +964,17 @@ impl<'a> System<'a> for Sys {
             // IDENTITY FALLBACK: an empty log (a fresh world, or a save from
             // before this field existed) opens no replay cursor and changes
             // nothing at all.
+            // ★ R3: the saved larder, handed to the bastion tick (which can see
+            // the terrain and the delivery queue) to drain once.
+            let larder = rtsim.state.data().bastion_store_items.clone();
+            if !larder.is_empty() {
+                tracing::info!(
+                    entries = larder.len(),
+                    units = larder.iter().map(|(_, _, n)| *n).sum::<u32>(),
+                    "bastion: STORE READ FROM SAVE — the larder awaits the town's store"
+                );
+                job_board.pending_store_restore = larder;
+            }
             let log = rtsim.state.data().bastion_growth_log.clone();
             if !log.is_empty() {
                 tracing::info!(
@@ -1027,6 +1038,16 @@ impl<'a> System<'a> for Sys {
             // being counted twice on the next boot (see the ★ G1d note at the
             // registration site in `bastion_jobs.rs`).
             rtsim.state.data_mut().bastion_growth_log = job_board.growth_log.clone();
+            // ★ R3: the larder rides in the save. Witnessed at every save so a
+            // restart test can wait for a save that carries it.
+            rtsim.state.data_mut().bastion_store_items = job_board.store_snapshot.clone();
+            if !job_board.store_snapshot.is_empty() {
+                tracing::info!(
+                    cells = job_board.store_snapshot.len(),
+                    units = job_board.store_snapshot.iter().map(|(_, _, n)| *n).sum::<u32>(),
+                    "bastion: STORE SNAPSHOT SAVED — the stores' items ride in the save"
+                );
+            }
             rtsim.save(/* &slow_jobs, */ false, &db_dir);
         }
 

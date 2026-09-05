@@ -142,6 +142,16 @@ pub struct Data {
     /// nothing and changes nothing.
     #[serde(default)]
     pub bastion_growth_log: Vec<common::bastion::BastionGrownPlotV1>,
+    /// ★ R3 (2026-09-05): A KEPT WORLD KEEPS ITS LARDER. The stores' items
+    /// at the last census -- (cell, item def, units) -- because dropped items
+    /// are entities and none survives a restart; the sixth restart test came
+    /// back with 65 food units where the fresh boot had 3,600 and closed the
+    /// settler gate for famine on day 0. Written by the rtsim tick from the
+    /// job board's snapshot at every save; read once at boot and re-delivered
+    /// through the founding's deferred-delivery queue. `#[serde(default)]`
+    /// pattern, no version bump.
+    #[serde(default)]
+    pub bastion_store_items: Vec<(vek::Vec3<i32>, String, u32)>,
 
     // If true, rtsim data will be ignored (and, hence, overwritten on next save) on load.
     #[serde(default)]

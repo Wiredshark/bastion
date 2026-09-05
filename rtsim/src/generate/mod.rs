@@ -118,6 +118,8 @@ impl Data {
             bastion_designations: Vec::new(),
             // bastion (G1d): ...and hence nothing grown yet either.
             bastion_growth_log: Vec::new(),
+            // bastion (R3): ...and no larder to bring back.
+            bastion_store_items: Vec::new(),
             should_purge: false,
             // `APEX-T4.3`: stamped by `RtSim::new` right after generation,
             // not here -- this constructor doesn't have the freshly-
