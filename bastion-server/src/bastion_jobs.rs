@@ -8098,6 +8098,35 @@ pub(crate) fn shelf_cell_beside(
         })
 }
 
+/// ★ E2-d: the largest stack a supper haul may carry. A supper for a
+/// household is two units a head; cooked stacks are one to three; harvest
+/// stacks of hundreds are the larder, not a supper, and a haul carries a
+/// whole stack.
+pub const SUPPER_STACK_MAX: u32 = 8;
+pub(crate) static SUPPER_SKIPPED_NO_SMALL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static SUPPER_STALE_REMOVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ E2-d pinned: which stack a supper haul takes for `need` units -- the
+/// smallest stack that covers the need and is no larger than the cap;
+/// else the largest stack under the cap (a partial supper); else none.
+/// Never a stack over the cap, whatever the need.
+pub(crate) fn supper_stack_pick(amounts: &[u32], need: u32) -> Option<usize> {
+    let covering = amounts
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| **n >= need && **n <= SUPPER_STACK_MAX)
+        .min_by_key(|(i, n)| (**n, *i))
+        .map(|(i, _)| i);
+    covering.or_else(|| {
+        amounts
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n > 0 && **n <= SUPPER_STACK_MAX)
+            .max_by_key(|(i, n)| (**n, std::cmp::Reverse(*i)))
+            .map(|(i, _)| i)
+    })
+}
+
 /// ★ E2 pinned: the shelf's shortfall against its household -- zero when
 /// the shelf already holds enough, never negative.
 pub(crate) fn supper_shortfall(heads: u32, shelf_units: u32, per_head: u32) -> u32 {
@@ -14310,6 +14339,8 @@ pub struct JobBoard {
     pub arrival_logged: std::collections::HashSet<JobId>,
     /// ★ E2: the day the supper round last ran (None: never).
     pub supper_round_day: Option<i64>,
+    /// ★ E2-d: the day the unclaimed supper loads were last swept.
+    pub supper_stale_day: Option<i64>,
     /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
     /// `None` when there is nothing left to replay.
     ///
@@ -19692,6 +19723,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .sum::<u32>()
                     })
                     .sum();
+                // ★ E2-d: who holds the food when the bags hold more than a
+                // day's meals (b1, E2-b day 1: 2,327 units in bags at dawn).
+                if food_bags > 300 {
+                    let mut holders: Vec<(u64, u32)> = (&colonists, &inventories, &uids)
+                        .join()
+                        .map(|(_, inv, uid)| {
+                            let n: u32 = inv
+                                .slots()
+                                .flatten()
+                                .filter(|i| {
+                                    i.item_definition_id()
+                                        .itemdef_id()
+                                        .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                })
+                                .map(|i| i.amount() as u32)
+                                .sum();
+                            (uid.0.get(), n)
+                        })
+                        .filter(|(_, n)| *n > 0)
+                        .collect();
+                    holders.sort_by_key(|(u, n)| (std::cmp::Reverse(*n), *u));
+                    holders.truncate(3);
+                    info!(
+                        tick = tick.0,
+                        in_bags = food_bags,
+                        holders = holders.len(),
+                        top = ?holders,
+                        "bastion: BAG CENSUS — the top food holders (uid, units) while the bags hold \
+                         more than a day's meals"
+                    );
+                }
                 info!(
                     tick = tick.0,
                     in_stockpile = food_stock,
@@ -28068,12 +28130,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     short.sort_by_key(|(have, hmin, ..)| (*have, hmin.x, hmin.y, hmin.z));
                     for (_, _, z, mut need) in short {
                         while need > 0 && loads < SUPPER_ROUND_LOADS_MAX {
-                            // the smallest general stack that covers the need, else the largest
-                            let pick = general_food
-                                .iter()
-                                .position(|(_, _, _, n)| *n >= need)
-                                .or_else(|| general_food.len().checked_sub(1));
-                            let Some(i) = pick else { break };
+                            // ★ E2-d: a supper is a small stack -- never a
+                            // stack over the cap, whatever the need.
+                            let amounts: Vec<u32> = general_food.iter().map(|(_, _, _, n)| *n).collect();
+                            let pick = supper_stack_pick(&amounts, need);
+                            let Some(i) = pick else {
+                                SUPPER_SKIPPED_NO_SMALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                break;
+                            };
                             let (iuid, cell, def, n) = general_food.remove(i);
                             let rid = board.reserve(iuid, u32::MAX);
                             let id = board.next_id;
@@ -28113,8 +28177,62 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         no_shelf,
                         general_stacks_left = general_food.len(),
                         loads_total = SUPPER_LOADS_MINTED.load(std::sync::atomic::Ordering::Relaxed),
+                        skipped_no_small = SUPPER_SKIPPED_NO_SMALL.load(std::sync::atomic::Ordering::Relaxed),
+                        stale_removed = SUPPER_STALE_REMOVED.load(std::sync::atomic::Ordering::Relaxed),
                         "bastion: SUPPER ROUND — the evening haul to every household shelf, so the \
                          night meal at home has something to find"
+                    );
+                }
+            }
+            // ★ E2-d: unclaimed supper loads are swept at the start of the
+            // Sleep block, so nothing of today's round runs at dawn with a
+            // whole stack in a hauler's bag.
+            let sleep_now = matches!(
+                colonist_schedule_block(&board.night_watch, None, hour),
+                ScheduleBlock::Sleep
+            );
+            if sleep_now && board.supper_stale_day != Some(today) {
+                board.supper_stale_day = Some(today);
+                let houses: Vec<Region> = board
+                    .designated
+                    .iter()
+                    .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                    .map(|(r, _)| *r)
+                    .collect();
+                let private_zones: std::collections::HashSet<common::bastion::ZoneId> = board
+                    .stockpiles
+                    .iter()
+                    .filter(|(_, r)| store_is_private(r, houses.iter()))
+                    .map(|(z, _)| *z)
+                    .collect();
+                let mut stale: Vec<JobId> = board
+                    .jobs
+                    .iter()
+                    .filter(|(_, j)| {
+                        j.claimed_by.is_none()
+                            && matches!(
+                                j.kind,
+                                common::bastion::JobKind::Haul { destination, .. }
+                                    if private_zones.contains(&destination)
+                            )
+                    })
+                    .map(|(id, _)| *id)
+                    .collect();
+                stale.sort_unstable();
+                for id in &stale {
+                    board.remove_job(*id);
+                }
+                if !stale.is_empty() {
+                    let n = SUPPER_STALE_REMOVED
+                        .fetch_add(stale.len() as u64, std::sync::atomic::Ordering::Relaxed)
+                        + stale.len() as u64;
+                    info!(
+                        day = today,
+                        hour,
+                        swept = stale.len(),
+                        swept_total = n,
+                        "bastion: SUPPER HAULS SWEPT — unclaimed supper loads removed at the Sleep \
+                         block; tomorrow's round mints afresh"
                     );
                 }
             }
@@ -54146,6 +54264,18 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2-d pinned: for two units among [800, 3, 2, 50] the 2 is taken;
+    /// for five, nothing covers under the cap and the 3 is a partial supper;
+    /// among [800] alone nothing is taken, whatever the need. Planted
+    /// defect: the cap removed (the 800 taken for two) -> red.
+    #[test]
+    fn a_supper_stack_is_never_bigger_than_the_supper() {
+        assert_eq!(supper_stack_pick(&[800, 3, 2, 50], 2), Some(2), "the smallest covering stack");
+        assert_eq!(supper_stack_pick(&[800, 3, 2, 50], 5), Some(1), "nothing covers: the largest under the cap");
+        assert_eq!(supper_stack_pick(&[800], 2), None, "a larder stack is not a supper");
+        assert_eq!(supper_stack_pick(&[], 2), None, "nothing to take");
     }
 
     /// ★ E2-c pinned: the shelf goes beside the bed, orthogonal first, inside

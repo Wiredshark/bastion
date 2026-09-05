@@ -801,6 +801,51 @@ passed, 1 failed), tree restored clean at 09:59. The b2 reader
 +4, +10, days 1-3, beside the profile and embed lines; T1's read on
 the same boot at +15) run from the stage.
 
+### W9-i2 live (b2, 97612eacd3, boot 09:57)
+
+| read | +4 min (hour 11) | +10 min (hour 14) |
+|---|---|---|
+| BODY HEIGHT CENSUS, last three lines (on_ground / one_above / two_plus / unseen) | 40/7/2/0, 43/4/2/0, 44/3/2/0 | 44/5/0/0, 48/1/0/0, 46/3/0/0 |
+| two_plus over all 47 lines to +10 | -- | 0 on 29 lines, 1 on 2, 2 on 15, 3 on 1 (mean 0.7 of 49, 1.4%) |
+| EMBED WATCH / COMMITTED GLIDE REFUSED | 3 / 4 | 13 / 5 |
+| FIRST LEG stitched / searched | 32 / 32 | 64 / 64 |
+| profile routes / detour | 1,024 / 1.84 | 4,096 / 1.96 |
+| panics | 0 | 0 |
+
+Day 1 (10:25, hour 0): the last three lines 47/3/0/0, 47/3/0/0,
+50/0/0/0; over all 124 lines to the day line the two_plus count reads
+0 on 58, 1 on 7, 2 on 16, 3 on 6, 4 on 5, 5 on 9, 6 on 10, 7 on 3, 8
+on 3, 9 on 1, 11 on 6 -- a mean of 2.4 of 50 (5%) with peaks of 11
+(22%). EMBED WATCH 16 for the day (the W10-d refusal pair); panics 0.
+**The day-1 bar (under 3%) FAILED**, and the instrument cannot say
+what the 5% is: a builder standing on the wall it raises and a
+household on a raised floor are both "two above their own column",
+and neither is a walker on a wall. W9-i3 splits the count by indoors
+(inside a Bed-designated house), Build lane, and other, before the
+number is read against the mover rows again.
+
+**W9-i2 PASSED at +10** (the frame): bodies two or more above their own column run at
+about one in seventy, not one in ten -- the two-grade histogram was
+reading the town's slopes. One pair of bodies held two-up for about
+five minutes (fifteen consecutive lines) and then none; the day reads
+say whether that pair recurs (a roof, a stair, or the wall class the
+mover rows chase). The EMBED WATCH of 13 at +10 is the W10-d pair's
+refused trunk (W10-e, queued, holds the walker instead).
+
+## W9-i3, registered 10:30 (keyed on the W10-e stage, the end of the chain, before the binary)
+
+An instrument row. `height_context(indoors, builder)` -> Indoors
+(feet inside a Bed-designated house) | Builder (the Build lane,
+outdoors) | Other; the BODY HEIGHT CENSUS carries two_plus_indoors,
+two_plus_builders and two_plus_other beside the total. Pin
+`the_height_census_names_its_context` (a builder at home is indoors);
+planted defect: the lane read before the house, red. Prediction (b2
+fresh, day 1): two_plus_other under 1% of the roster at every line;
+builders carry the work-day peaks and indoors the evening ones; the
+two explain at least 80% of the total. Falsified if two_plus_other
+holds above 2% -- bodies really stand on walls and the mover rows have
+a number.
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground

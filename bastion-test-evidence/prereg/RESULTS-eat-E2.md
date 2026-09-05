@@ -303,6 +303,16 @@ Falsified if in_bags climbs past 1,000 while stale_removed counts (the
 BAG CENSUS names the strander), or if loads fall under 12 for want of
 small stacks (the kitchen's output is the row).
 
+E2-c landed 26fbfc3d08 at 10:19: check clean, both pins green (its
+own and E2's), staged 10:19, shipped to lab-bin 10:20. Falsified at
+the commit: the footprint ignored turned the pin red (0 passed, 1
+failed), tree restored clean at 10:23. Early on b1 (boot 10:21): the
+day-0 STORAGE SUMMARY reads private_zones 88 against 69 -- nineteen
+shelves added at adoption, inside the predicted 12-20. The b1 reader (`wait-e2c-b1.sh`: SHELF ADDED, the round's
+no_shelf, the starving by clock, days 1-2) run from the stage; read
+with the E2-b caveat (the stack strand E2-d corrects lands one pair
+later).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

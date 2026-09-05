@@ -408,3 +408,12 @@ live read is b2 on the W9-i2 pair (`wait-t1-b2.sh`), with the storm
 itself measured meanwhile on b1's E2-b boot (1,778 TradeMission
 arrivals of 2,547 in ten minutes on the E2 pair, 924 in five on b3's
 P-zero-hours-d boot) as the control.
+
+Live on b2 (W9-i2 pair 97612eacd3, boot +15 min, 10:11): the price
+book reads sites=10 (11 before: the home site is out -- the first
+bar PASSED); missions minted 0, arrivals 0 -- b2's food is above par
+(3,596 units, 23 days on the eight-day year), so the stand and the
+arrivals-per-mission bars are a NULL read here. They are read on b1,
+which mints missions on the 160-day year (1,329 TradeMission
+arrivals in two days on the E2-b pair without T1), from its E2-c boot
+(the first pair on b1 that carries T1).
