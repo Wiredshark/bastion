@@ -123,3 +123,56 @@ boot of it tonight).
 | STALL BLAMED / ROUTE FAULT / STORE WOULD CLOSE | 0 / 0 / 0 |
 | ITEM 39 p95 / jobs | 507 us / 204 |
 | food_stock / food_locked / food_anywhere (F-i2) | 3,632 / 0 / 3,632 |
+
+Boot +10 min, both arms (b1 restarted on the pair at 01:24 as the
+second replicate; its settlers walk into trap 1):
+
+| read | b2 (01:26) | b1 (01:34) |
+|---|---|---|
+| EMBED WATCH | 1 | 2 (neither at a trap cell) |
+| the two cells as a route head | 0 / 0 | 0 / 0 |
+| TRUNK lifted / rejected (solid) | 2,026 / 1,024+ | 2,325 / 1,024+ |
+| COMMITTED GLIDE REFUSED (drops) | 512+ | 512+ |
+| ITEM 39 p95 | 571 us | 742 us |
+
+The wedge is gone on both arms. The cost: trunk routes rejected by the
+thousand (2,048 by 17 minutes on b2), each for one or two nodes in
+9-62, and b2's first ten minutes showed 391 job arrivals against the
+W8-g boot's 811 -- an arm-noisy count (b1 read the other way against
+its own control) that the day-1 lane census settles.
+
+### Day 1 on b2 (01:54) against the registered bars
+
+| bar | W8-g control | W9 read | verdict |
+|---|---|---|---|
+| EMBED WATCH, day 1 | 646 by 35 min (W8-f: 206 a day) | 2 | PASS |
+| largest (uid, route head) pair | 368 | 1 | PASS |
+| the two cells as a route head | 368 / 210 | 0 / 0 | PASS |
+| generator half fired | -- | lifted 8,133; rejected (solid) 4,096+; rejected (dz) 21 | fired |
+| consumer half fired | -- | COMMITTED GLIDE REFUSED 2,048+ (store-cell nodes, z=182-183: piles landing after the plan) | fired |
+| targets_shunned / STORE WOULD CLOSE / cooked | 8 / 1 / 87 | 2 / 0 / 83 | PASS |
+| meals / no_food_found / panics | 45 / 0 / 0 | 48 / 0 / 0 | -- |
+| food_stock / food_anywhere (F-i2) | -- | 3,860 / 3,868 | the frames agree at the day line |
+| ITEM 39 p95 | -- | 591 us | -- |
+
+The lane census is the cost: works 206 against the control's 550 with
+mean travel per claim 40.8 against 24.5 blocks (b2); on b1, works 325
+against its own W8-f day 1 of 481 with travel flat (30.8 against
+30.2). Part of b2's drop is honest walking around walls that bodies
+used to phase through; b1's flat travel says the rest is the pump:
+4,096 rejected trunk routes a day queue on two search slices a tick.
+Disposition: W9 stands (the wedge is closed on two arms, every bar
+met); W9-b is queued next, ahead of E1-f, with its bars above.
+
+b1's day 1 (the 160-day arm, read 01:55): EMBED WATCH 12 against its
+W8-f control's 1,631 by day 1, the two cells 0 / 0, no (uid, head)
+pair above 1, two settlers arrived and walked in (trap 1 was their
+route); trunk lifted 7,023, rejected 4,096+, committed drops 1,024+,
+p95 734 us; food_stock 3,944 against food_anywhere 3,953; meals 47,
+shunned 13, no_food_found 0, starving 1 at the last census. cooked
+60 misses the carried bar (control 89): the same work drop as b2's
+lane census, W9-b's row. Registered before
+that read: W9-b (`fix-w9b.py`, queued behind R3) moves a wall-bound
+node to the first standable neighbouring column before rejecting;
+bars: rejections under 100 per ten minutes, sidesteps in the hundreds,
+embeds still under 40 a day, day-1 works within 20% of 550.

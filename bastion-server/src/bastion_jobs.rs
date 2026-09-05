@@ -4076,6 +4076,37 @@ pub(crate) fn ticks_per_game_day(dt_secs: f64, day_cycle_coefficient: f64) -> f6
 ///
 /// Takes `(lane, practitioners, open_jobs)` so it is pure and directly
 /// pinnable — see `an_orphan_is_not_raised_into_a_lane_with_no_work`.
+/// ★ P-zero-hours (2026-09-04): what the morning argmax does with a
+/// colonist's top lane. A ZERO top (no hours in any lane today) keeps the
+/// incumbent name -- an idle day names nobody -- and a zero top with no
+/// incumbent (a newcomer) takes the town's scarcest lane, not the first
+/// lane in sort order (which is Build: b3 grew four accidental builders a
+/// morning that way). A positive top switches as before: a new name, or a
+/// lane held half again as long as the incumbent's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArgmaxVerdict {
+    Keep,
+    Switch,
+    NameScarcest,
+}
+
+pub(crate) fn argmax_verdict(top_count: u32, incumbent: Option<(bool, u32)>) -> ArgmaxVerdict {
+    match (top_count, incumbent) {
+        (0, None) => ArgmaxVerdict::NameScarcest,
+        (0, Some(_)) => ArgmaxVerdict::Keep,
+        (_, None) => ArgmaxVerdict::Switch,
+        (_, Some((true, _))) => ArgmaxVerdict::Keep,
+        (c, Some((false, inc_c))) => {
+            if c * 2 >= inc_c * 3 {
+                ArgmaxVerdict::Switch
+            } else {
+                ArgmaxVerdict::Keep
+            }
+        },
+    }
+}
+pub static NAMED_BY_NEED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn scarcest_lane(
     lanes: &[(common::bastion::WorkType, usize, usize)],
 ) -> Option<common::bastion::WorkType> {
@@ -46807,23 +46838,58 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.professions.clone();
                     let mut named: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> =
                         Vec::new();
+                    // ★ P-zero-hours: the scarcest lane, for a newcomer with no hours
+                    // (the rule the coming-of-age block uses), computed once a morning.
+                    let scarcest_now: Option<common::bastion::WorkType> = {
+                        let lane_pop: Vec<(common::bastion::WorkType, usize, usize)> =
+                            common::bastion::WorkType::ALL
+                                .into_iter()
+                                .map(|w| {
+                                    (
+                                        w,
+                                        board.professions.values().filter(|p| **p == w).count(),
+                                        board
+                                            .jobs
+                                            .values()
+                                            .filter(|j| j.claimed_by.is_none() && j.work == w)
+                                            .count(),
+                                    )
+                                })
+                                .collect();
+                        scarcest_lane(&lane_pop)
+                    };
+                    let mut named_by_need = 0u32;
                     for (u, (w, c)) in tops {
-                        let switch = match board.professions.get(&u) {
-                            None => true,
-                            Some(inc) if *inc == w => false,
-                            Some(inc) => {
-                                let inc_c = board
-                                    .lane_counts
-                                    .get(&(u, *inc))
-                                    .copied()
-                                    .unwrap_or(0);
-                                c * 2 >= inc_c * 3
+                        let incumbent = board.professions.get(&u).map(|inc| {
+                            (
+                                *inc == w,
+                                board.lane_counts.get(&(u, *inc)).copied().unwrap_or(0),
+                            )
+                        });
+                        match argmax_verdict(c, incumbent) {
+                            ArgmaxVerdict::Keep => {},
+                            ArgmaxVerdict::Switch => {
+                                board.professions.insert(u, w);
+                                named.push((u, w, c));
                             },
-                        };
-                        if switch {
-                            board.professions.insert(u, w);
-                            named.push((u, w, c));
+                            ArgmaxVerdict::NameScarcest => {
+                                if let Some(lane) = scarcest_now {
+                                    board.professions.insert(u, lane);
+                                    named.push((u, lane, 0));
+                                    named_by_need += 1;
+                                }
+                            },
                         }
+                    }
+                    if named_by_need > 0 {
+                        let n = NAMED_BY_NEED.fetch_add(named_by_need as u64, core::sync::atomic::Ordering::Relaxed)
+                            + named_by_need as u64;
+                        info!(
+                            named_by_need,
+                            total = n,
+                            lane = ?scarcest_now,
+                            "bastion: NAMED BY NEED — a newcomer with no hours takes the town's scarcest lane, not the first lane in sort order (P-zero-hours)"
+                        );
                     }
                     // ★ HAUL LANE CEILING (see `cap_haul_lane`), applied to the
                     // whole lane, not only today's switches.
@@ -52925,6 +52991,21 @@ mod tests {
         assert!(harvest_deposit_due(3, false, true), "three units off shift: home with them");
         assert!(!harvest_deposit_due(0, false, true), "nothing to carry off shift");
         assert!(harvest_deposit_due(2, true, false), "stone in the bag rides at once, as before");
+    }
+
+    /// ★ P-zero-hours pinned: an idle day names nobody; a newcomer with no
+    /// hours takes the scarcest lane; a positive top switches as before.
+    /// Planted defect: `(0, Some(_)) => Switch` -> red.
+    #[test]
+    fn an_idle_day_names_nobody_and_a_newcomer_takes_the_scarcest_lane() {
+        use ArgmaxVerdict as V;
+        assert_eq!(argmax_verdict(0, None), V::NameScarcest, "a newcomer with no hours");
+        assert_eq!(argmax_verdict(0, Some((false, 0))), V::Keep, "an idle day keeps the incumbent (was 0 >= 0: switch)");
+        assert_eq!(argmax_verdict(0, Some((true, 5))), V::Keep, "an idle day, same lane");
+        assert_eq!(argmax_verdict(7, None), V::Switch, "first hours: a name");
+        assert_eq!(argmax_verdict(7, Some((true, 7))), V::Keep, "the same lane stays");
+        assert_eq!(argmax_verdict(9, Some((false, 6))), V::Switch, "held half again as long: switch");
+        assert_eq!(argmax_verdict(8, Some((false, 6))), V::Keep, "not yet half again: keep");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.

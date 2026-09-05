@@ -247,6 +247,16 @@ Falsified if already_standing reads 8,640 with TERRAIN PERSISTED > 0
 (recorded but not re-applied on chunk load), or TERRAIN PERSISTED stays
 0 (the setting did not reach the server).
 
+R2 landed as 211da28ef6 (01:38; its first chain refused on a binary
+target's zero-test line while the library pin had passed, and the
+resume chain ran the pin with `--lib`). Falsified at the commit: the
+record loop counting without writing turned the pin red at
+`server/src/lib.rs:9177` (01:54); the tree restored clean. The seventh
+test's boot 1 (01:45): `experimental_terrain_persistence: true`
+spliced without a BOM, one `terrain persistence path` line, no parse
+failure, `TERRAIN PERSISTED blocks_total=7736` within a minute (the
+founding planting).
+
 ## R3: a kept world keeps its larder (registered 00:31, before the binary)
 
 The sixth test's restored boot, read further: `FOOD-WIPE DISCRIMINATOR
