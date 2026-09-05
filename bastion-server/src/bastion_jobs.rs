@@ -7223,6 +7223,36 @@ pub const FARM_CROP_FALLBACK: SpriteKind = SpriteKind::WheatYellow;
 /// seed, so a per-crop seed would mint sow jobs for an item the colony can
 /// never obtain — a generator minting work nothing can complete, which is
 /// the churn shape this file has already paid for twice.
+/// ★ F3 (2026-09-04): the crop items the harvest puts in the farmer's bag.
+pub const FARM_CROP_ITEMS: [&str; 4] = [
+    FARM_WHEAT_ITEM,
+    VOLUNTEER_LETTUCE_ITEM,
+    VOLUNTEER_CARROT_ITEM,
+    VOLUNTEER_TOMATO_ITEM,
+];
+/// ★ TASTE NUMBER, PENDING BEN'S CALL. A basket: the crop units a farmer
+/// carries before walking them to the store -- three wheat cells' yield.
+/// Twelve keeps the walk to one per three cells instead of one per unit.
+pub const HARVEST_BASKET_UNITS: u32 = 12;
+/// ★ F3: crop units in a bag.
+pub(crate) fn bag_crop_units<'a>(bag: impl IntoIterator<Item = &'a comp::Item>) -> u32 {
+    bag.into_iter()
+        .filter(|i| {
+            i.item_definition_id()
+                .itemdef_id()
+                .is_some_and(|d| FARM_CROP_ITEMS.contains(&d))
+        })
+        .map(|i| i.amount())
+        .sum()
+}
+/// ★ F3: when a bag's contents ride to the store. Other haul-admitted stock
+/// (stone, wood, seeds, forage) as before -- at once; crop stock at a full
+/// basket or off shift, never after every cell (Ben: haul at shift end or on
+/// a backlog; no job-haul-job-haul).
+pub fn harvest_deposit_due(crop_units: u32, other_stock: bool, off_shift: bool) -> bool {
+    other_stock || crop_units >= HARVEST_BASKET_UNITS || (crop_units > 0 && off_shift)
+}
+
 pub fn farm_crop_item(sprite: SpriteKind) -> Option<&'static str> {
     use common::terrain::SpriteKind as S;
     match sprite {
@@ -27728,7 +27758,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(entity)
                         .map(|inv| bag_stock_defs(inv.slots().flatten()))
                         .unwrap_or_default();
-                    let carries_surplus = !owed.is_empty();
+                    // ★ F3: crop stock rides at a full basket or off shift; other
+                    // stock at once, as before.
+                    let crop_units: u32 = inventories
+                        .get(entity)
+                        .map(|inv| bag_crop_units(inv.slots().flatten()))
+                        .unwrap_or(0);
+                    let other_stock = owed.iter().any(|d| !FARM_CROP_ITEMS.contains(d));
+                    let off_shift = !matches!(
+                        colonist_schedule_block(
+                            &board.night_watch,
+                            Some(uid),
+                            hour_of_day(rtsim.rt_state().data().time_of_day.0)
+                        ),
+                        ScheduleBlock::Work
+                    );
+                    let carries_surplus = harvest_deposit_due(crop_units, other_stock, off_shift);
                     // Forage still waits for the forage stint to END (the bag
                     // is its batch unit -- one trip per stint, not per sprite).
                     // Surplus does not: it is already surplus, and holding it
@@ -37955,14 +38000,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .and_then(farm_crop_item)
                                     .unwrap_or(FARM_WHEAT_ITEM);
                                 board.harvested_today = board.harvested_today.saturating_add(wheat_yield);
+                                // ★ F3: THE HARVEST RIDES IN THE FARMER'S BASKET. The yield
+                                // goes into the harvester's bag; the ground only when the bag
+                                // is full (b2: 604 units a day dropped in the fields, four
+                                // carrots reached the store). `BASTION_NO_HARVEST_BASKET`
+                                // restores the ground drops.
+                                let mut basketed = 0u32;
                                 for _ in 0..wheat_yield {
-                                    crate::bastion_actions::emit_drop(
-                                        &mut item_drop_emitter,
-                                        job.pos,
-                                        Item::new_from_asset_expect(crop_item),
-                                        *program_time,
-                                        &mut rng,
-                                    );
+                                    let item = Item::new_from_asset_expect(crop_item);
+                                    let pushed = if std::env::var_os("BASTION_NO_HARVEST_BASKET").is_none() {
+                                        match inventories.get_mut(entity) {
+                                            Some(mut inv) => inv.push(item).map_err(|(item, _)| item),
+                                            None => Err(item),
+                                        }
+                                    } else {
+                                        Err(item)
+                                    };
+                                    match pushed {
+                                        Ok(()) => basketed += 1,
+                                        Err(item) => crate::bastion_actions::emit_drop(
+                                            &mut item_drop_emitter,
+                                            job.pos,
+                                            item,
+                                            *program_time,
+                                            &mut rng,
+                                        ),
+                                    }
                                 }
                                 for _ in 0..seed_yield {
                                     crate::bastion_actions::emit_drop(
@@ -37981,6 +38044,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     colony_sown,
                                     wheat_yield,
                                     seed_yield,
+                                    basketed,
                                     "bastion: harvested (cell returns to                                      tilled)"
                                 );
                             },
@@ -52595,6 +52659,19 @@ mod tests {
         assert_eq!(replay_placement(DesignationKind::Stockpile), R::Place, "a store");
         assert_eq!(replay_placement(DesignationKind::Mine), R::Place, "a mine");
         assert_eq!(replay_placement(DesignationKind::Chop), R::Place, "a woodlot");
+    }
+
+    /// ★ F3 pinned: crop stock rides to the store at a full basket or off
+    /// shift, never after every cell; other stock at once. Planted defect:
+    /// `crop_units > 0` for the basket -> red.
+    #[test]
+    fn a_harvest_rides_in_the_basket_until_full_or_shift_end() {
+        assert!(!harvest_deposit_due(0, false, false), "an empty bag");
+        assert!(!harvest_deposit_due(HARVEST_BASKET_UNITS - 1, false, false), "one short of a basket, on shift: keep harvesting");
+        assert!(harvest_deposit_due(HARVEST_BASKET_UNITS, false, false), "a full basket");
+        assert!(harvest_deposit_due(3, false, true), "three units off shift: home with them");
+        assert!(!harvest_deposit_due(0, false, true), "nothing to carry off shift");
+        assert!(harvest_deposit_due(2, true, false), "stone in the bag rides at once, as before");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.

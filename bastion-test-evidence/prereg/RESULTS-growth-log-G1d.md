@@ -176,3 +176,9 @@ boot's jobs within a few hundred of the pre-stop boot's, p95 under 5
 ms, no Bed kind above 100, ADOPT-IN-PLACE 58, colonists near 49,
 HOUSEHOLDS houses=58. Falsified if any kind reads above 10,000 or the
 tick p95 stays above 20 ms.
+
+R1d landed as 43008d9fdb (23:37). Falsified at the commit: a Bed order
+replayed as a build order (`Bed => ReplayPlacement::Place`) turned
+`the_replay_registers_and_does_not_mint` red (23:40); the tree restored
+to 0 dirty files. The sixth restart test runs on b3 on this pair; its
+section follows.

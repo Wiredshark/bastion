@@ -109,3 +109,29 @@ Registered bars for day 1 on b2 (boot 23:13, the same flat world):
 Falsified if the shun count stays above 30 or a store closes. NOT
 evidenced by this row: the wedge itself (the walker is released, not
 freed; the embed watch still relocates it into the same trap).
+
+### Day 1 on the W8-g pair (b2, 0e865d5b65, 23:13-23:48)
+
+| bar | W8-f | W8-g read | verdict |
+|---|---|---|---|
+| targets_shunned | 38 | 8 (5 Farm, 1 Cook, 1 Craft, 1 Ladder) | PASS |
+| STORE WOULD CLOSE | 2 | 1 (zone 25, opt-in witness only) | see below |
+| cooked_today | 43 | 87 | PASS |
+| STALL BLAMED ON THE WALKER | -- | 2 (Farm jobs 409 and 401, colonists 30 and 12) | fired |
+| ROUTE FAULT re-paths | 4 | 2 | -- |
+| fed at midday | -- | 42 of 49, starving 0 | -- |
+| food_stock at day 1 | -- | 4,170 (26.6 days) | -- |
+
+The store witness is not the shun chain this time: three DIFFERENT
+walkers (colonists 30, 12 and a third, Farm jobs 409, 401, 433) each
+stalled once at the same spot on the way into the field at (7636,6438),
+and the spot counter reached three. W8-g blames the walker only when
+the SAME walker repeats a spot; a spot that stops three walkers is the
+world's -- the wedge class, row W9 (`RESULTS-wedge-W9.md`): the
+embed watch fired 646 times in these 35 minutes, 604 with a solid
+route head, 368 from one colonist at (7687,6447,181) and 210 from
+another at (7639,6279,174), the same two cells as the W8-f boots.
+
+Disposition: W8-g's own bars hold (the shun chain is broken: 38 -> 8,
+the kitchen recovered 43 -> 87). The remaining stalls are walkers
+wedged at trunk nodes inside solid cells, which is W9's row.
