@@ -135,3 +135,22 @@ chosen 1 (the site pick runs, no residents), colony orders replayed > 0,
 PLOT RE-GROWN 1, the tick census `colonists` near the pre-stop roster,
 HOUSEHOLDS houses=58 (not 116). Falsified if colonists stay 0 or the
 houses read 116.
+
+### The fourth restart test (R1c pair dc66b50ece, b3, 21:57-22:10)
+
+| step | result |
+|---|---|
+| boot 1 | 21 cells placed before the stop |
+| graceful stop | ports closed in ~6 s; shutdown witness 1 |
+| boot 2 | `COLONY RESTORED, NOT FOUNDED` 1; `COLONY RESTORED — maps re-derived, chunks streamed` 1 (plots_streamed=70); `ADOPT-A-TOWN site chosen` 1 (the site pick, no residents: `ADOPT-NPCS` 0, `colony population established` 0); `colony orders replayed` 4; `PLOT RE-GROWN FROM THE LOG` 1 (cells_remaining 1,909); 8 farm plots registered; tick census `colonists=49` (the pre-stop roster); panics 0 |
+| but | `ITEM 39 tick cost tick=312 jobs=376300 minted_delta=376308 p95_us=102419` (boot 1: jobs=250, p95 662 us); claim census `considered=376299 materials=375048`; mine generator `demand=375048` |
+
+The colony restores -- people, fields, plan, no second founding -- and
+the restored board mints a storm of jobs that want a material, so the
+server runs at 100 ms a tick. The pin (`the_restore_path_streams_the_town_and_adopts_nobody`)
+went red when planted (`lib.rs:9106`); it guards the restore's calls,
+not the generators that run on what they restored. No witness names
+the storm's kind; R1d-i adds the top five (kind, required item) pairs
+to the tick census, and the fifth restart test reads it. HOUSEHOLDS
+had not printed by the read. A kept world is still not for Ben's
+session.

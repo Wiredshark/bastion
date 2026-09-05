@@ -23516,6 +23516,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let minted_delta =
                         board.next_id.saturating_sub(board.census_last_next_id);
                     board.census_last_next_id = board.next_id;
+                    // ★ R1d-i: the storm has a KIND. The top five (kind,
+                    // required item) pairs over the board, so a job count that
+                    // explodes (a restored boot: 376,300 in 312 ticks) names its
+                    // generator instead of only its size.
+                    let top_kinds: String = {
+                        let mut counts: HashMap<(String, Option<&'static str>), usize> =
+                            HashMap::new();
+                        for j in board.jobs.values() {
+                            let kind = format!("{:?}", j.kind);
+                            let name = kind
+                                .split(|c: char| c == ' ' || c == '{')
+                                .next()
+                                .unwrap_or("?")
+                                .to_string();
+                            *counts.entry((name, j.required_item)).or_insert(0) += 1;
+                        }
+                        let mut v: Vec<_> = counts.into_iter().collect();
+                        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                        v.iter()
+                            .take(5)
+                            .map(|((k, req), n)| {
+                                format!("{}:{}={}", k, req.map(|r| r.rsplit('.').next().unwrap_or(r)).unwrap_or("-"), n)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    };
                     info!(
                         tick = tick.0,
                         samples = v.len(),
@@ -23526,6 +23552,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         minted_delta,
                         colonists = (&colonists).join().count(),
                         designations = board.designated.len(),
+                        top_kinds = %top_kinds,
                         "bastion: ITEM 39 tick cost"
                     );
                 }
