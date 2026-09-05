@@ -832,6 +832,15 @@ say whether that pair recurs (a roof, a stair, or the wall class the
 mover rows chase). The EMBED WATCH of 13 at +10 is the W10-d pair's
 refused trunk (W10-e, queued, holds the walker instead).
 
+### W10-e landed (aa05aa373c, 11:05)
+
+Check clean, both pins green (its own and W10-d's), staged 11:05. The
+falsifier (the distance limit removed) and the b2 reader
+(`wait-w10e-b2.sh`: GLIDE HELD, the trunk's accepted share, the
+embeds and their writers, the experience census, at +4, +10, days
+1-2) run from the stage. The b2 restart ends W9-i2's reader before its
+day-2 line; W9-i3 carries the height census forward.
+
 ## W9-i3, registered 10:30 (keyed on the W10-e stage, the end of the chain, before the binary)
 
 An instrument row. `height_context(indoors, builder)` -> Indoors

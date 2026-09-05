@@ -322,6 +322,61 @@ run from the stage; the b1 restart ends E2-c's own reader before its
 day-1 line, so E2-c's shelves are read on this pair (SHELF ADDED, the
 round's no_shelf).
 
+### E2-c and E2-d live, b1 (E2-d pair 3765c74e87, boot 10:45)
+
+Early read at the first round (10:54, hour 14): SHELF ADDED 19;
+SUPPER ROUND day=0 hour=14 houses=49 shortfall=98 loads=36 no_shelf=0
+skipped_no_small=0 stale_removed=0 -- **E2-c's shelf bar PASSED**
+(no_shelf 16 -> 0; the shortfall is exactly 49 heads x 2); the cap
+binds at 36 of a 98-unit shortfall, so the emptiest-first order does
+the rest tomorrow. The bag series by game hour: 451 at boot (the
+founders' own inventories, which the BAG CENSUS named on two lines),
+then 86, 78, 80, 77, 71, 73, 69, 63 through hours 7-13 (E2-b: 90 at
+16 and climbing by 21); 9 Haul arrivals in the round's first three
+minutes. The dawn line (E2-b's 2,327) and the night's starving are
+the day-1 read.
+
+Day 1 on b1 (11:08, the day-1 line): SUPPER ROUND day=0 hour=14
+houses=49 shortfall=98 loads=36 no_shelf=0 skipped_no_small=0;
+SUPPER HAULS SWEPT day=0 swept=35; in_bags by game hour 451 (boot),
+80, 73, 56, 40, 61, 48 through hours 9-21 (E2-b: 315 by 21 and 2,327
+at dawn); BAG CENSUS 3 lines, the last in_bags=393 with one holder at
+366 (a stack in transit); YEAR day=1 food_stock 4,067, food_anywhere
+4,080, 25.9 days (E2-b: 3,799 / 3,821 / 24.2, then 1,228 at day 2);
+NIGHT MEAL AT HOME 1 (the first ever logged); starving by clock
+EatFrom/Traveling 2-8 an hour through 17-22 and RestAt/Arrived 3 at
+hour 22 only; distinct starving sleepers 2; no_food_found 777 (E2-b
+day 1: 583, day 2: 8,339); panics 0. **E2-d PASSED its day-1 bars**
+(bags under 400 at every line, the sweep counted, in-bed starving
+under 6 an hour, sleepers at most 3, no_food_found under 1,000); the
+food frame holds where E2-b's slid. **And the sweep names the next
+defect**: 35 of 36 supper loads were never claimed before dusk --
+arrivals after the round 9, of which 2 to private shelves -- so
+supper reached two houses. The haul lane's day: 8 haulers, 23 hauls,
+20 works. The claim scoring is read next (E2-e).
+
+## E2-e, registered 11:15 (keyed on the T1-b stage, the end of the chain, before the binary)
+
+The claim scoring gave a supper load the Haul base priority, then a
+clump penalty of 12 (every supper pickup is at the same store cells)
+and the saturation penalty, so it scored below a field haul across
+town; and two Work hours were not enough for what did get claimed.
+`errand_priority(base, is_errand)` lifts a supper load to the
+player-order priority (5) and the clump penalty is skipped for it;
+the round records its loads in `board.supper_jobs` (cleaned on
+remove_job); `shift_end_hour` becomes the last four Work hours
+(12-15), and the E2-b pin says so. Pin
+`a_supper_load_is_the_haulers_first_claim`; planted defect: the lift
+removed, red. Prediction (b1 fresh, day 1): the round at hour 12; Haul
+arrivals to private shelves before hour 16 at least 25 of 36 (E2-d:
+2); SUPPER HAULS SWEPT under 10 (35); NIGHT MEAL AT HOME at least 5
+(1); in-bed starving at most 3 an hour and distinct starving sleepers
+at most 1 (2); bags under 400 at every line and the food frame within
+200 of E2-d's. Falsified if the loads are claimed and the shelf
+arrivals stay under 10 (the errand is dropped on the way), or if field
+hauls fall to zero while the errands run (the lift starves the lane's
+own work).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

@@ -17094,6 +17094,27 @@ pub(crate) fn larder_delivery_due(store_pending: usize, orders_pending: usize) -
 /// ★ W9-i2: a body's height above the natural surface of its own column:
 /// 0 = on the ground, 1 = a step up (a stair, a doorstep), 2 = two or
 /// more above (a wall top, a fence, a roof, a pile). A slope is ground.
+/// ★ W9-i3: what a body two or more above its column is doing there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HeightContext {
+    /// Inside a house: a raised floor, a stair, a loft.
+    Indoors,
+    /// The Build lane outdoors: on the wall it raises.
+    Builder,
+    /// Neither: the walker the mover rows are about.
+    Other,
+}
+
+pub(crate) fn height_context(indoors: bool, builder: bool) -> HeightContext {
+    if indoors {
+        HeightContext::Indoors
+    } else if builder {
+        HeightContext::Builder
+    } else {
+        HeightContext::Other
+    }
+}
+
 pub(crate) fn height_class(feet_z: i32, surface_z: i32) -> u8 {
     match feet_z - (surface_z + 1) {
         d if d <= 0 => 0,
@@ -19786,14 +19807,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // natural surface (the frame a wall top or a roof shows in).
                 {
                     let (mut on_ground, mut one_above, mut two_plus, mut unseen) = (0u32, 0u32, 0u32, 0u32);
-                    for (_, pos) in (&colonists, &positions).join() {
+                    // ★ W9-i3: the two-plus count by context.
+                    let (mut two_plus_indoors, mut two_plus_builders, mut two_plus_other) = (0u32, 0u32, 0u32);
+                    let houses: Vec<Region> = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .map(|(r, _)| *r)
+                        .collect();
+                    for (_, pos, uid) in (&colonists, &positions, &uids).join() {
                         let feet = pos.0.map(|e| e.floor() as i32);
                         match column_surface_z(&terrain, feet.x, feet.y, feet.z) {
                             None => unseen += 1,
                             Some(sz) => match height_class(feet.z, sz) {
                                 0 => on_ground += 1,
                                 1 => one_above += 1,
-                                _ => two_plus += 1,
+                                _ => {
+                                    two_plus += 1;
+                                    let indoors = houses.iter().any(|h| h.contains_point_xy(feet));
+                                    let builder = board
+                                        .professions
+                                        .get(uid)
+                                        .is_some_and(|w| *w == common::bastion::WorkType::Build);
+                                    match height_context(indoors, builder) {
+                                        HeightContext::Indoors => two_plus_indoors += 1,
+                                        HeightContext::Builder => two_plus_builders += 1,
+                                        HeightContext::Other => two_plus_other += 1,
+                                    }
+                                },
                             },
                         }
                     }
@@ -19802,6 +19843,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         on_ground,
                         one_above,
                         two_plus_above = two_plus,
+                        two_plus_indoors,
+                        two_plus_builders,
+                        two_plus_other,
                         unseen,
                         "bastion: BODY HEIGHT CENSUS — colonists by height above the natural \
                          surface of their own column (a wall top or a roof is two or more; a \
@@ -54376,6 +54420,18 @@ mod tests {
         assert!(supper_round_due(true, Some(3), 4), "ran yesterday: due");
         assert!(!supper_round_due(true, Some(4), 4), "ran today: not again");
         assert!(!supper_round_due(false, None, 4), "outside the supper hour: never");
+    }
+
+    /// ★ W9-i3 pinned: indoors wins over the lane; a builder outdoors is a
+    /// builder; anyone else outdoors is the walker. Planted defect: the
+    /// lane read before the house -> a builder at home reads as a builder ->
+    /// red.
+    #[test]
+    fn the_height_census_names_its_context() {
+        assert_eq!(height_context(true, true), HeightContext::Indoors, "a builder at home is indoors");
+        assert_eq!(height_context(false, true), HeightContext::Builder);
+        assert_eq!(height_context(false, false), HeightContext::Other);
+        assert_eq!(height_context(true, false), HeightContext::Indoors);
     }
 
     /// ★ W9-i2 pinned: feet on the block above the surface is ground; one
