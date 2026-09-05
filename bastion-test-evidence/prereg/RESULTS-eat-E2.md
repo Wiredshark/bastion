@@ -258,6 +258,51 @@ starving sleepers at most 1. Falsified if SHELF ADDED is 0, or if
 no_shelf reads 0 and the hungry walk to bed holds at 7-8 (the day trip
 is the walker, not the shelfless house).
 
+Night 2 and day 2 on b1 (09:59, the day-2 line): **E2-b FAILED at
+the town's scale.** The rounds ran on time (day 0 hour 14 loads 33,
+day 1 hour 14 loads 32, no_shelf 16-17) and 102 hauls followed the
+first, yet the second night read RestAt/Arrived 10, 21, 28 at hours
+1-3 (ten distinct starving sleepers) and the day read EatFrom/Traveling
+7-29 an hour from dawn to dusk, no_food_found 8,339, meals 109. The
+food frame: food_anywhere 3,821 at the day-1 line -> 1,251 at day 2,
+food_stock 3,799 -> 1,228 (7.7 days), food_locked 6, and the
+discriminator's in_bags 111 -> 1,693. Two thousand five hundred units
+left the ground in a day and sixteen hundred of them are in bags.
+The round's "smallest covering stack, else the largest" served
+two-unit needs with stacks of hundreds once the small stacks were
+gone; the haul reserves and picks up the whole entity (#89) and the
+shelf drop landed 1-3 units, so the hauler kept the rest. A guard
+that spends before it refuses: the row that follows (E2-d) never
+hauls a stack larger than the need allows and returns stranded cargo
+to the general store. E2-c (a shelf in every house) is building on
+top of this and is read with that caveat.
+
+## E2-d, registered 10:10 (keyed on the E2-c stage, before the binary; W10-e re-keyed behind it)
+
+The bag series by game hour on E2-b's b1: 90 at 16, 315 at 21, 234 at
+4, then 2,327 at 7 of day 1 -- the dawn claim of the loads the
+hour-14 round left unclaimed at dusk, each a whole stack. Three
+changes: `supper_stack_pick(amounts, need)` takes the smallest stack
+that covers the need and is no larger than SUPPER_STACK_MAX = 8, else
+the largest under the cap (a partial supper), else nothing (the house
+stays short, counted `skipped_no_small`); at the start of the Sleep
+block the unclaimed private-destination hauls are removed with their
+reservations (SUPPER HAULS SWEPT, `stale_removed`); BAG CENSUS names
+the top three holders whenever bags exceed 300 units. Pin
+`a_supper_stack_is_never_bigger_than_the_supper` (two among [800, 3,
+2, 50] takes the 2; five takes the 3; [800] alone takes nothing);
+planted defect: the cap removed, red.
+
+Prediction (b1 fresh, days 1-2): in_bags under 400 at every
+discriminator line (E2-b: 2,327); food_anywhere at day 2 within 500 of
+day 1 less the town's eating; loads 12-36 with skipped_no_small
+counted; stale_removed counted on at least one night; night-2 in-bed
+starving under 6 an hour (E2-b: 10-28) and distinct starving sleepers
+at most 3 (E2-b: 10); no_food_found at day 2 under 1,000 (8,339).
+Falsified if in_bags climbs past 1,000 while stale_removed counts (the
+BAG CENSUS names the strander), or if loads fall under 12 for want of
+small stacks (the kitchen's output is the row).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

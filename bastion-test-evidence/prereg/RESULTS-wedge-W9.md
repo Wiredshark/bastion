@@ -728,6 +728,79 @@ passed, 1 failed), tree restored clean at 09:37. The b2 reader
 their writers, the pump cost, at +4, +10, days 1-2) run from the
 stage.
 
+### W10-d live (b2, 56bdcff764, boot 09:35)
+
+| read | +4 min (hour 10) | +10 min (hour 13) | bar |
+|---|---|---|---|
+| profile routes / rejected_solid / rejected_dz / rejected_crossing | 1,024 / 243 / 337 / 410 | 3,072 / 1,079 / 1,212 / 709 | crossing 3-20% |
+| accepted share (routes minus the three refusals) | ~3% | ~2% | no lower than 15% |
+| FIRST LEG GATE line | none (fewer than 256 accepted) | none | -- |
+| EMBED WATCH / idx0 / writers | 2 / 2 / chaser-pure-glide 2 | 10 / 7 / chaser-pure-glide 9, chaser-hold 1 | at most 2 / -- |
+| STALL BLAMED / ROUTE FAULT | 0 / 0 | 4 / 3 | -- |
+| ITEM 39 p95 | 441 us | 462 us | under 800 |
+| detour ratio | 1.57 | 1.85 | -- |
+| panics | 0 | 0 | 0 |
+
+**W10-d FAILED its outcome.** The crossing test fires on 23% of
+routes (above the band's edge) and, stacked on the ground rule and
+the step limit, leaves the trunk accepting about one route in fifty;
+the pump carries the rest cheaply (p95 462 us, working/moving as
+before). And the embeds did not fall -- ten in ten minutes is the
+worst read of the series -- all from the chaser's pure glide, seven
+of them at the route's first node. With the trunk all but gone, the
+premise that the embeds are trunk legs through walls is refuted: the
+same writer embeds bodies on the exact pump's paths. The refusal is
+principled and useless here; the next row names the writer from the
+embed lines' own geometry (entry point, velocity, head and previous
+node) before anything else is built. Disposition for the refusal
+itself: keep the count, drop the refusal (a row, W10-d-r, so the
+trunk is not dead by a rule that bought nothing).
+
+The ten embeds' geometry (b2, +10, from the EMBED WATCH fields):
+all kinematic=true, all chaser-pure-glide; eight of ten a body with a
+ONE-node route (route_prev == route_head == the goal, 40-45 blocks
+off) gliding at (-0.6, -4.2) into the same wall line at y 6348 (uids
+136, 141, 139, 84, 135, 87, x 7777-7804, within a minute); one at
+(7762, 6142) -> (7833, 6175), 78 blocks off; one chaser-hold with no
+route. The chaser's steer is the raw target whenever path_cache holds
+no route -- the window while the pump's search is pending -- so a
+walker whose trunk was refused sets off in a straight line at its
+goal. **That is the class**: every refused route (79% before W10-d,
+98% under it) was a straight pre-path glide, and the wedge rows since
+W9 trimmed the trunk's own faults around it.
+
+## W10-e, registered 09:55 (keyed on the E2-c stage, the end of the chain, before the binary)
+
+NO PATH, NO GLIDE: with no route in the cache the steer becomes the
+body's own position unless the goal is within NO_PATH_GLIDE_MAX = 3
+blocks and the straight line to it is clear; GLIDE HELD FOR THE PATH
+at powers of two. W10-d's refusal becomes a count (TRUNK ROUTE
+CROSSING (counted), `rejected_crossing` kept on the profile line for
+continuity). Pin `no_path_no_glide` (forty blocks holds; two clear
+glides; two through a wall holds; just past the limit holds); the
+W10-d pin stays green in the chain. Planted defect: the distance
+limit removed, red. Prior art: RimWorld pawns stand until a path
+exists; Detour agents hold until the corridor is built.
+
+Prediction (b2 fresh, +10 and day 1): GLIDE HELD fires (thousands of
+held ticks by +10); EMBED WATCH at +10 at most 2 (W10-d 10) and at
+day 1 at most 3 (W10-a-c 9, W10-a-b 6); idx0 at day 1 at most 1;
+EXPERIENCE stuck no higher than 3 and working no lower than 8 of 48;
+the trunk's accepted share back near 20%; p95 under 600 us.
+Falsified if the embeds hold with held ticks in the thousands, or if
+stuck or idle climb past 6 (holding starves the work: the pump's
+latency is the row).
+
+### W9-i2 landed (97612eacd3, 09:56)
+
+Check clean, pin `a_height_is_measured_from_its_own_ground` green (1
+passed), staged 09:56, shipped to lab-bin 09:57. Falsified at the
+commit: measured from the surface block itself turned the pin red (0
+passed, 1 failed), tree restored clean at 09:59. The b2 reader
+(`wait-w9i2-b2.sh`: BODY HEIGHT CENSUS at
++4, +10, days 1-3, beside the profile and embed lines; T1's read on
+the same boot at +15) run from the stage.
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground

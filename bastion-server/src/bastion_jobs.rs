@@ -8077,6 +8077,27 @@ pub const SUPPER_UNITS_PER_HEAD: u32 = 2;
 pub const SUPPER_ROUND_LOADS_MAX: u32 = 36;
 pub(crate) static SUPPER_LOADS_MINTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+pub(crate) static SHELVES_ADDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ E2-c pinned: where a house with no container gets its shelf -- the
+/// first standable cell beside the bed, orthogonal neighbours first, then
+/// diagonals, all inside the house's footprint; None when nothing beside
+/// the bed can be stood on.
+pub(crate) fn shelf_cell_beside(
+    bed: Vec3<i32>,
+    min_xy: Vec2<i32>,
+    max_xy: Vec2<i32>,
+    standable: &impl Fn(Vec3<i32>) -> bool,
+) -> Option<Vec3<i32>> {
+    const AROUND: [(i32, i32); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)];
+    AROUND
+        .iter()
+        .map(|(dx, dy)| Vec3::new(bed.x + dx, bed.y + dy, bed.z))
+        .find(|c| {
+            c.x >= min_xy.x && c.x <= max_xy.x && c.y >= min_xy.y && c.y <= max_xy.y && standable(*c)
+        })
+}
+
 /// ★ E2 pinned: the shelf's shortfall against its household -- zero when
 /// the shelf already holds enough, never negative.
 pub(crate) fn supper_shortfall(heads: u32, shelf_units: u32, per_head: u32) -> u32 {
@@ -15051,7 +15072,44 @@ impl JobBoard {
     ) -> Vec<JobId> {
         let (adopted, pots, chests, z_lo, z_hi) =
             self.adopt_furniture_surface(terrain, min_xy, max_xy, hint_z);
-        let _ = (pots, chests);
+        let _ = pots;
+        // ★ E2-c: a house with beds and no container gets a one-cell shelf
+        // beside its first bed, so supper has somewhere to land.
+        if adopted > 0 && chests == 0 {
+            let mut beds_here: Vec<Vec3<i32>> = self
+                .beds
+                .keys()
+                .filter(|b| b.x >= min_xy.x && b.x <= max_xy.x && b.y >= min_xy.y && b.y <= max_xy.y)
+                .filter(|b| z_lo.is_none_or(|lo| b.z >= lo - 2) && z_hi.is_none_or(|hi| b.z <= hi))
+                .copied()
+                .collect();
+            beds_here.sort_by_key(|b| (b.z, b.y, b.x));
+            if let Some(bed) = beds_here.first().copied() {
+                let standable = |c: Vec3<i32>| {
+                    terrain.get(c).is_ok_and(|b| !b.is_filled())
+                        && terrain.get(c - Vec3::unit_z()).is_ok_and(|b| b.is_filled())
+                };
+                if let Some(cell) = shelf_cell_beside(bed, min_xy, max_xy, &standable) {
+                    let one = Region { min: cell, max: cell };
+                    if !self.stockpiles.iter().any(|(_, r)| *r == one) {
+                        let sid = self.next_zone;
+                        self.next_zone += 1;
+                        self.stockpiles.push((sid, one));
+                        let n = SHELVES_ADDED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                        info!(
+                            zone = sid,
+                            ?bed,
+                            ?cell,
+                            ?min_xy,
+                            ?max_xy,
+                            shelves_added = n,
+                            "bastion: SHELF ADDED — a house with beds and no container gets a one-cell \
+                             shelf beside its first bed"
+                        );
+                    }
+                }
+            }
+        }
         if let (Some(lo), Some(hi)) = (z_lo, z_hi) {
             self.designated.push((
                 Region {
@@ -27977,6 +28035,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     general_food.sort_by_key(|(u, _, _, n)| (*n, u.0.get()));
                     let (mut houses_n, mut heads_n, mut shortfall_total, mut loads, mut no_shelf) =
                         (0u32, 0u32, 0u32, 0u32, 0u32);
+                    // ★ E2-c: the emptiest shelves first, so the houses a
+                    // capped round misses one evening come first the next.
+                    let mut short: Vec<(u32, Vec3<i32>, common::bastion::ZoneId, u32)> = Vec::new();
                     for h in &houses {
                         let heads = board
                             .beds
@@ -27998,8 +28059,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             continue;
                         };
                         let have = shelf_units.get(&z).copied().unwrap_or(0);
-                        let mut need = supper_shortfall(heads, have, SUPPER_UNITS_PER_HEAD);
+                        let need = supper_shortfall(heads, have, SUPPER_UNITS_PER_HEAD);
                         shortfall_total += need;
+                        if need > 0 {
+                            short.push((have, h.min, z, need));
+                        }
+                    }
+                    short.sort_by_key(|(have, hmin, ..)| (*have, hmin.x, hmin.y, hmin.z));
+                    for (_, _, z, mut need) in short {
                         while need > 0 && loads < SUPPER_ROUND_LOADS_MAX {
                             // the smallest general stack that covers the need, else the largest
                             let pick = general_food
@@ -54079,6 +54146,21 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2-c pinned: the shelf goes beside the bed, orthogonal first, inside
+    /// the footprint; a bed at the footprint's edge takes the inside
+    /// neighbour; nothing standable beside the bed means no shelf. Planted
+    /// defect: the footprint ignored -> the edge bed's outside neighbour
+    /// chosen -> red.
+    #[test]
+    fn every_house_gets_a_shelf_beside_its_bed() {
+        let lo = Vec2::new(8, 8);
+        let hi = Vec2::new(12, 12);
+        let wall = |c: Vec3<i32>| !(c.x == 11 && c.y == 10);
+        assert_eq!(shelf_cell_beside(Vec3::new(10, 10, 5), lo, hi, &wall), Some(Vec3::new(9, 10, 5)), "a wall east: west");
+        assert_eq!(shelf_cell_beside(Vec3::new(12, 10, 5), lo, hi, &|_| true), Some(Vec3::new(11, 10, 5)), "an edge bed: inside");
+        assert_eq!(shelf_cell_beside(Vec3::new(10, 10, 5), lo, hi, &|_| false), None, "nothing standable");
     }
 
     /// ★ E2-b pinned: on the default schedule the round's window is 14
