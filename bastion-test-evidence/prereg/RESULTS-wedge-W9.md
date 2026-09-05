@@ -1147,6 +1147,31 @@ loops, the failures with chaser_dropped, the eat timeouts and the
 streaks at +10 and day 1 hour 12) run from the stage; the E2-g-b
 chain keys on it. The falsifier went red and restored clean at 15:56.
 
+b1 +10 min (hour 14 of day 0, boot 16:30, read 16:40): OVERRIDE
+FAILED AT A WALL 2 (uid 30 had_route=true stuck=4.03, uid 15
+had_route=false stuck=2.93), chaser_dropped 1; CHASER GLIDE OVERRIDE
+61 lines; override loops 12, wall-seconds p50 0.0, p90 14.9, max
+35.1, sum 68, loops over thirty seconds 1 (the last eight override
+lines carry stuck 10.9 -> 14.9: a push the feet kept moving through,
+re-anchored each three seconds, not a failure); TimedOut build 10,
+deposit 1, cook 1, haul 1, EAT 0; starving EatFrom/Traveling streaks
+0; EMBED WATCH 10 (W11's +10: 5); PUMP CENSUS pending=20
+mean_wait=54 max_wait=128; working=11, arrived 560, panics 0. Early;
+the day-1-hour-12 read decides.
+
+Two harness faults, named: the reader's restart at 16:30 took the
+CURRENT stage-bin (E2-g-b's 4ded49d334, staged 16:15), not W11-b's
+1531be2c65 -- the +10 above was read on a superset pair that carries
+W11-b, valid for its bars, wrong in its label; and E2-g-b's reader,
+bounding its wait for this row's day read at 30 minutes from its own
+stage, restarted b1 at 16:46 (day 0 hour 18) on W12-i2's pair
+7d28997261, so the day-1-hour-12 read was lost. Recovery: that pair
+carries W11-b (E2-g-b changes the supper window, W12-i2 adds a
+probe), and `read-w11b-day1.sh` reads the same bars on this run
+without a restart at day 1 hour 12 (~17:45). Memory written:
+a reader's restart takes the latest staged pair; a wait on another
+reader is bounded by its schedule.
+
 ## W12-i2, registered 15:55 (keyed on the E2-g-b stage, the end of the chain, before the binary)
 
 The door is not solid to the search: `walkable` tests `is_solid()`,
@@ -1171,6 +1196,16 @@ outside); NoDoor dominating means the region, not the search.
 Rejected: changing the admission before the probe has spoken; probing
 every unreachable. NOT evidenced: which neighbour rule refuses the
 doorstep; the probe's cost.
+
+### W12-i2 landed (7d28997261, staged 16:39)
+
+Check clean (the door probe and the second search compile), the pin
+green, both halves staged 16:39. The falsifier (the sealed and the
+open swapped) and the b2 reader (`wait-w12i2-b2.sh`: after E2-h's
+night-2 read, a fresh b2; the door-probe verdicts and the walkable
+triplets at +4, +10, days 1-2) run from the stage; the E2-i1 chain
+keys on it. The falsifier went red and restored clean at 16:43;
+lab-bin carries the pair from 16:40.
 
 ## W11-b, registered 15:15 (keyed on the E2-h stage, the end of the chain, before the binary)
 

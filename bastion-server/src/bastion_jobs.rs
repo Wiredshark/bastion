@@ -8460,6 +8460,35 @@ pub(crate) fn supper_interrupt(base: f32, supper: bool) -> f32 {
 /// (the night-massacre autopsy) keeps everyone indoors; eating from one's
 /// own shelf breaks no curfew. `BASTION_NO_NIGHT_LARDER` -> None (identity:
 /// the curfew skips every pile, as before).
+/// ★ E2-i1: why a sleeper's night pick found nothing.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NightShelf {
+    /// No owned bed in any Bed region: the pick had no home to look in.
+    NoHome,
+    /// The home holds no food item at all: the house got no load.
+    Empty,
+    /// The home holds food and every item is refused (reach, capacity, a
+    /// closed store).
+    Refused,
+}
+
+/// ★ E2-i1 pinned: no home -> NoHome whatever the counts; nothing present
+/// -> Empty; present and none admissible -> Refused.
+pub(crate) fn night_shelf_verdict(home_known: bool, present: u32, admissible: u32) -> NightShelf {
+    if !home_known {
+        NightShelf::NoHome
+    } else if present == 0 {
+        NightShelf::Empty
+    } else if admissible == 0 {
+        NightShelf::Refused
+    } else {
+        // Present and admissible, yet the pick returned nothing: the
+        // pick's own tie-break refused it; counted as Refused, named so.
+        NightShelf::Refused
+    }
+}
+pub(crate) static NIGHT_SHELF_EMPTIES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn night_home_of(board: &JobBoard, uid: common::uid::Uid) -> Option<Region> {
     if std::env::var_os("BASTION_NO_NIGHT_LARDER").is_some() {
         return None;
@@ -31887,6 +31916,62 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // never incremented here (the diag line fired 808
                             // times on b3 where the census read 0).
                             eat_skip_count("no_food_found");
+                            // ★ E2-i1: THE NIGHT SHELF NAMES ITS EMPTINESS.
+                            if night_now {
+                                let mut present = 0u32;
+                                let mut refused_reach = 0u32;
+                                let mut refused_cap = 0u32;
+                                let mut refused_closed = 0u32;
+                                if let Some(h) = night_home {
+                                    for (pi, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
+                                        let icell = ipos.0.map(|e| e.floor() as i32);
+                                        if !h.contains_point_xy(icell) {
+                                            continue;
+                                        }
+                                        if !pi.item().item_definition_id().itemdef_id().is_some_and(|d| FOOD_DEFS.contains(&d)) {
+                                            continue;
+                                        }
+                                        present += 1;
+                                        if board.stockpile_at(icell).is_some_and(|z| store_closed(&board.closed_stores, z, tick.0)) {
+                                            refused_closed += 1;
+                                        }
+                                        if item_reach_refused(
+                                            board.component_labels.as_ref(),
+                                            board.labels_prev_cells,
+                                            |c| terrain.get(c).ok().copied(),
+                                            feet,
+                                            icell,
+                                        ) {
+                                            refused_reach += 1;
+                                        }
+                                        if !board.has_capacity(*iuid, pi.amount()) {
+                                            refused_cap += 1;
+                                        }
+                                    }
+                                }
+                                let admissible = present.saturating_sub(refused_reach.max(refused_cap).max(refused_closed));
+                                let verdict = night_shelf_verdict(night_home.is_some(), present, admissible);
+                                eat_skip_count(match verdict {
+                                    NightShelf::NoHome => "night_no_home",
+                                    NightShelf::Empty => "night_shelf_empty",
+                                    NightShelf::Refused => "night_shelf_refused",
+                                });
+                                let k = NIGHT_SHELF_EMPTIES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if k <= 8 || k.is_power_of_two() {
+                                    info!(
+                                        colonist = %uid,
+                                        home_known = night_home.is_some(),
+                                        home_min = ?night_home.map(|h| h.min),
+                                        present,
+                                        refused_reach,
+                                        refused_cap,
+                                        refused_closed,
+                                        verdict = ?verdict,
+                                        night_no_food = k,
+                                        "bastion: NIGHT SHELF EMPTY — a sleeper's night pick found nothing at home; what the home held and what refused it"
+                                    );
+                                }
+                            }
                             if need_skip_diag {
                                 // LIVE-EMIT (#68, port-row): candidate count
                                 // -- distinguishes "the population is
@@ -55082,6 +55167,17 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2-i1 pinned: no home is NoHome whatever the counts; nothing
+    /// present is Empty; present and none admissible is Refused. Planted
+    /// defect: Empty and Refused swapped -> red.
+    #[test]
+    fn the_night_shelf_names_its_emptiness() {
+        use NightShelf::*;
+        assert_eq!(night_shelf_verdict(false, 5, 5), NoHome, "no home: the counts are void");
+        assert_eq!(night_shelf_verdict(true, 0, 0), Empty, "nothing on the shelf");
+        assert_eq!(night_shelf_verdict(true, 3, 0), Refused, "food on the shelf, all refused");
     }
 
     /// ★ E2-g-b pinned: on the default schedule the walk home is hour 15

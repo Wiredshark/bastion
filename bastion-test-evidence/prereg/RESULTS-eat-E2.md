@@ -667,6 +667,25 @@ night meals stayed at nine, and two bodies starve in bed through the
 night as before. The carrying is done; the eating is the row -- the
 night-meal rule's own conditions (read next).
 
+After night 2 (b1, hour 6 of day 2, 16:28; cumulative): the day-1
+round shortfall=91 loads=30 **skipped_no_small=20** stale_removed=14
+(E2-e's day 1: 23 skipped, 31 loads -- the same shortage on the
+same world a pair later; this pair lacks E2-h); arrivals to private
+shelves before the sweep 21 (day 0: 48); SWEPT day 2: 13; SUPPER
+CARRIED HOME 32 (no new claims on day 1: the loads were few);
+NIGHT MEAL AT HOME 10 cumulative (night 2 added one); no_food_found
+6,161 on the day-2 census (day 1: 305); meals 113; YEAR day=2
+food_stock 4,158 / 26.0 days (up: E2-f holds the larder). Starving
+by clock, night 2 alone: RestAt/Arrived 23, 32, 28, 38 at hours 0-3
+(night 1: 7, 16, 14, 18), EatFrom/Traveling 35 at hour 4 (the rise),
+19-21 through 11-13 (the noon errand's hungry walkers), 28 at hour
+20; distinct starving sleepers 10 cumulative (night 2 added seven).
+Night 2 without a stocked shelf is E2-e's night 2: the stack
+shortage empties the round, and the eaters carry nothing because
+nothing is minted. E2-h's fallback (b2, the day-1 round at ~16:35)
+is the test; E2-i1 reads what the shelf held on the nights it was
+stocked.
+
 E2-g's cost, second replicate (b2 on the E2-h pair 9cbeb09719, which
 carries the noon lift; the day-1 line at 16:13): works 154, hauls
 123, haul_share 44%, private_units 39 -- against b2's own E2-f day
@@ -701,6 +720,15 @@ evening EatFrom/Waiting 11, 11, 7, 6 at 17-20 (a queue at the food,
 a state E2-e's nights did not show). The second world's night says
 what b1's E2-g night said: the shelves are stocked and two or three
 bodies starve in bed regardless. E2-i1 reads the night shelf.
+
+The day-1 round (b2, hour 12 of day 1, read 16:32): houses=50
+shortfall=89 **loads=51 skipped_no_small=0** stale_removed=26 (E2-e's
+day 1: 23 skipped, 31 loads; E2-g's on b1: 20 skipped, 30 loads).
+**E2-h PASSED its round bars** (skipped 0; loads at least 45): the
+fallback mints a load for every short house from the big stacks. The
+night-2 read (hour 6 of day 2, ~16:50) gives the deliveries, the
+night meals and the sleepers on a night whose shelves were minted
+for.
 
 ## E2-i1, registered 15:55 (keyed on the W12-i2 stage, the end of the chain, before the binary)
 
