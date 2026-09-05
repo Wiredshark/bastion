@@ -1172,6 +1172,69 @@ without a restart at day 1 hour 12 (~17:45). Memory written:
 a reader's restart takes the latest staged pair; a wait on another
 reader is bounded by its schedule.
 
+**Day 1 hour 12 (recovered on b1's W12-i2 run, boot 16:46, read
+17:32): W11-b PARTIAL.** OVERRIDE FAILED AT A WALL failed=32,
+chaser_dropped=31 (97%; bar 80: MET); had_route false 7 / true 3 of
+the ten witnessed; uid 25 failed 6 times (bar 3: NOT met), uid 39
+twice; CHASER GLIDE OVERRIDE 214 lines (W11: 586); override loops 51
+(W11: 82; E2-d: 113), wall-seconds p50 1.1, p90 10.0 (bar 10: at
+the bar), max 116.1 (bar 30: NOT met; W11 246.4), sum 294 (bar 400:
+MET; W11 1,061; E2-d 2,627), loops over thirty seconds 3 (bar 0: NOT
+met; W11 6; E2-d 20); TimedOut releases eat 7 (bar 15: MET; W11
+40), build 28 (W11 18), haul 7, deposit 4; starving EatFrom/Traveling
+streaks 14, p50 5, p90 15 (bar 12: NOT met; W11 25), max 19 (W11
+47); EMBED WATCH 18 (W11's day: 10; up); arrived 1,363; PUMP CENSUS
+pending=12 mean_wait=49 max_wait=109; working=9; panics 0. The
+escape frees most bodies (the sum down 72%, the worst loop down
+53%, eat timeouts down 83%) and not the few whose next search puts
+the head back in the same wall (three loops past thirty seconds, one
+body six failures at one wall): the falsifier's first arm, in
+proportion -- the node placement, W12's question, now W12-a's (the
+search aims at a stand beside the target, not the target). The
+embeds rose to 18 on this pair: the dropped chaser re-searches and
+its first leg glides again; W12-a is expected to cut that too, and
+the count is carried as its baseline.
+
+### The two NoDoor probes explained (b2 read 17:43, the W12-i2 pair)
+
+The six probes were two bodies: uid 32 four times from the house at
+min (7636, 6456, 180), its door found at (7636, 6460, 181) and
+reached; uid 825 three times from the house at min (7582, 6498, 180),
+doors 0. Uid 825's feet were at z 186 -- an upstairs bed (SHELF ADDED
+names the bed at (7590, 6502, 186)) in a house whose floor is at 180
+-- and the probe scans z from one below the feet to two above, so
+the ground-storey door at about 181 lies outside its window. NoDoor
+is the probe's window, not a doorless house. Both bodies' targets
+were the shared cell (7672, 6426, 182). Candidate W12-i3: scan the
+house's whole z range (region min z to feet plus two); not built
+until W12-a's read says the path between is the defect.
+
+## W12-a, registered 17:36 (keyed on the E2-g-c stage, the end of the chain, before the binary)
+
+`search_stand(target, standable)`: the target cell when
+colonist_walkable admits it, else the nearest walkable cell within
+SEARCH_STAND_REACH (3) by rings and z 0, +1, -1, +2, -2, else the
+target as before; the plain fill enqueue aims at that stand (the
+trunk's node-0 approach is a road tile, untouched); SEARCH TARGET
+MOVED TO A STAND (uid, target, stand, moved) at the first eight and
+powers of two. The prior art is this file's `trade_mission_pos`.
+Pin `the_search_aims_at_the_stand_not_the_stone` (a standable target
+stands; one east; two south one up in the second ring; nothing
+within reach leaves the target); planted: the stand never sought,
+red. Prediction (b2 fresh, `wait-w12a-b2.sh`, +10 and day 1):
+unreachable_open per +10 under 5 (17); SEARCH TARGET MOVED at least
+20 by +10; FIRST LEG GATE stitched at least 80% of searched; PUMP
+CENSUS delivered_path at least twice delivered_unreachable over the
+day; EMBED WATCH by day 1 under 12 (W11-b's day: 18; W10-g's: 11);
+W11-b's loops over thirty seconds 0 on the next b1 read. Falsified
+if unreachable_open stays above 10 with the witness firing (the
+path between, not the target), or if the witness stays at zero
+(the shared target cell (7672, 6426, 182) is walkable and the
+doorstep is the defect), or if EMBED WATCH rises. Rejected: widening
+the admission to bed and item cells; a stance offset per job kind;
+reach 8 like the mission's. NOT evidenced: the two NoDoor houses;
+the detour lane's targets.
+
 ## W12-i2, registered 15:55 (keyed on the E2-g-b stage, the end of the chain, before the binary)
 
 The door is not solid to the search: `walkable` tests `is_solid()`,
@@ -1231,6 +1294,18 @@ are read first to confirm the targets are work cells. Same read:
 EMBED WATCH 9 (4 chaser-pure-glide, 2 chaser-refused-rock, 2
 bridge-refused-rock, 1 chaser-settle), routes=3072, arrived 452,
 working=7, p95 435, panics 0.
+
+The probe with job kinds (b2 on the E2-i1 pair, which carries the
+witness; hour 21 of day 0, 17:34): DOOR PROBE ExitOpenTargetUnreachable
+4, NoDoor 3; the eight unreachable approaches all aim at ONE cell,
+(7672, 6426, 182), for uid 32 and uid 825 -- six with no job claimed
+before the line (the boot's minted deposit runs), one on a Cook job,
+one on a Farm designation. A shared destination inside the town's
+bounds: a store cell by its place. W12-a's witness will say whether
+that cell is walkable: if the stand rule moves the target, the cell
+was the reason; if the witness stays at zero and the searches stay
+unreachable, the path between the house and the store (a step, a
+threshold) is the defect and the row is falsified as written.
 
 ## W11-b, registered 15:15 (keyed on the E2-h stage, the end of the chain, before the binary)
 

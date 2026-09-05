@@ -787,6 +787,15 @@ CENSUS night keys at hour 6 of days 1 and 2) run from the stage. The
 falsifier went red and restored clean at 17:14; lab-bin carries the
 pair from 17:11.
 
+### E2-j landed (98d548575d, staged 17:36)
+
+Check clean, the pin green, both halves staged 17:36. The falsifier
+(the reservations ignored) went RED at 17:39 (`falsify-e2j.out`),
+the tree restored clean. The b2 reader (`wait-e2j-b2.sh`:
+after E2-i1's night 1, a fresh b2; the evening EatFrom/Waiting per
+hour, the eat travel share, then the nights) run from the stage; the
+E2-g-c chain keys on it.
+
 ## E2-g-c, registered 17:25 (keyed on the E2-j stage, the end of the chain, before the binary)
 
 `SUPPER_WALK_HOME_WORK_HOURS = 2`: the walk home is any of the day's

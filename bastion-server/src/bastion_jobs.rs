@@ -8385,10 +8385,15 @@ pub(crate) fn supper_round_due(supper_now: bool, last_day: Option<i64>, today: i
 /// ★ E2-b pinned: the last two Work hours of this colonist's schedule --
 /// the haulers' last errand of the day runs here, on shift, with time to
 /// deliver before supper. On the default schedule that is 14 and 15.
-/// ★ E2-g-b pinned: the walk home -- the last Work hour of the day, and
-/// the Leisure hours after it (15 and 16-21 on the default schedule).
-/// Not the morning leisure, not the work day's middle: E2-g's eaters
-/// claimed their supper from noon and the works fell by two fifths.
+/// ★ E2-g-c: how many of the day's last Work hours are the walk home.
+/// One (E2-g-b) left half the shelves bare; four (E2-g) took two fifths
+/// of the works. Two is the stated middle, measured, not a taste.
+pub const SUPPER_WALK_HOME_WORK_HOURS: u32 = 2;
+
+/// ★ E2-g-b pinned, E2-g-c re-stated: the walk home -- the last
+/// SUPPER_WALK_HOME_WORK_HOURS Work hours of the day, and the Leisure
+/// hours after them (14-15 and 16-21 on the default schedule). Not the
+/// morning leisure, not the work day's middle.
 pub(crate) fn supper_walk_home_hour(
     night_watch: &HashSet<common::uid::Uid>,
     uid: Option<&common::uid::Uid>,
@@ -8396,9 +8401,11 @@ pub(crate) fn supper_walk_home_hour(
 ) -> bool {
     let block = |h: u32| colonist_schedule_block(night_watch, uid, h % 24);
     let hour = hour % 24;
-    // The last Work hour: Work now, not Work next.
+    // One of the last N Work hours: Work now, and within N hours the
+    // block is no longer Work.
     let last_work = matches!(block(hour), ScheduleBlock::Work)
-        && !matches!(block(hour + 1), ScheduleBlock::Work);
+        && (1..=SUPPER_WALK_HOME_WORK_HOURS)
+            .any(|d| !matches!(block(hour + d), ScheduleBlock::Work));
     if last_work {
         return true;
     }
@@ -55192,17 +55199,18 @@ mod tests {
         assert_eq!(night_shelf_verdict(true, 3, 0), Refused, "food on the shelf, all refused");
     }
 
-    /// ★ E2-g-b pinned: on the default schedule the walk home is hour 15
-    /// (the last Work hour) and 16-21 (the evening Leisure); 12, 13, 14 (the
-    /// work day), 6 and 7 (the morning Leisure), 22 and 3 (Sleep) are not.
-    /// Planted defect: the walk home from noon -> red.
+    /// ★ E2-g-b pinned, E2-g-c re-stated: on the default schedule the walk
+    /// home is 14 and 15 (the last two Work hours) and 16-21 (the evening
+    /// Leisure); 12 and 13 (the work day), 6 and 7 (the morning Leisure),
+    /// 22 and 3 (Sleep) are not. Planted defect: the walk home from noon
+    /// (four hours) -> red.
     #[test]
     fn the_eater_carries_supper_on_the_way_home() {
         let nw: HashSet<common::uid::Uid> = HashSet::new();
-        for h in [15u32, 16, 17, 20, 21] {
+        for h in [14u32, 15, 16, 17, 20, 21] {
             assert!(supper_walk_home_hour(&nw, None, h), "hour {h}: the walk home");
         }
-        for h in [12u32, 13, 14, 6, 7, 22, 3] {
+        for h in [12u32, 13, 6, 7, 22, 3] {
             assert!(!supper_walk_home_hour(&nw, None, h), "hour {h}: not the walk home");
         }
     }
