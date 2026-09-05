@@ -182,3 +182,67 @@ replayed as a build order (`Bed => ReplayPlacement::Place`) turned
 `the_replay_registers_and_does_not_mint` red (23:40); the tree restored
 to 0 dirty files. The sixth restart test runs on b3 on this pair; its
 section follows.
+
+### The sixth restart test (R1d pair 43008d9fdb, b3, 23:38-23:52)
+
+| bar | registered | read | verdict |
+|---|---|---|---|
+| jobs after the restore | within a few hundred of the pre-stop boot | 1,369-1,405 (pre-stop boot ~1,400: the work zone's 1,049 Chop are minted at the founding too) | PASS |
+| tick p95 | < 5 ms | 592-735 us (fifth test: 100-114 ms) | PASS |
+| top kinds | no Bed above 100 | Chop 1,049, Build 98, Mine 73, Cook 58, Farm 32; no Bed | PASS |
+| ADOPT-IN-PLACE | 58 | 58 | PASS |
+| colonists | near 49 | 49 | PASS |
+| COLONY RESTORED / ADOPT-A-TOWN site chosen | 1 / 1, no residents | 1 / 1 (`no residents adopted, no plots re-placed`) | PASS |
+| GROWTH LOG READ / RE-GROWN / REPLAYED | 1 / 1 / 1 | 1 / 1 / 1 (plan 82, the same aabr) | PASS |
+| colony orders replayed | > 0 | 6 | PASS |
+| panics | 0 | 0 | PASS |
+| HOUSEHOLDS houses=58 | 58 | not printed yet (once a day; boot 2 was day 0's second half) | pending |
+
+The job storm is gone and the kept world comes back as itself. What
+this test also settled, the other way: **the 23 cells placed before the
+GRACEFUL stop did not survive it either** (`cells_remaining 1,909,
+already_standing 8,640`, the first plan exactly). The reason is not
+the stop: `experimental_terrain_persistence` defaults to `false`
+(`server/src/settings/mod.rs:234`), the arms' `settings.ron` does not
+set it, and the persistence module is only inserted when it is true
+(`server/src/lib.rs:775`). Nothing the colonists place, dig or sow is
+ever written to disk on these arms. A kept world without it re-grows
+every plot from the log and the builders start the house again. That
+is the next restart row: turn terrain persistence on in the harness
+and read `already_standing` above 8,640 after a stop.
+
+## R2: a kept world keeps the colony's work (registered 00:05, before the binary)
+
+Read from the producer, the setting alone would not have been enough:
+`TerrainPersistence::set_block` has exactly two callers, both admin
+commands (`cmd.rs:836`, `:1018`). Every colony write goes through
+`BlockChange` and is applied by `State::apply_terrain_changes` through
+`on_block_update` in `Server::tick`, where nothing recorded it.
+
+Mechanism: `bastion_record_applied_changes(persist, diffs)` at that one
+apply site records every applied diff into the store when it is present
+(`BASTION_TERRAIN_BLOCKS_RECORDED`, witness `TERRAIN PERSISTED`); the
+harness splices `experimental_terrain_persistence: true` into
+`settings.ron` for fresh and kept worlds (a false is flipped, an absent
+key inserted; BOM-free; refuses to boot if the splice missed). The
+boot witness is the server's own `terrain persistence path` line.
+
+Pin `the_applied_changes_are_recorded_for_the_next_boot` (veloren-server):
+two blocks recorded into a temp-dir store, `unload_all`, a fresh instance
+applies them into a blank chunk at their chunk-relative cells. Planted
+defect: the loop counts but never writes.
+
+Bars for the seventh restart test (b3, `g1d-restart-test7.sh`):
+
+| bar | sixth test | R2 bar |
+|---|---|---|
+| `terrain persistence path` at boot | 0 | 1 per boot |
+| TERRAIN PERSISTED blocks_total, boot 1 | -- | thousands within minutes (the founding planting alone ~7,000) |
+| terrain/ files after the graceful stop | -- | > 0 |
+| PLOT RE-GROWN already_standing after the restore | 8,640 (placed 23) | 8,640 + placed (within a few) |
+| cells_remaining | 1,909 | 1,909 - placed |
+| R1d's bars | held | still held (jobs, p95, ADOPT-IN-PLACE 58, colonists 49) |
+
+Falsified if already_standing reads 8,640 with TERRAIN PERSISTED > 0
+(recorded but not re-applied on chunk load), or TERRAIN PERSISTED stays
+0 (the setting did not reach the server).

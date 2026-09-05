@@ -82,6 +82,12 @@ the logs are the vanilla agent's sit-to-stand on a Goto,
 `server/agent/src/action_nodes.rs:916`, not a wedge rescue; the embed
 watch is the only handler a wedged body has.)
 
+b1's day 1 on the same W8-f pair (the 160-day arm, read late at
+00:10): targets_shunned 37, STALLED TARGET SHUNNED 149 in total,
+STORE WOULD CLOSE 12, ROUTE FAULT 6 lines (16 re-paths), cooked_today
+89, meals 48, one starving at the census. The same picture as b2's:
+the mechanism fires and the shun chain still runs.
+
 ## W8-g: a repeated stall spot blames the walker (0e865d5b65)
 
 Mechanism: the board keeps `last_stall_spot` per colonist; a stall at
@@ -119,7 +125,7 @@ freed; the embed watch still relocates it into the same trap).
 | cooked_today | 43 | 87 | PASS |
 | STALL BLAMED ON THE WALKER | -- | 2 (Farm jobs 409 and 401, colonists 30 and 12) | fired |
 | ROUTE FAULT re-paths | 4 | 2 | -- |
-| fed at midday | -- | 42 of 49, starving 0 | -- |
+| fed at midday / at dawn (tick 54,000) | -- | 42 of 49 / 43 of 50, starving 0 | PASS |
 | food_stock at day 1 | -- | 4,170 (26.6 days) | -- |
 
 The store witness is not the shun chain this time: three DIFFERENT

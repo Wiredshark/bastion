@@ -24853,6 +24853,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .iter()
                                 .map(|(mn, mx)| ((mx.x - mn.x + 1) * (mx.y - mn.y + 1)).max(0) as u32)
                                 .sum();
+                            // ★ F-i2: the food count carries its frame -- the locked share
+                            // and the world total beside the drawable stock, same join, same
+                            // call (b1: the discriminator read 3,613 while this line read
+                            // 1,508 at the same tick).
+                            let food_locked_y =
+                                colony_food_locked((&pickup_items, &positions).join(), &board);
+                            let food_all_y: u32 = (&pickup_items, &positions)
+                                .join()
+                                .filter(|(item, _)| {
+                                    item.item()
+                                        .item_definition_id()
+                                        .itemdef_id()
+                                        .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                })
+                                .map(|(item, _)| item.amount() as u32)
+                                .sum();
                             let harvested_today = std::mem::take(&mut board.harvested_today);
                             let cooked_today = std::mem::take(&mut board.cooked_today);
                             let matured_today = std::mem::take(&mut board.matured_today);
@@ -24863,6 +24879,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 days_in_year = diy,
                                 stage_secs = farm_stage_secs(diy),
                                 food_stock = stock_y,
+                                food_locked = food_locked_y,
+                                food_anywhere = food_all_y,
                                 food_par = par_y,
                                 days_of_food = stock_y as f64 / (roster_y.max(1) as f64 * DAILY_RAW_UNITS),
                                 sows_refused_by_season = sow_cells_refused,
