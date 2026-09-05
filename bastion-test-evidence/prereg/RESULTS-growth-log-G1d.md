@@ -154,3 +154,25 @@ the storm's kind; R1d-i adds the top five (kind, required item) pairs
 to the tick census, and the fifth restart test reads it. HOUSEHOLDS
 had not printed by the read. A kept world is still not for Ben's
 session.
+
+### The fifth restart test (R1d-i pair 60818fe1fc, b3, 22:44-23:05)
+
+The restored boot's tick census: `jobs=374640 top_kinds=Designated(Bed):stones=368150
+Designated(Build):stones=5234 Designated(Chop):-=1050 Designated(Mine):-=98
+Designated(Farm):-=47`, p95 100-114 ms, colonists 49. The replay's
+own lines: `designation placed kind=Bed jobs=6811 / 8629 / 7402 / 5677
+/ 2773 / 8505` per saved house order; `ADOPT-IN-PLACE house registered`
+0. So the storm is the replay handing each saved Bed order (a standing
+house, registered at the founding by `adopt_beds_surface` with no
+jobs) to `place_designation`, whose construction tail mints a
+stone-wanting job per wanted cell of the house's region; the plan's
+saved Build order did the same at 5,234.
+
+R1d (registered before its binary): `replay_placement(kind)` -- a Bed
+order re-registers its standing beds in place over the saved region, a
+Build order goes back on the designated list for the generators, every
+other kind replays as before. Bars for the sixth test: the restored
+boot's jobs within a few hundred of the pre-stop boot's, p95 under 5
+ms, no Bed kind above 100, ADOPT-IN-PLACE 58, colonists near 49,
+HOUSEHOLDS houses=58. Falsified if any kind reads above 10,000 or the
+tick p95 stays above 20 ms.

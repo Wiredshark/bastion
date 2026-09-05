@@ -299,3 +299,18 @@ about 200 a day and has matured nothing since the founding draw: a
 stage on this clock is 6.6 game days, so the draw's next ripening wave
 is due around day 7. That is the bridge Ben's ruling decides; the
 day-7 read on this pair is the evidence.
+
+## A caution on every `food_stock` above: the count has two frames
+
+b1 on the W8-f pair (b4a1eb9aa6), tick 54000: the FOOD-WIPE
+discriminator read `in_stockpile=3613 on_ground_total=3616` and the
+YEAR CENSUS of the same tick read `food_stock=1508` (the trade mint read
+1531 the same minute); at day 0 all three read 3624. b2 on the same
+pair reads the other way (census 4,202 against 3,621). Both sites call
+`colony_food_stock` over the same storages with the same board. The
+settler gate and the famine logic key on the census's number, and the
+"drains about 200 a day" reads above are that number. F-i2 adds
+`food_locked` and `food_anywhere` to the census from the same join so
+the next day line names which frame is wrong; until then the daily
+`food_stock` values in this file are consistent with themselves and
+not yet trustworthy against the discriminator.

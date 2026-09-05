@@ -8969,6 +8969,29 @@ pub fn adopt_queue_witness(
 /// - **drained == 0** — self-initialising: the first drain that sees a
 ///   non-empty queue starts its own clock, so no tick has to be plumbed
 ///   across the crate boundary to the enqueue site.
+/// ★ R1d (2026-09-04): THE REPLAY REGISTERS, IT DOES NOT MINT. A saved Bed
+/// order is a standing house: it re-registers its beds in place, as the
+/// founding did (b3: the replay minted 368,150 stone-wanting Bed jobs for 58
+/// houses and the server ran at 100 ms a tick). A saved Build order is a
+/// plan's region: it goes back on the designated list and the plan drain and
+/// the build generator mint under their own caps. Everything else replays
+/// through `place_designation` as before (farms and stores mint nothing;
+/// a work zone mints its trees).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayPlacement {
+    InPlaceBeds,
+    RegisterOnly,
+    Place,
+}
+
+pub fn replay_placement(kind: DesignationKind) -> ReplayPlacement {
+    match kind {
+        DesignationKind::Bed => ReplayPlacement::InPlaceBeds,
+        DesignationKind::Build => ReplayPlacement::RegisterOnly,
+        _ => ReplayPlacement::Place,
+    }
+}
+
 pub fn adopt_queue_progress(
     prev: (Option<u64>, bool),
     drained: usize,
@@ -18291,6 +18314,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let pending = std::mem::take(&mut board.pending_restore);
                 let mut still_waiting = Vec::new();
                 let mut replayed = 0usize;
+                let (mut in_place_beds, mut register_only) = (0usize, 0usize);
                 for (region, kind) in pending {
                     // Both corners, not one: a region straddling a chunk
                     // boundary can have its min loaded and its max not, and
@@ -18298,7 +18322,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let ready =
                         terrain.get(region.min).is_ok() && terrain.get(region.max).is_ok();
                     if ready {
-                        board.place_designation(&terrain, region, kind);
+                        // ★ R1d: register, do not mint.
+                        match replay_placement(kind) {
+                            ReplayPlacement::InPlaceBeds => {
+                                let _ = board.adopt_beds_surface(
+                                    &terrain,
+                                    region.min.xy(),
+                                    region.max.xy(),
+                                    region.min.z,
+                                );
+                                in_place_beds += 1;
+                            },
+                            ReplayPlacement::RegisterOnly => {
+                                board.designated.push((region, kind));
+                                register_only += 1;
+                            },
+                            ReplayPlacement::Place => {
+                                board.place_designation(&terrain, region, kind);
+                            },
+                        }
                         replayed += 1;
                     } else {
                         still_waiting.push((region, kind));
@@ -18307,6 +18349,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if replayed > 0 {
                     info!(
                         replayed,
+                        in_place_beds,
+                        register_only,
                         still_waiting = still_waiting.len(),
                         "bastion: colony orders replayed from save"
                     );
@@ -52537,6 +52581,20 @@ mod tests {
     fn a_repeated_stall_spot_blames_the_walker() {
         assert_eq!(stall_blame(false), StallBlame::Target, "a first stall here: the target is suspect");
         assert_eq!(stall_blame(true), StallBlame::Walker, "the same spot again: the walker is wedged");
+    }
+
+    /// ★ R1d pinned: a saved Bed order re-registers in place, a saved Build
+    /// order re-registers its region, everything else places as before.
+    /// Planted defect: Bed placed as a build order -> red.
+    #[test]
+    fn the_replay_registers_and_does_not_mint() {
+        use ReplayPlacement as R;
+        assert_eq!(replay_placement(DesignationKind::Bed), R::InPlaceBeds, "a standing house");
+        assert_eq!(replay_placement(DesignationKind::Build), R::RegisterOnly, "a plan's region");
+        assert_eq!(replay_placement(DesignationKind::Farm), R::Place, "a field");
+        assert_eq!(replay_placement(DesignationKind::Stockpile), R::Place, "a store");
+        assert_eq!(replay_placement(DesignationKind::Mine), R::Place, "a mine");
+        assert_eq!(replay_placement(DesignationKind::Chop), R::Place, "a woodlot");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.

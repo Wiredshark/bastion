@@ -81,3 +81,31 @@ that, with W8-ii's node verdicts. (The `GOTO-STAND-RESCUE` lines in
 the logs are the vanilla agent's sit-to-stand on a Goto,
 `server/agent/src/action_nodes.rs:916`, not a wedge rescue; the embed
 watch is the only handler a wedged body has.)
+
+## W8-g: a repeated stall spot blames the walker (0e865d5b65)
+
+Mechanism: the board keeps `last_stall_spot` per colonist; a stall at
+the same block as the walker's previous stall is `StallBlame::Walker`
+(`stall_blame(repeated_spot)`), which releases the job and shuns
+nothing (witness `STALL BLAMED ON THE WALKER`); a first stall at a new
+spot is `StallBlame::Target` and runs the W8-f route-fault path as
+before. `BASTION_NO_WALKER_BLAME` restores the old behaviour for a
+control boot.
+
+Pin `a_repeated_stall_spot_blames_the_walker` (bastion-server).
+Falsified at the commit: always blaming the target turned it red at
+`bastion_jobs.rs:52536` (23:15); the tree restored to 0 dirty files.
+
+Registered bars for day 1 on b2 (boot 23:13, the same flat world):
+
+| bar | W8-f read | W8-g bar |
+|---|---|---|
+| targets_shunned per day | 38 | < 15 |
+| STORE WOULD CLOSE | 2 | 0 |
+| cooked_today | 43 | >= 80 |
+| STALL BLAMED ON THE WALKER | -- | > 0 (the wedged cook's repeats) |
+| starving at dawn | 1 | 0 |
+
+Falsified if the shun count stays above 30 or a store closes. NOT
+evidenced by this row: the wedge itself (the walker is released, not
+freed; the embed watch still relocates it into the same trap).
