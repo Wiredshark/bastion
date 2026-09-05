@@ -4305,6 +4305,13 @@ pub static NAMED_BY_NEED: core::sync::atomic::AtomicU64 = core::sync::atomic::At
 /// block now rather than at midnight; a fresh town built nothing on its
 /// first day and a restored one nothing on its first, because the crew
 /// was drafted only at the day line.
+/// ★ P-zero-hours-c: the roster a draft, a ceiling or a reserve sizes
+/// itself from is the larger of the names the town has given and the
+/// colonists alive -- a fresh boot's first pass has heads before names.
+pub(crate) fn draft_roster(named: usize, alive: usize) -> usize {
+    named.max(alive)
+}
+
 pub(crate) fn draft_at_plan(builders_now: usize, plan_cells: usize) -> bool {
     plan_cells > 0 && builders_now == 0
 }
@@ -47420,7 +47427,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // ★ HAUL LANE CEILING (see `cap_haul_lane`), applied to the
                     // whole lane, not only today's switches.
                     if std::env::var_os("BASTION_NO_HAUL_CAP").is_none() {
-                        let roster_now = board.professions.len();
+                        let roster_now =
+                            draft_roster(board.professions.len(), (&colonists).join().count());
                         let all_haul: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> = board
                             .professions
                             .iter()
@@ -47477,7 +47485,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // ★ DEDICATED HAULERS: top the Haul lane up to its share and
                     // point the promoted colonists' priorities at hauling.
                     if std::env::var_os("BASTION_NO_DEDICATED_HAULERS").is_none() {
-                        let roster_now = board.professions.len();
+                        let roster_now =
+                            draft_roster(board.professions.len(), (&colonists).join().count());
                         let promoted = reserve_haulers(
                             &board.professions,
                             &board.lane_counts,
@@ -47571,7 +47580,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         && !board.plot_blocks.contains_key(&j.pos)
                                 })
                                 .count();
-                        let roster_now = board.professions.len();
+                        let roster_now =
+                            draft_roster(board.professions.len(), (&colonists).join().count());
                         // ★ A DRAFTED BUILDER COUNTS AS A BUILDER UNTIL
                         // RELEASED, even when this morning's argmax has
                         // renamed them: they still carry `in_lane(Build)`
@@ -47597,6 +47607,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             open_build_cells,
                             roster_now,
                             plot_plan_open,
+                        );
+                        // ★ P-zero-hours-c: the pass witnesses itself even
+                        // when it wants nobody -- a zero must be readable.
+                        info!(
+                            day = today,
+                            roster = roster_now,
+                            named = board.professions.len(),
+                            plot_plan_open,
+                            open_build_cells,
+                            wanted,
+                            builders_now,
+                            drafts_at_plan = DRAFTS_AT_PLAN.load(core::sync::atomic::Ordering::Relaxed),
+                            "bastion: BUILD DRAFT PASS — the day's draft, sized from heads and the plan"
                         );
                         if wanted > 0 || builders_now > 0 {
                             info!(
@@ -53616,6 +53639,16 @@ mod tests {
         assert_eq!(first_leg_gate(false, true), FirstLegGate::Near, "near wins over pending");
         assert_eq!(first_leg_gate(true, true), FirstLegGate::BlockedPending);
         assert_eq!(first_leg_gate(true, false), FirstLegGate::Searched);
+    }
+
+    /// ★ P-zero-hours-c pinned: heads before names -- forty-eight alive with
+    /// no names is a roster of forty-eight; names past heads (a stale map)
+    /// still count. Planted defect: names only -> red.
+    #[test]
+    fn the_draft_counts_heads_not_names() {
+        assert_eq!(draft_roster(0, 48), 48, "a fresh boot: heads before names");
+        assert_eq!(draft_roster(48, 48), 48, "named: the same town");
+        assert_eq!(draft_roster(50, 48), 50, "a stale name map still counts");
     }
 
     /// ★ P-zero-hours-b pinned: a plan with cells and no builder calls the

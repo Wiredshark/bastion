@@ -389,6 +389,37 @@ test reads `houses=58` on the restored boot's first day line.
 Check clean, pin `the_larder_waits_for_the_orders` green (1 passed),
 staged 05:29, shipped to lab-bin 05:29. Falsified at the commit: the
 orders ignored turned the pin red (0 passed, 1 failed), tree restored
-clean at 05:32. The live read is the ninth restart
+clean at 05:32.
+
+The ninth restart test, boot 2 (kept world, P-zero-hours-b pair
+5382e809b0, b3, 06:31): STORE READ FROM SAVE 1, STORE RESTORE WAITING
+0 (the founding orders had already drained), STORE RESTORED
+entries=359 units=12,725, and all 359 deliveries `store="general"` --
+none to a private shelf. FOOD-WIPE DISCRIMINATOR at tick 1,800:
+in_stockpile 4,235 of on_ground_total 4,279 (99% drawable; the eighth
+test: 383 of 4,357, 9%). HOUSEHOLDS 3 lines, TERRAIN PERSISTED 7
+lines at +2 min. **R3-b PASSED** its registered bar. The Chop
+designations on the restored board still read 3,227 at +5 min (the
+eighth test: 3,224) -- an earlier line in this section read "8" off a
+different count (log lines naming Chop) and is withdrawn; the Chop
+generator's cap on restore stays an open row. The restored boot has no
+PLOT PLAN QUEUED line (the plan is restored, not re-queued), so the
+draft-at-plan does not fire there; the restored boot's builders come
+from the daily block's first pass, which is P-zero-hours-c's read.
+
+Test 9, boot 2 at +5 min (06:40): DELIVERED 12,725 units over 359
+lines, HOLDING 0, discriminator tick=8,100 in_stockpile 4,303 of
+4,327, RE-GROWN cells_remaining=1,876 already_standing=8,673 (boot 1
+placed 24), households houses=58 occupied=48, colonists 50, tick p95
+1,272 us over 3,514 jobs at boot; DRAFT AT THE PLAN 0 and placed 0 on
+the restored boot (P-zero-hours-c); SETTLER GATE CLOSED 1 (the YEAR
+line has not printed yet on this boot, so the gate reads the empty
+food frame -- the same mid-day artefact as test 8); EMBED 12 at +5
+min (the restored boot's first-leg class; W10-a-b's read on a kept
+world is the tenth test); panics 0.
+
+The live read of the orders wait itself (STORE RESTORE WAITING) is
+still null on this test -- the wait never had to fire -- and so is
+the ninth restart
 test's restored boot on b3, keyed on the P-zero-hours-b stage (now
 queued behind W10-a-i, the first-leg gate instrument).

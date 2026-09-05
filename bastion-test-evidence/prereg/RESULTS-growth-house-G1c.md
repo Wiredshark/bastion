@@ -338,8 +338,14 @@ and b1 fresh when the E2 pair reaches it.
 Boot 1 on b3 (06:22): PLOT PLAN QUEUED and BUILD DRAFT CALLED AT THE
 PLAN in the same second (plan=81 cells=1909 builders_now=0
 drafts_at_plan=1) -- the call half of P-zero-hours-b PASSED. Then no
-BUILD DRAFT SIZED line at all, no HAUL LANE CEILING line, one cell
-placed at +2 min, two Build arrivals. The daily block did run (it runs
+BUILD DRAFT SIZED line at all, no HAUL LANE CEILING line; the first
+cell at +2 min, and by 06:30 (+8 min) 24 cells placed with 28 Build
+arrivals -- the registered outcome bar (arrivals above 10, cells above
+15 within ten minutes) PASSED, but by the argmax naming zero-hour
+colonists to the scarcest lane (Build, with a plan open), not by the
+sized draft. Larder at the stop: STORE SNAPSHOT SAVED cells=358
+units=12,755 (7 saves); TERRAIN PERSISTED 8,050 blocks; graceful stop
+at 06:31, boot 2 kept at 06:31. The daily block did run (it runs
 every 300 ticks when today != profession_day); it sizes the ceiling,
 the reserve and the draft from `board.professions.len()`, near empty
 at a fresh boot's first pass, so `builders_wanted`'s

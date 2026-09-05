@@ -527,6 +527,11 @@ profile routes=3,072, detour 1.90, rejected_solid 1,319, rejected_dz
 accepted share, as the code's structure says); EMBED WATCH 7, idx0 5;
 ROUTE FAULT 4; ITEM 39 p95 422 us; panics 0.
 
+Day 1 (06:18, hour 0): FIRST LEG GATE routes=1,536 near=1,536, the
+rest 0; profile routes=6,144, detour 2.12, rejected_solid 2,827,
+rejected_dz 1,735; EMBED WATCH 11 for the day, idx0 9; ROUTE FAULT 4;
+panics 0. The arm was then restarted on W10-a-b.
+
 Two findings, both against W10-a's premise. **Near is 100%**: on a
 fresh arm the first node is never farther than a tile, so
 `first_leg_needs_search` is never true and the stitch can never fire;
@@ -565,6 +570,16 @@ embeds in the first ten minutes at most 1 (3 at +4 on W10-a-i, 7 at
 under 600 us. Falsified if crossed > 0 and stitched stays 0 (the arm
 that eats the search is named by blocked_pending or tail_dropped), or
 if stitched > 0 and idx0 embeds do not fall.
+
+### W10-a-b landed (9488400a79, 06:44)
+
+Check clean, pin `the_first_leg_is_walked_before_it_is_assumed` green
+(1 passed), staged 06:44, shipped to lab-bin 06:45. Falsified at the
+commit: the line never walked turned the pin red (0 passed, 1
+failed), tree restored clean at 06:48. The b2 reader
+(`wait-w10ab-b2.sh`: FIRST LEG GATE with `crossed`,
+STITCHED, idx0 embeds, the profile, at +4, +10, days 1-2) run from
+the stage.
 
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
