@@ -369,4 +369,43 @@ wanted 6 and nothing placed (a route row).
 Landed 2752edc4d6 at 07:08: check clean, pin green (1 passed), staged
 07:08, shipped to lab-bin 07:08. Falsified at the commit: names only
 turned the pin red (0 passed, 1 failed), tree restored clean at
-07:11. The live read waits for the E2 pair on b1.
+07:11.
+
+Live on b1 (E2 pair 3ce9276f42, boot 07:32, plan at 07:33): BUILD
+DRAFT PASS in the same second as the call with roster=48 named=0
+plot_plan_open=true open_build_cells=1909 wanted=6 builders_now=0 --
+the size half PASSED; then BUILD DRAFT SIZED wanted=6 builders_now=0
+named_build=0, and in the eleven minutes that followed one Build
+arrival against Farm 200, Mine 139, Chop 18, one cell placed at
++10 min. **The outcome bar FAILED**: the draft wanted six and named
+nobody, because its candidate pool is the names map (empty at the
+first pass), so heads fixed the size and not the crew. The same arm's
+earlier fresh boots read 0-6 cells on day 0; the ninth test's 24 on
+b3 came from a different arm (forced plot request) and are not the
+control for this.
+
+### P-zero-hours-d, registered 07:52 (keyed on the W10-a-c stage, before the binary; T1 re-keyed behind it)
+
+The day line's naming loop iterates `tops`, built from lane_counts
+entries, so a founder at the first pass (twenty seconds after boot,
+before any claim) is not in the loop at all and the newcomer arm
+cannot reach it. Now every live head enters `tops` at zero hours when
+it has no entry and takes the scarcest lane by the existing verdict;
+`newcomer_lanes(lane_pop, n)` recounts the scarcest lane after each
+naming so the founders spread by scarcity instead of all taking one
+lane; the loop runs in uid order. Pin
+`newcomers_spread_across_the_scarcest_lanes` (three newcomers over
+three empty lanes spread one each, a fourth returns to the most open
+work; every naming counted); the P-zero-hours pin
+(`an_idle_day_names_nobody_and_a_newcomer_takes_the_scarcest_lane`)
+must stay green in the same chain. Planted defect: the recount
+removed, all take one lane, red.
+
+Prediction (b3 fresh, plot request forced, plan at +1 min): NAMED BY
+NEED ~48 at the first pass with no lane above 12 practitioners;
+BUILD DRAFT SIZED named_build >= 5 in the same pass; Build arrivals
+above 10 and cells placed above 15 within ten minutes of the plan;
+HAUL LANE CEILING demotes nobody at the first pass. Falsified if one
+lane takes more than half the roster (the recount is not reaching the
+verdict) or if named_build >= 5 and nothing is placed in ten minutes
+(a route row).

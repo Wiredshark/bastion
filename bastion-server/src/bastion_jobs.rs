@@ -4348,6 +4348,25 @@ pub(crate) fn scarcest_lane(
         .map(|(w, ..)| *w)
 }
 
+/// ★ P-zero-hours-d pinned: the lanes `n` newcomers take, one after
+/// another, each to the lane that is scarcest once the previous newcomer
+/// has been counted -- so a founding roster spreads instead of piling
+/// into the single lane that was scarcest before anyone was named.
+pub(crate) fn newcomer_lanes(
+    lane_pop: &mut Vec<(common::bastion::WorkType, usize, usize)>,
+    n: usize,
+) -> Vec<common::bastion::WorkType> {
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        let Some(lane) = scarcest_lane(lane_pop) else { break };
+        if let Some(e) = lane_pop.iter_mut().find(|(w, ..)| *w == lane) {
+            e.1 += 1;
+        }
+        out.push(lane);
+    }
+    out
+}
+
 pub(crate) fn kitchen_crew_cap(roster: usize) -> usize {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     ENV.get_or_init(|| {
@@ -47548,15 +47567,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             tops.insert(u, (w, c));
                         }
                     }
+                    // ★ P-zero-hours-d: a head with no hours yet is still a
+                    // head -- it enters the loop at zero and takes the
+                    // scarcest lane by the verdict below.
+                    for (u, _) in (&uids, &colonists).join() {
+                        tops.entry(*u).or_insert((common::bastion::WorkType::Build, 0));
+                    }
                     let incumbents: HashMap<common::uid::Uid, common::bastion::WorkType> =
                         board.professions.clone();
                     let mut named: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> =
                         Vec::new();
                     // ★ P-zero-hours: the scarcest lane, for a newcomer with no hours
                     // (the rule the coming-of-age block uses), computed once a morning.
-                    let scarcest_now: Option<common::bastion::WorkType> = {
-                        let lane_pop: Vec<(common::bastion::WorkType, usize, usize)> =
-                            common::bastion::WorkType::ALL
+                    let mut lane_pop: Vec<(common::bastion::WorkType, usize, usize)> =
+                        common::bastion::WorkType::ALL
                                 .into_iter()
                                 .map(|w| {
                                     (
@@ -47570,10 +47594,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     )
                                 })
                                 .collect();
-                        scarcest_lane(&lane_pop)
-                    };
+                    let scarcest_now: Option<common::bastion::WorkType> = scarcest_lane(&lane_pop);
                     let mut named_by_need = 0u32;
-                    for (u, (w, c)) in tops {
+                    // ★ P-zero-hours-d: uid order, so the day line is the same
+                    // day line on every machine.
+                    let mut tops_sorted: Vec<_> = tops.into_iter().collect();
+                    tops_sorted.sort_by_key(|(u, _)| u.0.get());
+                    for (u, (w, c)) in tops_sorted {
                         let incumbent = board.professions.get(&u).map(|inc| {
                             (
                                 *inc == w,
@@ -47587,7 +47614,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 named.push((u, w, c));
                             },
                             ArgmaxVerdict::NameScarcest => {
-                                if let Some(lane) = scarcest_now {
+                                // ★ P-zero-hours-d: scarcest AFTER the last
+                                // naming, one newcomer at a time.
+                                if let Some(lane) = newcomer_lanes(&mut lane_pop, 1).first().copied() {
                                     board.professions.insert(u, lane);
                                     named.push((u, lane, 0));
                                     named_by_need += 1;
@@ -53831,6 +53860,20 @@ mod tests {
         assert_eq!(first_leg_gate(false, true), FirstLegGate::Near, "near wins over pending");
         assert_eq!(first_leg_gate(true, true), FirstLegGate::BlockedPending);
         assert_eq!(first_leg_gate(true, false), FirstLegGate::Searched);
+    }
+
+    /// ★ P-zero-hours-d pinned: three newcomers over three empty lanes
+    /// spread one each, the emptiest-with-most-work first; a fourth goes
+    /// back to the lane with the most open work. Planted defect: the
+    /// scarcest lane never recounted -> all take one lane -> red.
+    #[test]
+    fn newcomers_spread_across_the_scarcest_lanes() {
+        use common::bastion::WorkType as W;
+        let mut pop = vec![(W::Farm, 0, 10), (W::Build, 0, 96), (W::Mine, 0, 96)];
+        let lanes = newcomer_lanes(&mut pop, 4);
+        assert_eq!(lanes, vec![W::Build, W::Mine, W::Farm, W::Build]);
+        assert_eq!(pop.iter().map(|(_, p, _)| *p).sum::<usize>(), 4, "every naming counted");
+        assert!(newcomer_lanes(&mut Vec::new(), 2).is_empty(), "no lanes: nobody named");
     }
 
     /// ★ P-zero-hours-c pinned: heads before names -- forty-eight alive with

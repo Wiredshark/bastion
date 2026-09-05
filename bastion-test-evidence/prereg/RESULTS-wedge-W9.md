@@ -635,6 +635,16 @@ p95 under 600 us. Falsified if blocked_pending stays near 12 (the
 pending lane is Detour) or STALL BLAMED climbs (the replaced Fill was
 serving a walk this route did not own).
 
+### W10-a-c landed (be49881c8e, 07:54)
+
+Check clean, pin `a_pending_fill_search_yields_to_the_approach` green
+(1 passed), staged 07:54, shipped to lab-bin 07:54. Falsified at the
+commit: a pending Fill blocking turned the pin red (0 passed, 1
+failed), tree restored clean at 07:57. The b2 reader
+(`wait-w10ac-b2.sh`: FIRST LEG GATE with
+`replaced_fill`, idx0 embeds, STALL BLAMED, at +4, +10, days 1-2)
+run from the stage.
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground

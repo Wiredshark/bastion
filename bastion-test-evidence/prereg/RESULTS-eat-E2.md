@@ -103,6 +103,44 @@ private_units, FED at the day boundaries, the starving by clock, at
 +10 min and days 1-3), with the P-zero-hours-c draft read beside it
 (`wait-pzc-b1.sh`).
 
+b1 at boot +10 min (07:43, hour 15): SUPPER ROUND 0 (the supper hour
+has not come), NIGHT MEAL AT HOME 0, private_units 0, starving 0,
+food_stock 3,688 (24 days), panics 0. The read that matters is the
+first night, on the day-1 line.
+
+### Night 1 on b1 (07:55, the day-1 line): E2 FAILED as built
+
+SUPPER ROUND day=0 hour=20 houses=49 heads=49 shortfall=64 loads=12
+no_shelf=17 general_stacks_left=123 -- and then zero Haul arrivals
+after the round, no haul yields, STORAGE SUMMARY day=1 private_units
+0, NIGHT MEAL AT HOME 0, and the starving by clock: EatFrom/Traveling
+2-8 an hour through 17-19, RestAt/Traveling 6 at hour 20,
+RestAt/Arrived 10 at 21 and 6 at 22, three distinct starving sleepers.
+The mechanism minted and nobody hauled: hour 20 is Leisure on the
+default schedule (Work 8-15, Leisure 6-7 and 16-21, Sleep 22-5), the
+haul gate refuses non-haulers, and the haulers were off shift, so the
+twelve loads waited for the morning. The supper hour is the right
+window for eating supper and the wrong one for hauling it. Beside it:
+17 of 49 occupied houses have no private shelf at all (E2-c, its own
+row), and 12 loads against 32 shelved houses is a quarter of an
+evening.
+
+## E2-b, registered 08:02 (keyed on the P-zero-hours-d stage, before the binary; T1 re-keyed behind it)
+
+`shift_end_hour(night_watch, uid, hour)`: Work now and Work does not
+last two more hours (14-15 on the default schedule) is the round's
+window; the cap rises 12 -> 36 (twelve haulers over two Work hours at
+about a minute a load). Pin `the_supper_round_runs_at_shift_end` (14
+and 15 yes; 13, 16, 20, 3 no); planted defect: the Work test
+inverted, red. Prediction (b1 fresh, days 1-2): SUPPER ROUND at 14 or
+15 with 20-36 loads; Haul arrivals after it above 15 before hour 16;
+private_units above 60 at the day-1 line; NIGHT MEAL AT HOME above 5
+on night 1; Sleep-block RestAt starving samples under a third of
+tonight's 16; at most one distinct starving sleeper with a shelf.
+Falsified if the loads mint and arrivals stay near 0 (the deposit
+refuses the private destination), or if the shelves fill and NIGHT
+MEAL AT HOME stays 0 (the night scan does not see the shelf's cell).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day
