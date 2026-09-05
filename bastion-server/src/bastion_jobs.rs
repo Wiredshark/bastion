@@ -1286,6 +1286,10 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// one `route_head_solid=true` and `chaser-pure-glide`.
 pub static TRUNK_NODES_LIFTED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+/// ★ W9-b: trunk nodes moved to a neighbouring column because their own
+/// had no standable cell in reach (a tile centre inside a wall line).
+pub static TRUNK_NODES_SIDESTEPPED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 pub static TRUNK_ROUTES_REJECTED_SOLID: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 pub static COMMITTED_GLIDE_DROPS: core::sync::atomic::AtomicU64 =
@@ -1674,6 +1678,30 @@ pub(crate) const TRUNK_NODE_LIFT_ORDER: [i32; 6] = [0, 1, 2, 3, -1, -2];
 
 pub(crate) fn trunk_node_z(walkable: impl Fn(i32) -> bool, z0: i32) -> Option<i32> {
     TRUNK_NODE_LIFT_ORDER.iter().map(|dz| z0 + dz).find(|z| walkable(*z))
+}
+
+/// ★ W9-b: A TRUNK NODE STEPS ASIDE BEFORE THE ROUTE IS THROWN AWAY. W9
+/// rejected trunk routes by the thousand (2,048 in 17 minutes on b2), each
+/// for one or two nodes whose column had no standable cell -- a tile centre
+/// inside a wall line, a well, a fence post -- with the road cell beside
+/// it walkable. The node's own column is tried first (the lift), then the
+/// eight neighbouring columns in a fixed order; only a node with nothing
+/// standable in its 3x3 rejects the route. A fixed order makes the same
+/// world the same route.
+pub(crate) const TRUNK_SIDESTEP_ORDER: [(i32, i32); 8] =
+    [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)];
+
+pub(crate) fn trunk_node_fix(
+    walkable: impl Fn(Vec3<i32>) -> bool,
+    wp: Vec3<i32>,
+) -> Option<Vec3<i32>> {
+    if let Some(z) = trunk_node_z(|z| walkable(Vec3::new(wp.x, wp.y, z)), wp.z) {
+        return Some(Vec3::new(wp.x, wp.y, z));
+    }
+    TRUNK_SIDESTEP_ORDER.iter().find_map(|(dx, dy)| {
+        let (x, y) = (wp.x + dx, wp.y + dy);
+        trunk_node_z(|z| walkable(Vec3::new(x, y, z)), wp.z).map(|z| Vec3::new(x, y, z))
+    })
 }
 
 /// ★ W9: THE PREMISE HAS A LIFETIME. A committed route glides by pure
@@ -33626,23 +33654,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 if is_door {
                                                     continue;
                                                 }
-                                                let (cx, cy) = (wp.x, wp.y);
-                                                match trunk_node_z(
-                                                    |zz| {
-                                                        common::path::colonist_walkable(
-                                                            &*terrain,
-                                                            Vec3::new(cx, cy, zz),
-                                                        )
-                                                    },
-                                                    wp.z,
+                                                // ★ W9-b: the column first, then
+                                                // the eight beside it.
+                                                match trunk_node_fix(
+                                                    |q| common::path::colonist_walkable(&*terrain, q),
+                                                    *wp,
                                                 ) {
-                                                    Some(zz) if zz == wp.z => {},
-                                                    Some(zz) => {
-                                                        TRUNK_NODES_LIFTED.fetch_add(
-                                                            1,
-                                                            core::sync::atomic::Ordering::Relaxed,
-                                                        );
-                                                        wp.z = zz;
+                                                    Some(q) if q == *wp => {},
+                                                    Some(q) => {
+                                                        if q.xy() == wp.xy() {
+                                                            TRUNK_NODES_LIFTED.fetch_add(
+                                                                1,
+                                                                core::sync::atomic::Ordering::Relaxed,
+                                                            );
+                                                        } else {
+                                                            TRUNK_NODES_SIDESTEPPED.fetch_add(
+                                                                1,
+                                                                core::sync::atomic::Ordering::Relaxed,
+                                                            );
+                                                        }
+                                                        *wp = q;
                                                     },
                                                     None => {
                                                         trunk_solid_nodes
@@ -33708,6 +33739,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             waypoints = wps.len(),
                                             rejected = r,
                                             lifted_total = TRUNK_NODES_LIFTED
+                                                .load(core::sync::atomic::Ordering::Relaxed),
+                                            sidestepped_total = TRUNK_NODES_SIDESTEPPED
                                                 .load(core::sync::atomic::Ordering::Relaxed),
                                             "bastion: TRUNK ROUTE REJECTED — a waypoint's \
                                              column has no cell a body can stand in; \
@@ -52956,6 +52989,32 @@ mod tests {
         assert_eq!(trunk_node_z(|_| false, 174), None, "inside a structure: nothing in reach, the route is rejected");
         assert_eq!(trunk_node_z(|z| z == 185, 181), None, "four up is a wall, not a step");
         assert_eq!(trunk_node_z(|z| z == 181 || z == 183, 181), Some(181), "level wins over up");
+    }
+
+    /// ★ W9-b pinned: a node whose column is a wall moves to the first
+    /// standable neighbouring column; a node with a standable z in its own
+    /// column is lifted, not moved; nothing standable in the 3x3 rejects.
+    /// Planted defect: the neighbours never tried -> the sidestep goes red.
+    #[test]
+    fn a_trunk_node_steps_aside_before_the_route_is_thrown_away() {
+        // a wall along x == 10; the road at x == 11, floor at 181
+        let road = |q: Vec3<i32>| q.x == 11 && q.z == 181;
+        assert_eq!(
+            trunk_node_fix(road, Vec3::new(10, 5, 181)),
+            Some(Vec3::new(11, 5, 181)),
+            "the tile centre is in the wall; the road cell beside it takes the node"
+        );
+        let step = |q: Vec3<i32>| q.x == 10 && q.y == 5 && q.z == 183;
+        assert_eq!(
+            trunk_node_fix(step, Vec3::new(10, 5, 181)),
+            Some(Vec3::new(10, 5, 183)),
+            "its own column first: a standable cell two up is a lift, not a sidestep"
+        );
+        assert_eq!(trunk_node_fix(|_| false, Vec3::new(10, 5, 181)), None, "nothing in the 3x3: rejected");
+        let far = |q: Vec3<i32>| q.x == 13 && q.z == 181;
+        assert_eq!(trunk_node_fix(far, Vec3::new(10, 5, 181)), None, "three columns away is not beside it");
+        let same = |q: Vec3<i32>| q.x == 10 && q.y == 5 && q.z == 181;
+        assert_eq!(trunk_node_fix(same, Vec3::new(10, 5, 181)), Some(Vec3::new(10, 5, 181)), "already standable: unchanged");
     }
 
     /// ★ W9 pinned: a committed glide whose steer node is in rock drops the

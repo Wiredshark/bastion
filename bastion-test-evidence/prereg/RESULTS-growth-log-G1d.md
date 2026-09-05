@@ -257,6 +257,24 @@ spliced without a BOM, one `terrain persistence path` line, no parse
 failure, `TERRAIN PERSISTED blocks_total=7736` within a minute (the
 founding planting).
 
+### The seventh restart test (R2 pair 211da28ef6, b3, 01:45-01:56)
+
+| bar | registered | read | verdict |
+|---|---|---|---|
+| `terrain persistence path` at boot | 1 per boot | 1 / 1 | PASS |
+| TERRAIN PERSISTED blocks_total, boot 1 | thousands within minutes | 7,872 (64 record calls) by the stop | PASS |
+| terrain/ files after the graceful stop | > 0 | 40 under `userdata-arm-b3/server/terrain` | PASS |
+| placed cells before the stop | -- | 20 at 01:49 (a few more by the stop) | -- |
+| PLOT RE-GROWN already_standing after the restore | 8,640 + placed | **8,665** (cells_remaining 1,884; the sixth test: 8,640 / 1,909) | PASS |
+| R1d's bars | held | COLONY RESTORED 1, GROWTH LOG 1/1/1, orders replayed 13, ADOPT-IN-PLACE 58, colonists 49, jobs 1,397, p95 743 us, panics 0 | PASS |
+| graceful stop | -- | ports closed in ~9 s, shutdown witness 1 | -- |
+| boot 2, +4 min | -- | TERRAIN PERSISTED blocks_total 208 in 128 calls (the fields growing), placed this boot 0, EMBED WATCH 12 | -- |
+
+The colony's placed blocks survive a restart. With R1d and R2 a kept
+world comes back with its people, fields, plan, orders and the work
+done on its house. What it still loses is its larder (the next
+section, R3).
+
 ## R3: a kept world keeps its larder (registered 00:31, before the binary)
 
 The sixth test's restored boot, read further: `FOOD-WIPE DISCRIMINATOR

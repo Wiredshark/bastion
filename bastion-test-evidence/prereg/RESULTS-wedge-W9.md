@@ -164,6 +164,62 @@ used to phase through; b1's flat travel says the rest is the pump:
 Disposition: W9 stands (the wedge is closed on two arms, every bar
 met); W9-b is queued next, ahead of E1-f, with its bars above.
 
+### The residual, read on b3's restored boot (R2 pair, 12 fires in 4 min)
+
+Every one of the twelve carries `route_head_solid=false`. Eleven are
+not on any route segment: the body is 12-47 blocks from its route's
+FIRST node (`idx == 0`, prev == head), gliding in a straight line from
+where it stood -- inside the warehouse at y≈6349, z≈181.6 -- to the
+nearest road tile, through the building's wall (the committed drops of
+the W9 boots sit on the same line, y=6355 z=182). The trunk validates
+its nodes; the leg from the feet to node 0 is nobody's, and a walker
+who starts off the road network (a hauler in the store, a restored
+colonist at the spot it was saved) walks it raw. The twelfth is a
+five-block drop between two clear nodes (7717,6345,186 -> 7715,6342,
+181), under the trunk's six-block reject. Candidate W10-a: when node 0
+is more than a tile from the feet, the approach is searched exactly
+(the pump) and stitched onto the trunk tail; sized by b3's day-1 read
+before it is built. Sized (02:22): the restored boot's whole first day
+read EMBED WATCH 20 -- 12 in the first four minutes, then one every
+four minutes or so -- with `back_along_route=true` on 18 of 20 and no
+solid node anywhere; the first-leg burst is what a player sees right
+after loading a kept world, which is why W10-a is built.
+
+The five-block drop is not a one-off: b2's W9 day 1 had seven stall
+probes (W8-ii), every one an EatFrom walker at the upper terrace edge,
+feet (7709-7711, 6344-6345, 186), where the trunk steps from the 186
+grade to the 181 grade in one segment. `TRUNK_REJECT_DZ = 6` was set
+against 22-block cliffs; a body walks down two. Candidate W10-b: a
+trunk segment that drops more than two blocks is rejected to the
+pump (which prices the Falls arm), or the segment gets a stair of
+intermediate nodes along the ground. Both W10 candidates spend the
+pump; W9-b's sidestep lands first and its day-1 rejection count says
+how much room there is.
+
+## W10-b and W10-a, registered 02:20 (queued behind R3, before the binaries)
+
+W10-b (`fix-w10b.py`): `TRUNK_REJECT_DZ` 6 -> 2 through
+`trunk_step_walkable(worst_dz)`, pinned (`a_trunk_segment_drops_at_most_two`;
+planted: the limit back at six). Bars on b2's day 1 against the W9
+day: terrace-edge stalls 0 (W9: 7 of 7), EMBED WATCH under 40, TRUNK
+REJECTED (dz) up from 21 a day with the tick p95 still sub-millisecond,
+works not below the W9-b day. Falsified if EMBED climbs or the (dz)
+rejections reach the thousands.
+
+W10-a (`fix-w10a.py`): `first_leg_needs_search(feet, node0)` (over a
+tile, 6 blocks xy) holds the trunk as `board.trunk_tail` and sends a
+Small exact search feet -> node 0 to the pump; at completion
+`stitch_first_leg` joins the approach onto the tail (the shared node
+once) and commits it (`FIRST LEG STITCHED`); an unreachable approach
+commits the tail alone (identity). A tail is stitched only onto the
+search made for it (node 0 matched). Pinned
+(`the_first_leg_is_searched_and_stitched`; planted: the approach dropped
+at the stitch). Bars: FIRST LEG STITCHED fires with searched ~=
+stitched + unreachable; committed drops at the warehouse wall under
+100 a day (W9: 2,048+); idx-0 embeds under 5 a day; a restored boot's
+first ten minutes under 5 embeds (R2: 12 in four). Falsified if
+unreachable dominates or the tick p95 leaves the sub-millisecond band.
+
 b1's day 1 (the 160-day arm, read 01:55): EMBED WATCH 12 against its
 W8-f control's 1,631 by day 1, the two cells 0 / 0, no (uid, head)
 pair above 1, two settlers arrived and walked in (trap 1 was their

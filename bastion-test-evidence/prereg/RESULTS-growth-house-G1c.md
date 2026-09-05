@@ -276,3 +276,10 @@ its pair: `BUILD DRAFT SIZED named_build == builders_now + drafted`
 near 180 with the per-builder rate back toward 30. Falsified if
 named_build exceeds builders_now by three or more, or the crew reads
 above seven. Planted defect for the pin: `(0, Some(_)) => Switch`.
+
+P-zero-hours landed as 2e0b063b53 (01:57, staged 02:12). Falsified at
+the commit: the idle-day switch planted turned
+`an_idle_day_names_nobody_and_a_newcomer_takes_the_scarcest_lane` red
+at `bastion_jobs.rs:53003` (02:16); the tree restored clean. The
+house-day read on b3 (`wait-pz-b3-b.sh`) boots after the restored-boot
+day-1 read and before the eighth restart test; its section follows.
