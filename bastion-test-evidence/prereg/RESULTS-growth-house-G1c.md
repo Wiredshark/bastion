@@ -211,3 +211,21 @@ Falsified at the commit: the plot arm dropped turned
 
 Live evidence pending: `unclaimed designation swept ... Designated(Build)`
 at 0 with `PLOT CELL NOT SWEPT` > 0 on the next b3 boot.
+
+### G1c-e: the draft counts builders and sizes on the plan (d054ec6c40)
+
+Mechanism: `counts_as_builder(named_build, build_hours, drafted)` =
+drafted, or named Build with hours held; the backlog passed to
+`builders_wanted` is `plot_blocks.len()` (the plan's remaining cells)
+plus the stray Build marks outside any plot; a daily `BUILD DRAFT SIZED`
+witness prints wanted, builders_now, named_build, plan_cells.
+
+Falsified at the commit: counting the name alone (`drafted ||
+named_build`) turned `a_build_name_with_no_build_hours_is_not_a_builder`
+red at `bastion_plot_build.rs:866`.
+
+Known edge, accepted: on the morning the argmax names a zero-hour
+colonist Build, that name carries priorities but no hours, so the draft
+may staff wanted plus the accidental names until the plan closes.
+
+Live evidence: the b3 house-day boot on this pair (below).

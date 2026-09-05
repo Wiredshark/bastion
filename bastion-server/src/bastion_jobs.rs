@@ -31120,11 +31120,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 }
                                             },
                                         };
+                                        // ★ W8-i: the bodies at the stall. 32 of 57 shuns on b1
+                                        // sat on six cells (7 apiece at two store cells); the
+                                        // probe saw air ahead every time. Colonists only
+                                        // (`professions` holds every colonist), the walker
+                                        // excluded.
+                                        let (nearby_bodies, nearby_bodies_3) = {
+                                            let me = uids.get(entity).copied();
+                                            let mut near = 0usize;
+                                            let mut near3 = 0usize;
+                                            for (u, p) in (&uids, &positions).join() {
+                                                if Some(*u) == me || !board.professions.contains_key(u) {
+                                                    continue;
+                                                }
+                                                let dxy = (p.0.xy() - pos.0.xy()).magnitude();
+                                                let dz = (p.0.z - pos.0.z).abs();
+                                                if dz < 2.0 {
+                                                    if dxy < 3.0 {
+                                                        near3 += 1;
+                                                    }
+                                                    if dxy < 1.6 {
+                                                        near += 1;
+                                                    }
+                                                }
+                                            }
+                                            (near, near3)
+                                        };
                                         info!(
                                             job = active.job,
                                             kind = ?job.kind,
                                             feet = ?f,
                                             to_item = ?to_item,
+                                            nearby_bodies,
+                                            nearby_bodies_3,
                                             // The walker's own route (P1b): the first cut read
                                             // `fetch_steer` here, before the fetch assigns it,
                                             // and printed None on every probe.

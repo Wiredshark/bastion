@@ -208,3 +208,12 @@ founding and planted like a bare cell; a scarecrow or a fence stays.
 Registered before its binary: planted ~7,900 of 8,424 on both arms,
 foreign in the tens, harvest units unchanged, day-0 stock up by the
 extra cells' ripe share (~500). Falsified below 7,000 planted.
+
+### Day 1 on the F2c'-b pair
+
+b1: `food_stock=3745 days_of_food=23.9 cooked_today=90 meals=49
+targets_shunned=12 field_planted=6445`; the stock rose 377 units over
+the day (the planted cells' ripening share outran 49 eaters). The
+day-1 budget bar (>= 9,000) stays failed by design pending Ben's bridge
+ruling; the day-7 starving bar is read on this pair (b1 keeps it to day
+7; b2 moves to the F2c'-c pair when it stages).
