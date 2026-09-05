@@ -1258,6 +1258,96 @@ objects; the moves are one cell and harmless, and the outcome bars
 hold at +4. The +1 convention is read before anything is built on
 it; the +10 and day-1 reads decide the row.
 
+W12-a +10 on b2 (read 18:34, hour 15 of day 0), against the bars:
+unreachable_open per +10 under 5 -- 0 (17), PASSED; SEARCH TARGET
+MOVED at least 20 -- 4,096 (the convention gap above; W12-a-b
+narrows it), PASSED as written and not as meant; FIRST LEG GATE
+stitched at least 80% of searched -- 27 of 32 crossed, 84%,
+PASSED; delivered_path at least twice delivered_unreachable -- 449
+to 1, PASSED; EMBED WATCH by day 1 under 12 -- 12 lines already at
++10 (writers: chaser-pure-glide 7, bridge-refused-rock 3,
+chaser-hold 1, chaser-refused-rock 1; idx0 embeds 7), the day-1
+read decides and it will not be under 12. Pump: 49 census lines,
+pending max 45, worst max_wait 348 ticks, mean 51; arrivals 502;
+stuck 0, idle 2, starving 0, panics 0. So the unreachable class is
+closed on this arm by the stand rule (with W12-b's corner fix still
+to land), and the embed class is NOT the unreachable class: the
+bodies embed in the chaser's pure glide with a delivered route. That
+is the next wedge row, read from the EMBED WATCH lines below.
+
+W12-a day 1 on b2 (read 18:50, hour 0 of day 1): unreachable 1 of
+642 deliveries (delivered_path 641), unreachable_open 0 -- PASSED;
+FIRST LEG GATE 73 of 84 crossed, 87% -- PASSED; EMBED WATCH 18 by
+day 1 (bar under 12; W11-b's day 18, W10-g's 11) -- FAILED, writers
+chaser-pure-glide 12, bridge-refused-rock 4, chaser-hold 1,
+chaser-refused-rock 1; GLIDE HELD 0; arrivals 729; stuck 0; panics
+0. Disposition: W12-a stands for what it claimed (the unreachable
+class is closed on this arm) and the embed bar it also claimed is
+FAILED -- the embeds are the pure glide's, W13's row, building now.
+New in the last census: delivered_exhausted 38 at hour 0 (the exact
+search's budget spent without a verdict) -- read below before it is
+named.
+
+## W13, registered 18:43 (keyed on the W12-b stage; ahead of E2-j-b and the rest)
+
+THE GLIDE FOLLOWS THE SURFACE. The EMBED WATCH lines on b2 (W12-a
+pair, +10): 8 of 12 written by chaser-pure-glide, 7 of the 8 on a
+leg whose route head sits one block lower than the entry (head dz
+-1.0, -1.7, -1.0, -0.6, -1.0, -1.0, -1.3), one on a step up (+1.6),
+the body wedged 4.2 blocks along the leg with its feet 0.05-0.64
+under the entry's z (uid 18: entry (7643.1, 6352.2, 182.0),
+embedded (7640.2, 6349.2, 181.4), head (7638, 6347, 181)). The pure
+glide's step is the straight 3D line to the phased node (`try_pos =
+pos + dir * step`), so the z falls from the first step while the
+upper floor still lies under the body until the edge; the probed
+glide snaps to `surface_at`, the committed glide never did. Now
+`glide_snap_z(try_pos, surface_at(try_pos))`: the floor's z when
+known (dz 0, +1, -1, -2 from the current feet), the line's z when
+not (identity, no hold); witness THE GLIDE FOLLOWS THE SURFACE
+(uid, line_z, floor_z, node, snaps) when the snap moved the z by
+more than 0.05. Pin `the_glide_follows_the_surface`; planted: the
+floor ignored, red. Prediction (b2 fresh, `wait-w13-b2.sh`, after
+W12-b's day-1 read; +10 and day 1): pure-glide embeds at most 2 by
++10 (8) and 4 by day 1; EMBED WATCH by day 1 under 12; GLIDE HELD
+0; arrivals at +10 at least 450 (502); stuck 0; snaps at least 50 by
++10. Falsified if the pure-glide embeds stay at 6 or more by +10,
+or arrivals fall under 350 or GLIDE HELD rises (the snap holds
+bodies at edges), or the snaps stay under 10 (surface_at does not
+answer on the glide's cells). Rejected: the probed glide for every
+committed route (W10-e/f); a z-clamp to the entry's z; a route-node
+rewrite. NOT evidenced: the bridge-refused-rock embeds (3); the
+deep-drop arm. The queue is now W12-b, W13, E2-j-b, E2-l, E2-k,
+E2-i2, W12-a-b; the E2-j-b chain and reader were re-keyed behind
+W13 and the dry tree rebuilt in that order.
+
+### W12-b landed (02fdf9d782, staged 18:43)
+
+Check clean, the pin green, both halves staged 18:43; the binary
+verified by its witness string ("DROP CELL SPREAD FROM THE CENTRE
+OUT" present once, W12-a's string too), shipped to lab-bin 18:44.
+The falsifier (the distance ignored, the corner first) went RED at
+18:47, the tree restored clean. The b2 reader restarts b2 after
+W12-a's day-1 read; W13's chain fires five minutes after this stage.
+
+## W12-a-b, registered 18:32 (keyed on the E2-i2 stage, the end of the queue)
+
+THE ON-TOP TARGET STANDS. `approach_target(job_pos, stance)` for an
+Untargeted job is the cell plus (0, 0, 1), the classic on-top
+target, one above the standable cell; colonist_walkable refuses a
+cell with no ground beneath, so W12-a moved every pickup's target
+one cell sideways (2,048 by +4). Now search_stand returns the target
+when it or the cell below is standable; the rings run only for a
+target whose own column cannot be stood on. Pin re-stated (one below
+stands: the target); planted: the cell below ignored, red.
+Prediction (b2 fresh, `wait-w12ab-b2.sh`, after E2-j-b's night-1
+read; +10): SEARCH TARGET MOVED under 40 (2,048 by +4); unreachable
+open 0-3; delivered_path at least ten times delivered_unreachable;
+EMBED WATCH by day 1 under 12. Falsified if the witness stays in the
+thousands, or if unreachable_open returns above 5 (the sideways
+move was doing the corner's work; W12-b's read decides). Rejected:
+colonist_walkable accepting an on-top cell; moving the target down
+one. NOT evidenced: day 1 on the pair; the corner after W12-b.
+
 ## W12-b, registered 17:50 (keyed on the W12-a stage, the end of the chain, before the binary)
 
 The shared unreachable target (7672, 6426, 182) is the minimum

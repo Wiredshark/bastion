@@ -870,6 +870,33 @@ lab-bin 17:59. The falsifier (the walk home from noon) went RED at
 18:01, the tree restored clean. The b1 reader (`wait-e2gc-b1.sh`)
 restarts b1 after E2-g-b's night-2 read and reads nights 1-2.
 
+### E2-g-c night 1 on b1 (pair 1c3ebf3a2e, read 18:38 at hour 6 of day 1): FALSIFIED BY ITS OWN CLAUSE
+
+Against the bars: arrivals to private shelves before the sweep at
+least 40 -- 23 (E2-g-b 25, E2-g 48), FAILED; SUPPER CARRIED HOME at
+least 24 -- 16 (16 / 32), FAILED; the lanes' works at least 420 --
+444 (481 / 305), PASSED; NIGHT MEAL AT HOME at least 8 -- 4 (4 / 9),
+FAILED; distinct starving sleepers at most 4 -- 5 (8 / 3), FAILED;
+in-bed starving at most 12 an hour at 0-3 -- 0, 7, 16, 24 (7, 18,
+35, 43), FAILED at hours 2-3; the Haul lane's hauls at least 25 --
+41, PASSED. The clause "falsified if shelves stay under 35 (the
+window is not the lever)" fired: 23. The round minted 59 loads,
+SWEPT 43 at dusk; the eaters' nine claims fell at hours 13-14 (the
+DAY SCHEDULE hour, which lags), none after the whistle; hour 4 sent
+20 samples of eaters out. So the two-hour window keeps the works
+and does not stock the shelves, as E2-g-b did not: the lever is the
+claim door (E2-l, queued), not the window's width. E2-g-c stays in
+the pair (its cost is nil: works 444) until E2-l's read; if E2-l
+stocks the shelves the window can narrow back to one hour in a
+later row, measured. The night's other shape, new here: RestAt/
+Traveling starving 3, 8, 7, 13 at hours 0-3 -- two bodies, and 26
+of the 31 samples are colonist 9: rest-preempted at tick 18,583
+(hour 15) toward the bed at (7583, 6383, 181), still Traveling at
+hour 3, released by the hunger preempt at tick 47,263 -- a body
+that walked toward its bed for 28,000 ticks and never arrived. Not
+a night-shelf case: a stranded walker, the wedge class (W12-b, W13
+in the queue); E2-l's read watches whether it recurs.
+
 ## E2-j-b, registered 18:33 (keyed on the W12-b stage; ahead of E2-l, E2-k, E2-i2)
 
 THE SPREAD STAYS WITHIN THE STORE. E2-j's order (reservations, then
