@@ -1730,6 +1730,32 @@ pub(crate) fn route_profile(wps: &[Vec3<i32>]) -> (u64, u64) {
     ((len * 100.0).round() as u64, (straight * 100.0).round() as u64)
 }
 
+/// ★ W9-c: A NODE STANDS ON GROUND, NOT ON A WALL. The router's walkable
+/// rule accepts any cell with a solid block below and two clear above --
+/// a one-block wall top included -- and W9's lift, trying UP before DOWN,
+/// took wall tops beside the road as nodes; b1 stood a walker on the
+/// store's wall for fifteen minutes with a wall-top route ahead of it.
+/// Ground is what a block stands AMONG: the support block has at least
+/// three solid orthogonal neighbours at its own level (a floor, a road, a
+/// cliff edge, a corridor floor). A wall or fence top has two, a post none.
+/// `solid` answers `true` for an unloaded cell, so an unseen edge keeps
+/// today's node (fallback is identity).
+pub(crate) const GROUND_NEIGHBOURS_MIN: usize = 3;
+
+/// ★ W9-c: candidate nodes the router called walkable that stood on a wall
+/// top (refused here), reported in the route profile.
+pub static TRUNK_NODES_WALLTOP_REFUSED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+pub(crate) fn on_ground_not_a_wall(solid: &impl Fn(Vec3<i32>) -> bool, q: Vec3<i32>) -> bool {
+    let below = Vec3::new(q.x, q.y, q.z - 1);
+    [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        .iter()
+        .filter(|(dx, dy)| solid(Vec3::new(below.x + dx, below.y + dy, below.z)))
+        .count()
+        >= GROUND_NEIGHBOURS_MIN
+}
+
 pub(crate) fn trunk_node_fix(
     walkable: impl Fn(Vec3<i32>) -> bool,
     wp: Vec3<i32>,
@@ -33765,9 +33791,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     continue;
                                                 }
                                                 // ★ W9-b: the column first, then
-                                                // the eight beside it.
+                                                // the eight beside it. ★ W9-c: and
+                                                // only a cell that stands on ground,
+                                                // never a wall top.
+                                                let solid_or_unseen = |c: Vec3<i32>| {
+                                                    terrain.get(c).map(|b| b.is_solid()).unwrap_or(true)
+                                                };
                                                 match trunk_node_fix(
-                                                    |q| common::path::colonist_walkable(&*terrain, q),
+                                                    |q| {
+                                                        let w = common::path::colonist_walkable(&*terrain, q);
+                                                        let g = w && on_ground_not_a_wall(&solid_or_unseen, q);
+                                                        if w && !g {
+                                                            TRUNK_NODES_WALLTOP_REFUSED.fetch_add(
+                                                                1,
+                                                                core::sync::atomic::Ordering::Relaxed,
+                                                            );
+                                                        }
+                                                        g
+                                                    },
                                                     *wp,
                                                 ) {
                                                     Some(q) if q == *wp => {},
@@ -33834,6 +33875,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                         lifted_up = TRUNK_NODES_LIFTED_UP.load(Relaxed),
                                                         lifted_down = TRUNK_NODES_LIFTED_DOWN.load(Relaxed),
                                                         sidestepped = TRUNK_NODES_SIDESTEPPED.load(Relaxed),
+                                                        walltop_refused =
+                                                            TRUNK_NODES_WALLTOP_REFUSED.load(Relaxed),
                                                         rejected_solid =
                                                             TRUNK_ROUTES_REJECTED_SOLID.load(Relaxed),
                                                         rejected_dz = TRUNK_ROUTES_REJECTED.load(Relaxed),
@@ -53164,6 +53207,29 @@ mod tests {
         assert_eq!(route_profile(&[Vec3::new(1, 1, 1)]), (0, 0), "one node: nothing walked");
         let straight = vec![Vec3::new(0, 0, 0), Vec3::new(6, 0, 0), Vec3::new(12, 0, 0)];
         assert_eq!(route_profile(&straight), (1200, 1200), "a straight road: ratio one");
+    }
+
+    /// ★ W9-c pinned: a node stands on ground (three or four solid
+    /// neighbours under it), never on a wall top (two) or a post (none);
+    /// an unseen neighbour counts as ground. Planted defect: the minimum
+    /// at two -> the wall top passes -> red.
+    #[test]
+    fn a_node_stands_on_ground_not_on_a_wall() {
+        // a wall along x == 10 at z == 182 (a one-block-thick wall, tops at 182)
+        let wall = |c: Vec3<i32>| c.z == 182 && c.x == 10;
+        assert!(!on_ground_not_a_wall(&wall, Vec3::new(10, 5, 183)), "the wall top: two neighbours along the wall");
+        // a floor: everything at z == 180 is solid
+        let floor = |c: Vec3<i32>| c.z == 180;
+        assert!(on_ground_not_a_wall(&floor, Vec3::new(10, 5, 181)), "a floor: four");
+        // a cliff edge: solid at z == 180 for y <= 5 only
+        let edge = |c: Vec3<i32>| c.z == 180 && c.y <= 5;
+        assert!(on_ground_not_a_wall(&edge, Vec3::new(10, 5, 181)), "a cliff edge: three");
+        // a post
+        let post = |c: Vec3<i32>| c == Vec3::new(10, 5, 180);
+        assert!(!on_ground_not_a_wall(&post, Vec3::new(10, 5, 181)), "a post: none");
+        // a fence line along y == 5
+        let fence = |c: Vec3<i32>| c.z == 180 && c.y == 5;
+        assert!(!on_ground_not_a_wall(&fence, Vec3::new(10, 5, 181)), "a fence top: two");
     }
 
     /// ★ W9-b pinned: a node whose column is a wall moves to the first

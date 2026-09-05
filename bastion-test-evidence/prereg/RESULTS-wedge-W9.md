@@ -286,6 +286,22 @@ straight line, nodes lifted up, down and aside) and a body-height
 histogram from the authoritative position dump, read on b2 before any
 further mover row.
 
+### W9-b day 2 on b2 (03:47)
+
+| read | day 1 | day 2 |
+|---|---|---|
+| works (all lanes) | 227 (lane None only, the founding day) | 429 (Mine 131, Farm 131, Cook 57, Haul 55, Build 29, Chop 19, Guard 7) |
+| EMBED WATCH (cumulative) / stall probes (cumulative) | 18 / 10 | 44 / 50 |
+| rejected (solid) / sidestepped / drops (cumulative) | 1,024 / 1,960 / 2,048 | 4,096 / 3,913 / 4,096 |
+| meals / shunned / no_food_found / cooked / harvested | 48 / 7 / 0 / 81 / 0 | 113 / 21 / 0 / 46 / 496 |
+| food_stock / anywhere / p95 / panics | 3,902 / 3,963 / 484 us / 0 | 4,240 / 4,253 / 539 us / 0 |
+
+The day-1 work dip on this pair is partly the founding day (every
+colonist re-plans at once, nobody named); day 2 reads 429 against a
+day-1 control of 550 (the control never ran a day 2 on b2). The
+question W9-i answers is unchanged: how much of the remaining gap is
+routes climbing walls.
+
 ## W9-i, the route profile (instrument, registered 03:15; queued on R3's stage, ahead of W10)
 
 `route_profile(wps)` -> (walked xy length, straight line) in hundredths
@@ -301,6 +317,58 @@ walking reads detour_ratio under 1.5, lifted_up a small share, bodies
 two or more above a grade under 3%; the regression reads detour_ratio
 above 2 or lifted_up rivalling sidestepped, bodies two or more above a
 grade over 10%. The next mover row is aimed at whichever number.
+
+W9-i landed as 66902acf5b (03:39; check clean, pin green; staged
+03:52). Falsified at the commit: the straight line reported as the
+length turned `a_route_profile_is_its_length_against_its_line` red at
+`bastion_jobs.rs:53163` (03:55); the tree restored clean. b2 restarted
+on it at 03:53 with `BASTION_AUTH_POS_LOG`; the profile and histogram
+reads follow under "W9-i live".
+
+### W9-i live: the first profile (b2, boot +4 min, 03:57)
+
+`TRUNK ROUTE PROFILE routes=1024 mean_nodes=23.1 mean_len=86.8
+mean_straight=39.5 detour_ratio=2.20 lifted_up=982 lifted_down=0
+sidestepped=474 rejected_solid=280 rejected_dz=401`. Both registered
+regression signatures at once: the detour ratio above 2 (a trunk route
+walks 2.2 times its straight line) and lifted_up (982) at twice the
+sidesteps (474), with not one node lifted down. Nearly one node per
+route goes UP onto something. The trips are not honest; they climb.
+W9-c is the answer already in the chain. (The first body-height
+histogram read 100% above four blocks and was wrong: the script took
+the dump's y field as z; corrected below.)
+
+## W9-c, a node stands on ground, not on a wall (registered 03:45; queued on W9-i's stage, ahead of W10)
+
+The regression, read on b1's E1-f day 1 (03:36): 67 WEDGE PROBE
+stalls, 55 at one cell, feet (7649,6390,183) -- two blocks above the
+181 grade at the store's north edge -- `head_far`, not exhausted, the
+W8-ii node window `(7649,6388,183):W (7649,6387,183):W
+(7649,6386,183):W (7649,6385,183):W`: every next node walkable, along
+the wall line, three blocks away, and no displacement across five Farm
+jobs (516, 403, 613, 625, 437; FETCH STALLED, ROUTE FAULT AT THE STALL,
+re-search, the same spot). A walker on the store's wall top with a
+wall-top route ahead of it and a fetch bridge into the store refused
+into rock. `colonist_walkable` is "solid below, two clear above", which
+a one-block wall top satisfies; `trunk_node_z` tries +1..+3 before
+-1..-2 and takes the top; `trunk_node_fix` finds more one column over.
+
+Mechanism (`fix-w9c.py`): `on_ground_not_a_wall(solid, q)` -- the
+block under q has at least `GROUND_NEIGHBOURS_MIN = 3` solid orthogonal
+neighbours at its own level (floor, road, cliff edge, corridor: 3-4; a
+wall or fence top: 2; a post: 0; an unseen neighbour counts as solid,
+identity). One predicate with `colonist_walkable` inside the trunk's
+validation, so lift and sidestep both refuse wall tops
+(`TRUNK_NODES_WALLTOP_REFUSED`, reported as `walltop_refused` in the
+route profile). Pinned (`a_node_stands_on_ground_not_on_a_wall`;
+planted: the minimum at two). Bars on b2 (restarted on the pair with
+the position dump): lifted_up well below sidestepped; body-ticks two or
+more above a grade under 3%; wall-top stalls (z = grade + 2) 0; day-1
+works above 400 with travel per claim under 32; embeds under 40.
+Falsified if works stay near 230 with the histogram already under 3%
+(honest walking: the work drop is the price of no phasing), or
+rejections climb past 2,000 a day (the ground rule refuses real
+floors).
 
 ## W10-b and W10-a, registered 02:20 (queued behind R3, before the binaries)
 
