@@ -6263,6 +6263,8 @@ impl Server {
                             decision = bastion_founding_decision(true, dtick, blocked_on_marker),
                             "bastion: COLONY RESTORED, NOT FOUNDED — the save holds a colony (R1b: keyed on the saved orders, the persisted mark); the autofound and the town pick stand down and the saved orders replay"
                         );
+                        // ★ R1c: loaded, not founded -- maps, chunks, presence, spawn.
+                        self.bastion_autofound_restore();
                     } else if dtick >= 30 && !blocked_on_marker {
                         SPAWNED.store(true, Ordering::Relaxed);
                         let center = bastion_flat_arena::world_center_wpos(&self.world);
@@ -7875,6 +7877,100 @@ impl Server {
     /// window, exactly as the seed-food block did before it. Returns the
     /// re-anchored spawn, the town origin, and the mapped plots; `None` =
     /// mode B, byte-identical founding.
+    /// ★ R1c (2026-09-04): A RESTORED COLONY IS LOADED, NOT FOUNDED. The third
+    /// restart test came up empty (colonists=0 designations=0 jobs=0) once R1b
+    /// stood the founding down: the founding branch was also what re-derived
+    /// the town's maps, streamed its chunks (so the rtsim residents spawn and
+    /// `pending_restore` becomes ready) and set the spawn point. This does that
+    /// half and nothing else: no residents are adopted (the saved ones come
+    /// back with the chunks) and no plots are re-placed (the saved orders
+    /// replay), so a kept world has one source of truth and the houses do not
+    /// double. The spawn-point derivation mirrors the founding arm's.
+    fn bastion_autofound_restore(&mut self) {
+        let center = bastion_flat_arena::world_center_wpos(&self.world);
+        let sp_opt = if bastion_flat_arena::enabled() {
+            Some(bastion_flat_arena::spawn_wpos(center))
+        } else {
+            use bastion_server::bastion_founding_preset as preset;
+            let xy = Vec2::new(center.x as i32, center.y as i32);
+            let ground = {
+                let ecs = self.state.ecs();
+                let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+                let hint = self
+                    .world
+                    .sim()
+                    .get_alt_approx(xy)
+                    .map(|a| a as i32)
+                    .unwrap_or(0);
+                preset::resolve_datum(&terrain, xy, hint)
+            };
+            ground.map(|z| {
+                Vec3::new(center.x as f32 + 0.5, center.y as f32 + 0.5, z as f32 + 1.0)
+            })
+        };
+        let Some(sp) = sp_opt else {
+            tracing::warn!(
+                ?center,
+                "bastion: COLONY RESTORE could not resolve the ground datum -- the town is not loaded this boot (R1c)"
+            );
+            return;
+        };
+        let adoption = self.bastion_adoption(sp);
+        let sp = adoption.as_ref().map(|(asp, ..)| *asp).unwrap_or(sp);
+        if let Some((_, _, _, Some(plaza), _, _, _, _, _)) = adoption.as_ref() {
+            let z = self
+                .world
+                .sim()
+                .get_alt_approx(*plaza)
+                .map(|a| a as i32)
+                .unwrap_or(0);
+            self.state
+                .ecs_mut()
+                .write_resource::<bastion_jobs::JobBoard>()
+                .gathering_anchor = Some(Vec3::new(plaza.x, plaza.y, z));
+        }
+        if let Some((asp, _, _, _, roads, walls, interiors, tile_graph, buildings)) =
+            adoption.as_ref()
+        {
+            let mut board = self
+                .state
+                .ecs_mut()
+                .write_resource::<bastion_jobs::JobBoard>();
+            board.road_cells = std::sync::Arc::new(roads.clone());
+            board.wall_margin_cells = std::sync::Arc::new(walls.clone());
+            board.interior_cells = std::sync::Arc::new(interiors.clone());
+            if !interiors.is_empty() {
+                let (mut bmin, mut bmax) =
+                    (Vec2::broadcast(i32::MAX), Vec2::broadcast(i32::MIN));
+                for c in interiors.iter() {
+                    bmin = Vec2::partial_min(bmin, *c);
+                    bmax = Vec2::partial_max(bmax, *c);
+                }
+                board.settlement_bounds = Some((bmin - 24, bmax + 24));
+                board.tile_graph = Some(bastion_server::bastion_jobs::BastionTileGraph {
+                    origin: tile_graph.origin,
+                    tiles: tile_graph.tiles.clone(),
+                    ground_z: asp.z as i32 - 1,
+                });
+            }
+            board.town_buildings = buildings.clone();
+        }
+        let plots_streamed = if let Some((_, _, plots, ..)) = adoption.as_ref() {
+            self.bastion_adopt_stream_plot_chunks(plots);
+            plots.len()
+        } else {
+            0
+        };
+        self.bastion_found_colony_presence(sp);
+        self.state.ecs_mut().write_resource::<SpawnPoint>().0 = sp;
+        tracing::warn!(
+            pos = ?sp,
+            town_adopted = adoption.is_some(),
+            plots_streamed,
+            "bastion: COLONY RESTORED — maps re-derived, chunks streamed, the saved orders replay; no residents adopted, no plots re-placed (R1c)"
+        );
+    }
+
     fn bastion_adoption(
         &self,
         sp: Vec3<f32>,
@@ -8979,6 +9075,37 @@ pub(crate) fn bastion_founding_decision(colony_saved: bool, dtick: u64, blocked_
 #[cfg(test)]
 mod bastion_founding_tests {
     use super::bastion_founding_decision;
+
+    /// ★ R1c pinned: the restore path re-derives the maps, streams the town
+    /// and makes a presence, and adopts nobody and re-places nothing (the
+    /// saved residents and orders come back on their own). Planted defect:
+    /// a plot re-placement in the restore path -> red.
+    #[test]
+    fn the_restore_path_streams_the_town_and_adopts_nobody() {
+        let src = include_str!("lib.rs");
+        let start = src
+            .find("fn bastion_autofound_restore(&mut self)")
+            .expect("the R1c fn exists");
+        let end = src[start..]
+            .find("\n    fn bastion_adoption(")
+            .map(|i| start + i)
+            .expect("the next fn");
+        let body = &src[start..end];
+        for must in [
+            "bastion_adoption(",
+            "bastion_adopt_stream_plot_chunks(",
+            "bastion_found_colony_presence(",
+        ] {
+            assert!(body.contains(must), "the restore path must call {must}");
+        }
+        for never in [
+            "bastion_adopt_town_people(",
+            "bastion_adopt_place(",
+            "bastion_spawn_colony_seeded(",
+        ] {
+            assert!(!body.contains(never), "the restore path must not call {never}");
+        }
+    }
 
     /// ★ R1b pinned: the founding branch keys `colony_saved` on the PERSISTED
     /// orders, never on the serde(skip) home anchor (which read None on every

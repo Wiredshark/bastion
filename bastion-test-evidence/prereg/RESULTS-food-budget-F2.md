@@ -209,6 +209,34 @@ Registered before its binary: planted ~7,900 of 8,424 on both arms,
 foreign in the tens, harvest units unchanged, day-0 stock up by the
 extra cells' ripe share (~500). Falsified below 7,000 planted.
 
+#### The first minute of the F2c'-c pair (5b111503a0, b2, 21:32)
+
+| field | cells | planted | cleared | foreign | ripe | harvest units | crop |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 7612,6468 | 576 | 430 | 13 | 85 | 88 | 244 | Lettuce |
+| 7636,6438 | 540 | 388 | 29 | 97 | 73 | 220 | Tomato |
+| 7672,6318 | 576 | 438 | 23 | 86 | 79 | 184 | Carrot |
+| 7702,6264 | 864 | 747 | 291 | 117 | 43 | 0 | Wheat (plan) |
+| 7684,6480 | 864 | 748 | 127 | 109 | 59 | 0 | Wheat (plan) |
+| 7732,6252 | 2,916 | 2,695 | 391 | 221 | 181 | 0 | Wheat (plan) |
+| 7780,6306 | 324 | 212 | 3 | 73 | 52 | 156 | Carrot |
+| (1,764) | 1,764 | 1,405 | 57 | 168 | 289 | 764 | Carrot |
+| **sum** | 8,424 | **7,063** | 934 | 956 | 864 | 1,568 | |
+
+Planted 7,063 >= 7,000: PASS, at the bar's edge rather than the 7,900
+predicted, because `foreign` did not fall to the tens: 956 cells stay
+foreign, 85-117 per 24 x 24 field, which is the fence line (a 24-cell
+square has 92 perimeter cells) plus the scarecrows -- correctly kept,
+wrongly predicted. The wheat that the big fields now carry shows in
+the deliveries (724 wheat units from the 2,916-cell field's ripe
+share). Day-0 store 12,048 units; day-0 census at +3 min
+`food_stock=3520 days_of_food=22.9 field_planted=7038` (the F2c'-b pair
+read 3,236 on this arm: +284, against the ~500 predicted -- the
+cleared cells' ripe share, less than the bare cells' because the wheat
+fields' draw skews young). Falsified at the commit: plant resources
+made Foreign turned `a_worldgen_crop_the_colony_cannot_use_is_cleared_at_founding`
+red at `bastion_jobs.rs:52382`.
+
 ### Day 1 on the F2c'-b pair
 
 b1: `food_stock=3745 days_of_food=23.9 cooked_today=90 meals=49
@@ -254,3 +282,8 @@ rises by roughly the harvest.
 b1's collapse is a different mechanism: the cook trap at the store
 approach (W8-f) shunned the store cells 110 times in a day and halved
 the kitchen; the eight starving at the evening line are its tail.
+
+b1 day 3: `food_stock=3520 cooked_today=63 meals=113 targets_shunned=65`,
+starving 2 at the dawn census -- the kitchen recovers partly day to
+day and the trap keeps shunning at 65-110 a day. W8-f's bar on the next
+boot: shunned under 20 a day, cooked back at 80 or more.

@@ -96,3 +96,25 @@ every server tick ... never persisted, None on load". The pin
 went red when planted, but the live input it was fed is always None on
 a kept world. The treatment never reached the population. R1b keys the
 decision on a persisted founding mark written once at the founding.
+
+## The third restart test (R1b pair 81dfe35b03, b3, 21:09-21:22)
+
+| step | result |
+|---|---|
+| boot 1 | plan queued on day 0; 36 cells placed before the stop |
+| graceful stop | ports closed in ~6 s; shutdown witness 1 |
+| boot 2 (`-KeepWorld`) | `COLONY RESTORED, NOT FOUNDED` 1; `ADOPT-A-TOWN site chosen` 0; `GROWTH LOG READ FROM SAVE` 1; panics 0 |
+| but | `colony orders replayed` 0, `PLOT RE-GROWN` 0, HOUSEHOLDS never printed; the tick census reads `colonists=0 designations=0 jobs=0` |
+
+The double founding is gone and R1b's pin was red when planted
+(`lib.rs:8994`). What the read exposed instead: on a headless server
+the founding branch was also the thing that loaded the town's chunks
+and spawned the colonists; with it standing down and no client, no
+chunk loads, no rtsim colonist spawns, `pending_restore` never becomes
+ready, and the restored colony is an empty server. The second test's
+"replayed 8 orders" happened only because the refounding loaded the
+town. R1c must make the restored branch load the town (the spawn point
+and the kept-loaded region the founding sets) without founding; the
+honest live test of a restore needs a client on the arm or that
+loading. Not evidenced: what Ben's client sees on a kept world (the
+player spawns at the world spawn, not the town, until R1c).
