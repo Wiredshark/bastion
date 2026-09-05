@@ -2016,6 +2016,50 @@ pub(crate) fn committed_glide_verdict(node_in_rock: bool) -> CommittedGlide {
 pub(crate) fn census_is_wedged(speed: f32, stuck_time: f32) -> bool {
     speed < 0.2 && stuck_time > CENSUS_WEDGED_SECS
 }
+
+/// ★ W11: the glide override anchors the feet when it engages; after
+/// OVERRIDE_WALL_TICKS without OVERRIDE_WALL_MIN_MOVE of movement from the
+/// anchor it has failed at a wall (b1: 113 loops a day, one of 246 s --
+/// the mover writes the feet into the wall each tick and physics ejects
+/// them; the velocity reads as walking, the census counts it moving).
+pub const OVERRIDE_WALL_TICKS: u64 = 90;
+pub const OVERRIDE_WALL_MIN_MOVE: f32 = 0.5;
+pub const OVERRIDE_ANCHOR_STALE_TICKS: u64 = 600;
+pub(crate) static OVERRIDES_FAILED_AT_WALL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OverrideVerdict {
+    /// No anchor, another node, a stale anchor, or real movement: (re)anchor.
+    Anchor,
+    /// Anchored and within the window: keep pushing.
+    Pushing,
+    /// The window passed and the feet did not move: the wall won.
+    Failed,
+}
+
+/// ★ W11 pinned. `anchor` = (node, feet at anchor, tick at anchor).
+pub(crate) fn override_verdict(
+    anchor: Option<(Vec3<i32>, Vec3<f32>, u64)>,
+    node: Vec3<i32>,
+    feet: Vec3<f32>,
+    tick: u64,
+) -> OverrideVerdict {
+    let Some((a_node, a_feet, a_tick)) = anchor else {
+        return OverrideVerdict::Anchor;
+    };
+    let age = tick.saturating_sub(a_tick);
+    if a_node != node || age > OVERRIDE_ANCHOR_STALE_TICKS {
+        return OverrideVerdict::Anchor;
+    }
+    if age < OVERRIDE_WALL_TICKS {
+        return OverrideVerdict::Pushing;
+    }
+    if feet.distance(a_feet) < OVERRIDE_WALL_MIN_MOVE {
+        OverrideVerdict::Failed
+    } else {
+        OverrideVerdict::Anchor
+    }
+}
 pub(crate) fn census_is_slowed(speed: f32, stuck_time: f32) -> bool {
     speed < 0.2 && stuck_time <= CENSUS_WEDGED_SECS
 }
@@ -14423,6 +14467,9 @@ pub struct JobBoard {
     pub supper_jobs: std::collections::HashSet<JobId>,
     /// ★ W10-i1: the pump's deliveries and steps since the last census.
     pub pump_census: PumpCensus,
+    /// ★ W11: the glide override's anchor per body -- (node, feet, tick)
+    /// when the override engaged or last made real progress.
+    pub override_anchor: HashMap<u64, (Vec3<i32>, Vec3<f32>, u64)>,
     /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
     /// `None` when there is nothing left to replay.
     ///
@@ -35964,13 +36011,70 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                                 .min(dm),
                                                 );
                                                 overridden = true;
-                                                if tick.0 % 30 == 0 {
+                                                // ★ W11: the override anchors
+                                                // its feet; a wall it cannot
+                                                // pass is found by the feet
+                                                // not moving, not by the clock
+                                                // the crumbs reset.
+                                                if let Some(uk) =
+                                                    uids.get(entity).map(|u| u.0.get())
+                                                {
+                                                    let verdict = override_verdict(
+                                                        board.override_anchor.get(&uk).copied(),
+                                                        steer_node,
+                                                        pos.0,
+                                                        tick.0,
+                                                    );
+                                                    match verdict {
+                                                        OverrideVerdict::Anchor => {
+                                                            board.override_anchor.insert(
+                                                                uk,
+                                                                (steer_node, pos.0, tick.0),
+                                                            );
+                                                        },
+                                                        OverrideVerdict::Pushing => {},
+                                                        OverrideVerdict::Failed => {
+                                                            let secs = board
+                                                                .override_anchor
+                                                                .get(&uk)
+                                                                .map(|a| tick.0.saturating_sub(a.2))
+                                                                .unwrap_or(0)
+                                                                as f32
+                                                                / 30.0;
+                                                            board.override_anchor.remove(&uk);
+                                                            let n = OVERRIDES_FAILED_AT_WALL
+                                                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                                                                + 1;
+                                                            if n <= 8 || n.is_power_of_two() {
+                                                                info!(
+                                                                    uid = uk,
+                                                                    node = ?steer_node,
+                                                                    feet = ?pos.0,
+                                                                    secs,
+                                                                    stuck = active.stuck_time,
+                                                                    strikes = job.stuck_strikes,
+                                                                    had_route = board.path_cache.contains_key(&Uid(std::num::NonZeroU64::new(uk).expect("uid nonzero"))),
+                                                                    failed = n,
+                                                                    "bastion: OVERRIDE FAILED AT A WALL — three seconds of gliding by ruling moved the feet less than half a block; the route is dropped and rebuilt from the feet (its first leg goes to the pump)"
+                                                                );
+                                                            }
+                                                            board.path_cache.remove(&Uid(
+                                                                std::num::NonZeroU64::new(uk).expect("uid nonzero"),
+                                                            ));
+                                                            new_pos = None;
+                                                            overridden = false;
+                                                        },
+                                                    }
+                                                }
+                                                if overridden && tick.0 % 30 == 0 {
                                                     info!(
                                                         uid = uids
                                                             .get(entity)
                                                             .map(|u| u.0.get()),
                                                         node = ?steer_node,
                                                         feet = ?pos.0,
+                                                        stuck = active.stuck_time,
+                                                        strikes = job.stuck_strikes,
                                                         "bastion: CHASER GLIDE OVERRIDE — refused node walked by ruling"
                                                     );
                                                 }
@@ -54374,6 +54478,25 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ W11 pinned: no anchor anchors; another node anchors; within the
+    /// window it pushes; past the window with the feet still it FAILS; past
+    /// the window with real movement it re-anchors; a stale anchor anchors.
+    /// Planted defect: the movement test inverted (a still body never
+    /// fails) -> red.
+    #[test]
+    fn the_override_fails_at_a_wall_by_its_feet() {
+        use OverrideVerdict::*;
+        let node = Vec3::new(10, 12, 5);
+        let feet = Vec3::new(10.5, 10.9, 5.0);
+        assert_eq!(override_verdict(None, node, feet, 1000), Anchor, "no anchor");
+        let a = Some((node, feet, 1000));
+        assert_eq!(override_verdict(a, Vec3::new(11, 12, 5), feet, 1030), Anchor, "another node");
+        assert_eq!(override_verdict(a, node, feet, 1000 + OVERRIDE_WALL_TICKS - 1), Pushing, "within the window");
+        assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.1, 0.0), 1000 + OVERRIDE_WALL_TICKS), Failed, "still: failed");
+        assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.8, 0.0), 1000 + OVERRIDE_WALL_TICKS), Anchor, "moved: re-anchor");
+        assert_eq!(override_verdict(a, node, feet, 1000 + OVERRIDE_ANCHOR_STALE_TICKS + 1), Anchor, "stale");
     }
 
     /// ★ W10-i1 pinned: two deliveries waiting 10 and 30 ticks count two

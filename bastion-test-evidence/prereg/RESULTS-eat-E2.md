@@ -481,6 +481,49 @@ at hour 6 of days 1 and 2) run from the stage; b1 leaves the held
 T1-b pair for this one. The falsifier (the lift removed) went red and
 restored clean at 13:01; lab-bin carries the pair from 12:59.
 
+Early read (b1, day 0 hour 17, 13:15): SUPPER ROUND day=0 hour=12
+houses=49 shortfall=98 loads=36 no_shelf=0 skipped_no_small=0 (the
+window bar: hour 12); Haul arrivals since the round by destination
+kind: private 21, general 4 (E2-d by the sweep: private 2); "job
+claimed" 579, arrivals 637, Haul-kind arrivals 65; in_bags 66 (bar
+400); private_units 0 on the day-0 STORAGE SUMMARY (that line fires
+at boot, before the round -- the boot-order artefact noted before,
+not a null). 21 of 36 by hour 17 against the bar of 25 by hour 16:
+under the bar as written, ten times E2-d. The sweep at dusk, the
+night meals and the sleepers are read at hour 6 of day 1.
+
+### E2-e after night 1 (b1, read at day 1 hour 6, 13:35; `read-e2e-nights.sh`)
+
+The restart reader had misfired at boot on the old log's clock
+(memory addendum); this read is the live log at hour 6. SUPPER ROUND
+day=0 hour=12 loads=36; SWEPT day=0 swept=18 (E2-d: 35; bar under
+10: NOT met); arrivals to private shelves before the sweep 21 (E2-d:
+2; bar 25: NOT met); NIGHT MEAL AT HOME 8 (E2-d: 1; bar 5: MET);
+no_food_found 204 on the day-1 census (E2-d: 777; E2-b: 583); meals
+48; YEAR day=1 food_stock 4,052 / 4,090 / 25.8 days (E2-d: 4,067,
+within 200: MET). Starving by clock: RestAt/Arrived 14, 17, 22 at
+hours 1-3 with RestAt/Traveling 6-8 (E2-d night 1: 14, 16, 14, 24 --
+UNCHANGED; bar 3 an hour: NOT met); distinct starving sleepers 5
+(E2-d: 5; bar 1: NOT met); the morning EatFrom/Traveling rush of
+hours 5-9 is GONE (E2-d: 18, 8, 14, 13; here none after hour 4's
+11), and the evening EatFrom/Traveling 6-9 an hour through 15-23
+stands (W11's class). in_bags 33-132 by day, then 591 from tick
+42,900 to 46,500 (hours 2-3): BAG CENSUS top=[(124, 454), (125, 86),
+(134, 15)]; uid 124 is a Guard (the night watch's shift end admits
+its haul, and the pickup took the stack -- E2-f's class, queued),
+back to 131 at tick 46,800. The Haul lane's day line: 7 colonists,
+35 hauls, 12 works (E2-d: 23 hauls, 20 works) -- the errands did not
+starve the lane, they fed it.
+
+Disposition: E2-e delivers the loads that get claimed and the
+houses that get one eat at night (8 meals, 204 misses); but the
+lane carried 21 of 36 in four hours and 28 of 49 short houses got
+nothing, and the five sleepers who starve are in those. The
+throughput is the limit (35 hauls a day for seven haulers), and
+more loads will not deliver. The next lever is not the lane: the
+eater carries its own supper home (E2-g, registered below once the
+round's destination and the home lookup are read).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

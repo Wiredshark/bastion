@@ -1015,6 +1015,18 @@ hour (2,250) while pending stays above 30, the pump is a queue the
 town outgrows and W10-f's hold at a wall is a stall by construction:
 the next row gives the pump slices proportional to pending.
 
+### W10-i1 landed (65db6d4cab, staged 13:28)
+
+The first chain refused at 13:04 (its pin anchor was W10-f's comment,
+re-stated by W10-g; the dry tree had been validated in the old order
+-- memory written); re-anchored, the queue re-validated from HEAD in
+the new order, relaunched. Check clean, the pin green, both halves
+staged 13:28. The falsifier (the maximum not kept) and the b2 reader
+(`wait-w10i1-b2.sh`: the PUMP CENSUS lines at +4, +10, days 1-2) run
+from the stage; the W11 chain keys on it. The falsifier (the maximum
+not kept) went red and restored clean at 13:32; lab-bin carries the
+pair from 13:29.
+
 ## W11, registered 11:45 (keyed on the W10-i1 stage, the end of the chain, before the binary)
 
 The E2 "day trip" class named. b1 on the E2-d pair (3765c74e87),
