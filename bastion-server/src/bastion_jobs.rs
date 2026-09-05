@@ -1785,6 +1785,31 @@ pub(crate) fn on_ground_not_a_wall(solid: &impl Fn(Vec3<i32>) -> bool, q: Vec3<i
 /// searched exactly and stitched onto the trunk.
 pub const TRUNK_FIRST_LEG_MAX: f32 = 6.0;
 
+/// ★ W10-a-i: what the first-leg gate did with a route, so the arm that
+/// never fires can be named from the log.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FirstLegGate {
+    /// Node 0 is within a tile: the trunk's own leg, nothing to search.
+    Near,
+    /// The approach needs a search but this colonist already has one pending.
+    BlockedPending,
+    /// The approach goes to the pump; the trunk waits as a tail.
+    Searched,
+}
+
+pub(crate) fn first_leg_gate(needs_search: bool, search_pending: bool) -> FirstLegGate {
+    match (needs_search, search_pending) {
+        (false, _) => FirstLegGate::Near,
+        (true, true) => FirstLegGate::BlockedPending,
+        (true, false) => FirstLegGate::Searched,
+    }
+}
+
+pub(crate) static FIRST_LEG_ROUTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static FIRST_LEG_NEAR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static FIRST_LEG_BLOCKED_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static FIRST_LEG_TAIL_DROPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn first_leg_needs_search(feet: Vec3<f32>, node0: Vec3<i32>) -> bool {
     let c = node0.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
     feet.xy().distance(c.xy()) > TRUNK_FIRST_LEG_MAX
@@ -34128,9 +34153,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // farther than a tile the approach goes to
                                     // the pump and the trunk waits as a tail.
                                     let node0 = wps.first().copied();
+                                    // ★ W10-a-i: every arm of the gate counts.
+                                    let gate = node0.map(|n0| {
+                                        first_leg_gate(
+                                            first_leg_needs_search(pos.0, n0),
+                                            board.path_searches.contains_key(&u.0.get()),
+                                        )
+                                    });
+                                    {
+                                        use core::sync::atomic::Ordering::Relaxed;
+                                        let routes = FIRST_LEG_ROUTES.fetch_add(1, Relaxed) + 1;
+                                        match gate {
+                                            Some(FirstLegGate::Near) | None => {
+                                                FIRST_LEG_NEAR.fetch_add(1, Relaxed);
+                                            },
+                                            Some(FirstLegGate::BlockedPending) => {
+                                                FIRST_LEG_BLOCKED_PENDING.fetch_add(1, Relaxed);
+                                            },
+                                            Some(FirstLegGate::Searched) => {},
+                                        }
+                                        if routes % 256 == 0 {
+                                            info!(
+                                                routes,
+                                                near = FIRST_LEG_NEAR.load(Relaxed),
+                                                blocked_pending = FIRST_LEG_BLOCKED_PENDING.load(Relaxed),
+                                                searched = TRUNK_FIRST_LEG_SEARCHED.load(Relaxed),
+                                                stitched = TRUNK_FIRST_LEG_STITCHED.load(Relaxed),
+                                                unreachable = TRUNK_FIRST_LEG_UNREACHABLE.load(Relaxed),
+                                                tail_dropped = FIRST_LEG_TAIL_DROPPED.load(Relaxed),
+                                                "bastion: FIRST LEG GATE — what the gate did with every \
+                                                 trunk route built (near: node 0 within a tile; \
+                                                 blocked_pending: a search already pending for this \
+                                                 colonist; searched: the approach went to the pump)"
+                                            );
+                                        }
+                                    }
                                     if let Some(n0) = node0
-                                        && first_leg_needs_search(pos.0, n0)
-                                        && !board.path_searches.contains_key(&u.0.get())
+                                        && gate == Some(FirstLegGate::Searched)
                                     {
                                         TRUNK_FIRST_LEG_SEARCHED
                                             .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -41320,7 +41379,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             let stitched = stitch_first_leg(wps, tail);
                                             board.path_cache.insert(u, (stitched, 0, tgt));
                                         },
-                                        _ => {
+                                        other => {
+                                            // ★ W10-a-i: a tail removed under a different
+                                            // target is the third way the stitch never
+                                            // happens -- count it.
+                                            if other.is_some() {
+                                                FIRST_LEG_TAIL_DROPPED
+                                                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                            }
                                             if board.path_cache.get(&u).is_none() {
                                                 board
                                                     .path_cache
@@ -53437,6 +53503,18 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ W10-a-i pinned: a near first node never searches; a far one with
+    /// a search already pending is blocked, not searched; a far one with
+    /// none pending is searched. Planted defect: blocked reads as searched
+    /// -> red.
+    #[test]
+    fn the_first_leg_gate_names_its_arm() {
+        assert_eq!(first_leg_gate(false, false), FirstLegGate::Near);
+        assert_eq!(first_leg_gate(false, true), FirstLegGate::Near, "near wins over pending");
+        assert_eq!(first_leg_gate(true, true), FirstLegGate::BlockedPending);
+        assert_eq!(first_leg_gate(true, false), FirstLegGate::Searched);
     }
 
     /// ★ R3-b pinned: the larder is delivered only when it has entries and

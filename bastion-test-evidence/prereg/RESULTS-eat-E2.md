@@ -52,6 +52,26 @@ window. The read decides the mechanism:
 - `no_food_found` -> the house shelf is empty at night; the row is the
   night larder (a supper carried home, or the store admitted at night).
 
+## The diag read (b3, W9-c pair, 05:17: boot to the first midnight)
+
+122,661 NEED-SKIP-DIAG lines joined to 36 STARVING census lines (the
+Sleep block ran hours 21-23 only; 3 distinct starving sleepers, 12
+starving eaters at hour 19).
+
+| who was starving | skip reasons that hit them in the same window |
+|---|---|
+| sleepers (RestAt: Waiting, Arrived, Traveling) | no_food_found 808, preempt_cooldown_active 30, already_on_need_job 21 |
+| eaters en route (EatFrom/Traveling) | already_on_need_job 744, preempt_cooldown_active 187 |
+| loungers (Recreate) | already_on_need_job 13, preempt_cooldown_active 6 |
+
+The shelf branch it is: the scan reaches the sleepers, hunger wins the
+sort (already_on_need_job is 2% of their hits), and the night pick
+finds nothing inside the house. The EAT CENSUS on the same log printed
+`no_food_found=0` -- its counter for that reason is dead (the diag
+line fires 808 times where the census counts none); a second
+instrument defect, noted for its own small row. The E2 chain stays
+armed as written.
+
 ## The row, written ahead of the diag (E2, 05:05; keyed after P-zero-hours-b)
 
 The shelf branch is the one the evidence already carries: b2's day-1

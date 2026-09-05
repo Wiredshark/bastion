@@ -383,3 +383,12 @@ roster never prints it; `BED-HOUSE CENSUS` on the same boot reads
 is the restored roster in its houses. R3 carries the rider (R3-i): the
 line also prints on the first pass of each game day, so the eighth
 test reads `houses=58` on the restored boot's first day line.
+
+### R3-b landed (b7344eeb34, 05:29)
+
+Check clean, pin `the_larder_waits_for_the_orders` green (1 passed),
+staged 05:29, shipped to lab-bin 05:29. Falsified at the commit: the
+orders ignored turned the pin red (0 passed, 1 failed), tree restored
+clean at 05:32. The live read is the ninth restart
+test's restored boot on b3, keyed on the P-zero-hours-b stage (now
+queued behind W10-a-i, the first-leg gate instrument).

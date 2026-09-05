@@ -438,6 +438,59 @@ commit: the approach planted as dropped turned the pin red (0 passed,
 wedge witnesses, FIRST LEG STITCHED, the profile at +4/+10 and days
 1-3) run from the stage; both rows are read together there.
 
+### W10-a and W10-b live (b2, 0192879b24, boot 05:08)
+
+| read | +4 min (hour 10) | +10 min (hour 13) |
+|---|---|---|
+| FIRST LEG STITCHED lines (the witness prints at every power of two, so 1 stitch prints) | 0 | 0 |
+| idx0 embeds (prev == head) / stall probes | 4 / 4 | 7 / 20 |
+| EMBED WATCH (W9-c: 3 / 6) | 5 | 11 |
+| TRUNK REJECTED (dz) with step_limit_blocks=2 | rejected=256 | rejected=512 |
+| STALL BLAMED ON THE WALKER / ROUTE FAULT | 0 / 1 | 5 / 2 |
+| panics | 0 | 0 |
+
+**W10-a FAILED live: the arm never fires.** Zero first-leg lines in
+ten minutes while the class it was built for goes on (seven embeds at
+the route's first node, twenty stall probes). Either the gate
+(`first_leg_needs_search`, farther than TRUNK_FIRST_LEG_MAX=6 from the
+first node) is never true in the live population, or the pump's
+completion never reaches the stitch. The mechanism carries no
+"considered / needed / searched" counters, so the read cannot tell
+which -- the instrument gap is the next row (W10-a-i), before any fix.
+W10-b's limit is active (rejected_dz climbs at 256 a read with
+step_limit_blocks=2); its effect on embeds is not separable here and
+is read on the profile at day 1.
+
+Day 1 on the W10 pair (05:38, one replicate): lane None works 516 /
+hauls 90 over 40 colonists, mean travel per claim 25.4 blocks, far
+claims 25%, travel share of work 62% -- against W9-c's day 1 of works
+262 / hauls 117 over 43, travel 35.8, far 36%, travel share 42%. With
+W10-a dead, whatever moved here is W10-b's (routes that drop more than
+two blocks a step are refused) or the 2-3x day-to-day swing the
+three-replicate law exists for. Not a result until b2 shows it twice
+more; noted so the W10-a-i reads can carry the same line.
+
+## W10-a-i, registered 05:30 (keyed on the R3-b stage, before the binary)
+
+An instrument row. `first_leg_gate(needs_search, search_pending)` ->
+Near | BlockedPending | Searched, evaluated once per trunk route
+built; the stitch match's wildcard arm counts a tail it removes under
+another target instead of dropping it silently; FIRST LEG GATE every
+256 routes with routes / near / blocked_pending / searched / stitched
+/ unreachable / tail_dropped. Behaviour unchanged. Pin
+`the_first_leg_gate_names_its_arm`; planted defect: blocked reads as
+searched, red.
+
+Prediction (b2 fresh, +10 min): near + blocked_pending + searched =
+routes at 256 and 512. The arm holding searched at zero names the
+fix: blocked_pending near routes = the pump's one-search-per-colonist
+rule starves the approach (a lane); near at ~100% = the first node is
+always within a tile on a fresh arm and W10-a's case is the restored
+boot only (read on test 9); searched > 0, stitched = 0, tail_dropped =
+searched = the completion arrives under another target (the match).
+Falsified if the sum misses routes, or if stitched > 0 (W10-a was
+alive and +10 was early).
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground
