@@ -10057,6 +10057,7 @@ pub fn deposit_chunks(amount: u32, cap: u32) -> Vec<u32> {
 }
 
 pub(crate) static DROP_CELLS_SPREAD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static DROP_CELL_FILTER_VOIDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// ★ W12-b pinned: THE DROP CELL SPREADS FROM THE CENTRE OUT, NOT FROM THE
 /// CORNER IN. A candidate must be standable; among the least filled the
@@ -10069,17 +10070,37 @@ pub(crate) fn stockpile_drop_cell_spread(
     r: &Region,
 ) -> Vec3<i32> {
     let centre = stockpile_drop_cell_impl(&surface_z, r);
-    let mut cells: Vec<(u32, Vec3<i32>)> = Vec::new();
+    let mut surface_cells: Vec<(u32, Vec3<i32>)> = Vec::new();
     for y in r.min.y..=r.max.y {
         for x in r.min.x..=r.max.x {
             if let Some(sz) = surface_z(x, y, r.min.z)
                 && sz + 1 <= centre.z + SPREAD_MAX_RISE
-                && standable(Vec3::new(x, y, sz + 1))
             {
-                cells.push((occupancy(x, y), Vec3::new(x, y, sz + 1)));
+                surface_cells.push((occupancy(x, y), Vec3::new(x, y, sz + 1)));
             }
         }
     }
+    // ★ W12-b-b: A FILTER THAT EMPTIES THE STORE IS VOID -- on the live
+    // pair the standable filter admitted no cell and every deposit of the
+    // day went to the centre (12,022 units in one cell). The filter narrows
+    // a set; it never empties one.
+    let standable_cells: Vec<(u32, Vec3<i32>)> =
+        surface_cells.iter().copied().filter(|(_, c)| standable(*c)).collect();
+    let cells = if standable_cells.is_empty() && !surface_cells.is_empty() {
+        let n = DROP_CELL_FILTER_VOIDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        if n <= 8 || n.is_power_of_two() {
+            info!(
+                region_min = ?r.min,
+                surface = surface_cells.len(),
+                standable = 0,
+                voids = n,
+                "bastion: DROP CELL FILTER EMPTIED THE STORE — no surface cell passed the standable test; the spread runs over the surface cells"
+            );
+        }
+        surface_cells
+    } else {
+        standable_cells
+    };
     let Some(min) = cells.iter().map(|(o, _)| *o).min() else {
         return centre;
     };
@@ -55171,7 +55192,7 @@ mod tests {
         assert_ne!(stockpile_drop_cell_spread(flat, centre_full, |_| true, &zone), Vec3::new(0, 0, 6), "never the corner while a nearer cell is free");
         let south_blocked = |c: Vec3<i32>| c != Vec3::new(2, 1, 6);
         assert_eq!(stockpile_drop_cell_spread(flat, centre_full, south_blocked, &zone), Vec3::new(1, 2, 6), "a cell no body stands in is skipped");
-        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| false, &zone), Vec3::new(2, 2, 6), "nothing standable: the centre as before");
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| false, &zone), Vec3::new(2, 1, 6), "nothing standable: the filter is void, the spread runs over the surface (W12-b-b)");
     }
 
     /// ★ W13 pinned: a known floor sets the step's z; an unknown floor
@@ -55183,6 +55204,23 @@ mod tests {
         assert_eq!(glide_snap_z(line, Some(182.0)), Vec3::new(10.5, 10.5, 182.0), "a known floor: the body stays on it");
         assert_eq!(glide_snap_z(line, Some(181.0)), Vec3::new(10.5, 10.5, 181.0), "a lower floor past the edge: the body drops to it");
         assert_eq!(glide_snap_z(line, None), line, "no floor known: the line as before");
+    }
+
+    /// ★ W12-b-b pinned: a filter that admits no cell is void -- the spread
+    /// runs over the surface cells as if unfiltered; a filter that admits
+    /// some cells narrows to them; an empty surface leaves the centre.
+    /// Planted defect: the fallback removed (the centre for everything) ->
+    /// red.
+    #[test]
+    fn a_filter_that_empties_the_store_is_void() {
+        let zone = Region { min: Vec3::new(0, 0, 5), max: Vec3::new(4, 4, 5) };
+        let flat = |_x: i32, _y: i32, _h: i32| Some(5);
+        let centre_full = |x: i32, y: i32| if (x, y) == (2, 2) { 5 } else { 0 };
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| false, &zone), Vec3::new(2, 1, 6), "a filter admitting nothing: void");
+        let only_east = |c: Vec3<i32>| c == Vec3::new(3, 2, 6);
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, only_east, &zone), Vec3::new(3, 2, 6), "a filter admitting one cell: that cell");
+        let none = |_x: i32, _y: i32, _h: i32| None;
+        assert_eq!(stockpile_drop_cell_spread(none, centre_full, |_| false, &zone), stockpile_drop_cell_impl(none, &zone), "no surface at all: the centre");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable

@@ -1329,6 +1329,95 @@ The falsifier (the distance ignored, the corner first) went RED at
 18:47, the tree restored clean. The b2 reader restarts b2 after
 W12-a's day-1 read; W13's chain fires five minutes after this stage.
 
+### W12-b FAILED LIVE at boot on b2 (pair 02fdf9d782, read 18:53): every deposit at the centre
+
+The 25 founding deliveries all at (7665, 6365, 181), the general
+store's centre; STORAGE SUMMARY day 0 general_units 12,028,
+general_max_cell 12,022 (the pair before: 200); the day's DepositRun
+job_pos 28 at (7665, 6365), 15 at (7791, 6365), 6 at (7743, 6143),
+5 at (7698, 6446) -- one cell per store, each its centre. DROP CELL
+SPREAD FROM THE CENTRE OUT never fired (it prints only when the
+chosen cell is not the centre): the centre came from the identity
+arm, because the standable filter admitted NO surface cell of any
+store at runtime. The pin proved the picker with a closure that
+answers true; the live predicate answers false for cells that are
+air over grass by every reading of `walkable`, and the log cannot
+say why. The pair is NOT PLAYABLE (the whole larder in one cell);
+lab-bin carries it from 18:44 until W12-b-b ships. The corner,
+meanwhile, is gone (its tie rule is gone).
+
+W12-b +10 on b2 (read 19:01, hour 15 of day 0), for the record: the
+corner 0 (8 of 8 before W12-a), unreachable 0 of 332, DROP CELL
+SPREAD 0 lines (the identity arm, as diagnosed), EMBED WATCH 4 (all
+chaser-pure-glide; W12-a's +10 read 12 -- every deposit walking to
+one centre cell makes fewer varied legs), FIRST LEG GATE 23 of 27,
+arrivals 437, stuck 0, panics 0. The pair's wedge numbers are sound;
+its store is one pile. Day 1 (read 19:15, hour 0 of day 1): the
+corner 0, unreachable 0 of 482, EMBED WATCH 9 (all chaser-pure-
+glide; W12-a's day 18), STALL BLAMED 5, FIRST LEG GATE 44 of 50,
+arrivals 675, stuck 0, starving 3 at midnight, panics 0; the store's
+biggest cell 12,346 units at midnight (12,022 at boot).
+
+## W12-b-b, registered 18:56 (keyed on the W13 stage; ahead of E2-j-b and the rest)
+
+A FILTER THAT EMPTIES THE STORE IS VOID. The surface cells are
+collected first; the standable filter is applied second; when it
+empties a non-empty set it is void (the spread runs over the surface
+cells) and DROP CELL FILTER EMPTIED THE STORE (region_min, surface,
+standable, voids) names it; otherwise the standable cells. The
+nearest-to-centre rule stands either way. Pin
+`a_filter_that_empties_the_store_is_void` (admitting nothing: the
+unfiltered spread; admitting one cell: that cell; no surface: the
+centre); the W12-b pin's "nothing standable: the centre" re-stated;
+planted: the fallback removed, red. Prediction (b2 fresh,
+`wait-w12bb-b2.sh`, after W13's +10 read; +10 and day 1): distinct
+DepositRun job_pos at least 8 by day 1 (4); general_max_cell under
+600 at day 1 (12,022); founding delivery cells at least 15 (1); the
+void witness fires and its counts say whether the predicate refuses
+the store's cells; the corner 0. Falsified if the deposits still
+pile on one cell, or the corner returns. Rejected: dropping the
+filter; a lenient walkable; guessing the predicate's reason. NOT
+evidenced: why the predicate refuses the cells (this pair's witness
+counts). The E2-j-b chain and reader were re-keyed behind this row.
+
+### W13 landed (21edda27ad, staged 19:06)
+
+Check clean, the pin green, both halves staged 19:06; the binary
+verified by its witness string ("THE GLIDE FOLLOWS THE SURFACE"
+present once), shipped to lab-bin 19:07. The pair inherits W12-b's
+one-cell store (W12-b-b follows five minutes behind). The falsifier
+(the floor ignored) went RED at 19:10, the tree restored clean. Two
+replicates: the b2 reader restarts b2 after W12-b's day-1 read; a
+b1 reader restarts the 160-day arm after E2-g-c's night-2 read and
+reads +4, +10 and day 1 until E2-l's stage takes b1 back.
+
+## W15-i1, registered 19:07 (keyed on the W12-a-b stage, the end of both queues)
+
+THE PUMP NAMES THE EXHAUSTED SEARCH. On the E2-j pair (b2) the
+pump's exhausted deliveries by hour ran 32, 76, -, 133, 101, 155,
+169, 155 at hours 16-23 and 119, 158, 154, 225, 27 at hours 0-4,
+against 4-19 an hour in the Work block; the W12-a pair the same
+shape (761 in a day, 664 at hours 21-23). An exhausted fill search
+is dropped silently and the body keeps the trunk's tail. The night
+is when the town goes home: every added shelf on b2 is on the
+bedroom storey, worldgen puts the bedroom upstairs, and the router
+cannot climb a worldgen staircase (a `Primitive::Ramp` of rise
+`storey` under the floor above). So the night's exhaustions are
+most likely the routes to bed and to the night shelf, five blocks
+up -- the glide through the house being how anyone gets to bed --
+but the census cannot say so. Now PumpCensus splits exhausted
+deliveries into up, down and flat (EXHAUST_BAND_DZ 3) and THE SEARCH
+EXHAUSTED (uid, from, to, dz) names the first of them. Pin
+`the_pump_names_the_exhausted_search`; planted: every exhaustion
+flat, red. Prediction (b1 fresh, `wait-w15i1-b1.sh`, after E2-i2's
+night-1 read; night 1): exhausted_up at least 60% of the night's
+exhausted at hours 21-3, with the first witnesses' targets bed and
+shelf cells five blocks above their starts; falsified as a
+hypothesis if flat is the majority (the curfew's routes on the
+flat, not the stairs). Rejected: routing the stairs before
+counting; a longer budget. NOT evidenced: the router's stair
+admission (W15, if the count says so); the day's exhaustions.
+
 ## W12-a-b, registered 18:32 (keyed on the E2-i2 stage, the end of the queue)
 
 THE ON-TOP TARGET STANDS. `approach_target(job_pos, stance)` for an
