@@ -398,3 +398,13 @@ the book reads one site fewer (11 -> 10), no mission to the spawn,
 arrivals per mission under 5, exchanges per mission minted. Falsified
 if missions still mint to (7696,6288) or arrivals per mission stay in
 the hundreds.
+
+Landed 603a31f1a5 at 09:10 (behind W10-a-c, P-zero-hours-d and
+E2-b in the re-keyed chain): check clean, both pins green
+(`the_price_book_has_no_home_site` in the server crate,
+`a_trade_mission_stands_where_a_body_can` in bastion-server), staged
+09:10. The falsifier (the stand dropped) runs from the stage; the
+live read is b2 on the W9-i2 pair (`wait-t1-b2.sh`), with the storm
+itself measured meanwhile on b1's E2-b boot (1,778 TradeMission
+arrivals of 2,547 in ten minutes on the E2 pair, 924 in five on b3's
+P-zero-hours-d boot) as the control.

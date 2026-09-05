@@ -663,6 +663,15 @@ W10-a 15, W9-c 10), idx0 5 (W10-a-b 5); STALL BLAMED 4, ROUTE FAULT 0;
 profile routes 7,168, detour 2.13, rejected_solid 4,097, rejected_dz
 2,094; p95 570 us; starving 3 at the day line; panics 0.
 
+Day 2 (09:04, hour 0): FIRST LEG GATE routes=3,072 near=2,872
+crossed=200 blocked_pending=1 replaced_fill=32 searched=199
+stitched=172 tail_dropped=15; EMBED WATCH 31 over two days (22 on day
+2 alone), idx0 21; STALL BLAMED 5, ROUTE FAULT 5; profile routes
+15,360, detour 2.40, rejected_solid 7,848, rejected_dz 4,376; p95 582
+us; panics 0. The gate's arms stay exhaustive and the stitch rate
+holds at 86%; the embeds grow with the second day's traffic, and
+they are the mid-route class (W10-d), not the first leg.
+
 Disposition at day 1: the mechanism half PASSED on both reads
 (blocked_pending 19 -> 1 over the day, the replaced arm carrying 18,
 stitched 33 of 41), and the outcome half is NOT separable from

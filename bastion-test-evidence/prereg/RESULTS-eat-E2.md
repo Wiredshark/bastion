@@ -207,6 +207,57 @@ bar holds (14, loads 20-36); the arrivals bar (15 to private zones
 before hour 16) and the outcome (the first night's starving) read at
 the day-1 line.
 
+Night 1 (09:12, the day-1 line): SUPPER ROUND day=0 hour=14
+houses=49 shortfall=66 loads=33 no_shelf=16; Haul arrivals after the
+round 27 (the early read: 6 private, 6 general by hour 15), haul
+yields 1; private_units 5 at the day line (supper eaten, as the
+amended frame says); NIGHT MEAL AT HOME 0; FED starving 2 at the last
+three censuses (E2: 3); EAT CENSUS meals 48, no_food_found 583 (the
+E2-i counter now counts what the census could not see); panics 0.
+The starving by clock:
+
+| game hour | E2 night 1 (b1) | E2-b night 1 (b1) |
+|---|---|---|
+| 17-19 | EatFrom/Traveling 2, 6, 8 | EatFrom/Traveling 4, 7, 8 |
+| 20 | RestAt/Traveling 6, EatFrom 2 | RestAt/Traveling 7 |
+| 21 | RestAt/Arrived 10, Traveling 4, EatFrom 2 | RestAt/Traveling 8 |
+| 22 | RestAt/Arrived 18 | RestAt/Traveling 8, EatFrom 5 |
+| 23 | -- | RestAt/Traveling 1, EatFrom 1 |
+| distinct starving sleepers | 3 | 2 |
+
+**E2-b PASSED** its standing bars: the window (14), the loads
+(33), and the outcome -- starving samples IN BED (RestAt/Arrived)
+16 -> 0 across the Sleep block; the sleepers who reach bed have eaten
+at home. What remains: sixteen of forty-nine occupied houses have no
+private shelf (E2-c, a shelf in every house), and seven or eight
+colonists an hour walk to bed hungry at 20-22 -- those are the
+shelfless houses' people and the day-trip class, not the round's.
+NIGHT MEAL AT HOME 0 is the secondary read and reads as designed: the
+night lane fires for a sleeper the scan wakes, and supper eaten
+before bed leaves it nothing to do.
+
+## E2-c, registered 09:20 (keyed on the W9-i2 stage, the end of the chain, before the binary)
+
+A house with adopted beds and no container gets a one-cell private
+shelf at `shelf_cell_beside(first bed, footprint, standable)` -- the
+first standable floor cell beside the bed, orthogonal neighbours
+first, inside the footprint -- registered as a container's zone is;
+witness SHELF ADDED. The round collects the short houses and serves
+them emptiest first, so a house a capped round misses one evening is
+first the next. Pin `every_house_gets_a_shelf_beside_its_bed` (a
+wall east puts it west; an edge bed takes the inside neighbour;
+nothing standable means none); the E2 pin must stay green in the
+chain. Planted defect: the footprint ignored, red.
+
+Prediction (b1 fresh, days 1-2): SHELF ADDED 12-20 at adoption;
+SUPPER ROUND no_shelf 0 (E2-b: 16), shortfall near 98, loads 36 on
+day 0 and the day-1 round serving the houses day 0 missed; in-bed
+starving 0-1 across the Sleep block; the hungry walk to bed
+(RestAt/Traveling at 20-22) under 4 an hour (E2-b: 7-8); distinct
+starving sleepers at most 1. Falsified if SHELF ADDED is 0, or if
+no_shelf reads 0 and the hungry walk to bed holds at 7-8 (the day trip
+is the walker, not the shelfless house).
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

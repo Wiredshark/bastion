@@ -1859,6 +1859,45 @@ pub(crate) fn first_leg_crosses_solid(
     })
 }
 
+pub(crate) static TRUNK_ROUTES_REJECTED_CROSSING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ W10-d pinned: does the straight segment from node `a` to node `b`
+/// pass through a solid? Sampled every half block from a's centre to b's
+/// centre; the sampled height follows the segment (rounded), so a
+/// one-block step at the far end is a step and not a wall; feet and head
+/// cells both; a's own cell is skipped. Unseen terrain reads as clear.
+pub(crate) fn segment_crosses_solid(
+    solid: &impl Fn(Vec3<i32>) -> bool,
+    a: Vec3<i32>,
+    b: Vec3<i32>,
+) -> bool {
+    let start = Vec2::new(a.x as f32 + 0.5, a.y as f32 + 0.5);
+    let end = Vec2::new(b.x as f32 + 0.5, b.y as f32 + 0.5);
+    let d = end - start;
+    let len = d.magnitude();
+    if len < 0.5 {
+        return false;
+    }
+    let steps = (len / 0.5).ceil().max(1.0) as i32;
+    let dz = (b.z - a.z) as f32;
+    (1..=steps).any(|i| {
+        let t = i as f32 / steps as f32;
+        let q = start + d * t;
+        let cell = Vec2::new(q.x.floor() as i32, q.y.floor() as i32);
+        let z = a.z + (dz * t).round() as i32;
+        (cell.x != a.x || cell.y != a.y)
+            && (solid(Vec3::new(cell.x, cell.y, z)) || solid(Vec3::new(cell.x, cell.y, z + 1)))
+    })
+}
+
+/// ★ W10-d: the trunk's first segment whose line crosses a solid, if any.
+pub(crate) fn trunk_crossing_segment(
+    solid: &impl Fn(Vec3<i32>) -> bool,
+    wps: &[Vec3<i32>],
+) -> Option<usize> {
+    wps.windows(2).position(|w| segment_crosses_solid(solid, w[0], w[1]))
+}
+
 pub(crate) fn first_leg_needs_search(feet: Vec3<f32>, node0: Vec3<i32>) -> bool {
     let c = node0.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
     feet.xy().distance(c.xy()) > TRUNK_FIRST_LEG_MAX
@@ -34304,6 +34343,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                         rejected_solid =
                                                             TRUNK_ROUTES_REJECTED_SOLID.load(Relaxed),
                                                         rejected_dz = TRUNK_ROUTES_REJECTED.load(Relaxed),
+                                                    rejected_crossing = TRUNK_ROUTES_REJECTED_CROSSING.load(Relaxed),
                                                         "bastion: TRUNK ROUTE PROFILE — the trunk's routes \
                                                          against their straight lines, and where their \
                                                          nodes went"
@@ -34411,6 +34451,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         false
                                     } else {
                                         true
+                                    }
+                                })
+                                // ★ W10-d: every leg is walked before it is
+                                // assumed -- a segment through a wall sends
+                                // the route to the exact pump.
+                                .filter(|wps| {
+                                    let solid = |q: Vec3<i32>| terrain.get(q).map(|b| b.is_solid()).unwrap_or(false);
+                                    match trunk_crossing_segment(&solid, wps) {
+                                        None => true,
+                                        Some(i) => {
+                                            let r = TRUNK_ROUTES_REJECTED_CROSSING
+                                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+                                                + 1;
+                                            if r.is_power_of_two() {
+                                                info!(
+                                                    segment = i,
+                                                    from = ?wps[i],
+                                                    to = ?wps[i + 1],
+                                                    waypoints = wps.len(),
+                                                    rejected_crossing = r,
+                                                    "bastion: TRUNK ROUTE REJECTED (crossing) — a leg's straight \
+                                                     line passes through a solid; the exact pump paths it"
+                                                );
+                                            }
+                                            false
+                                        },
                                     }
                                 });
                                 if let Some(wps) = trunked {
@@ -53879,6 +53945,28 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ W10-d pinned: a fence mid-way on a flat leg is crossed; a one-block
+    /// step at the far end is not; an open leg is not; the first crossing
+    /// segment of a route is named. Planted defect: the height not following
+    /// the segment (the step read as a wall) -> red.
+    #[test]
+    fn every_leg_is_walked_before_it_is_assumed() {
+        let a = Vec3::new(0, 0, 10);
+        let b = Vec3::new(6, 0, 10);
+        let fence = |c: Vec3<i32>| c.x == 3 && c.y == 0 && c.z == 10;
+        assert!(segment_crosses_solid(&fence, a, b), "a fence at feet height mid-way");
+        let head_fence = |c: Vec3<i32>| c.x == 3 && c.y == 0 && c.z == 11;
+        assert!(segment_crosses_solid(&head_fence, a, b), "a fence at head height mid-way");
+        let up = Vec3::new(6, 0, 11);
+        let step = |c: Vec3<i32>| c.x == 6 && c.y == 0 && c.z == 10;
+        assert!(!segment_crosses_solid(&step, a, up), "a one-block step at the far end is a step");
+        assert!(!segment_crosses_solid(&|_| false, a, b), "an open leg");
+        let route = [a, b, Vec3::new(12, 0, 10), Vec3::new(18, 0, 10)];
+        let wall = |c: Vec3<i32>| c.x == 15 && c.y == 0 && (c.z == 10 || c.z == 11);
+        assert_eq!(trunk_crossing_segment(&wall, &route), Some(2), "the third leg crosses");
+        assert_eq!(trunk_crossing_segment(&|_| false, &route), None, "nothing crosses");
     }
 
     /// ★ W10-a-c pinned: nothing pending searches; a pending Fill is
