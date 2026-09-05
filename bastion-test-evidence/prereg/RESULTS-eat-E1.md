@@ -87,3 +87,23 @@ read runs on b1 (the 160-day arm, restarted 02:59 on the pair;
 `wait-e1f-b1.sh`): the STARVING census at day 1, `no_food_found`, the
 item-reach lines, against b1's W9 day 1 (starving 1 at the census,
 meals 47, shunned 13).
+
+Day 1 on b1 (03:36; the pair carries W9, W9-b and E1-f):
+
+| read | b1 W9 day 1 | b1 E1-f day 1 |
+|---|---|---|
+| meals / no_food_found / targets_shunned | 47 / 0 / 13 | 47 / 0 / 11 |
+| STARVING at the last census | 1 | 1 (uid 122, `EatFrom … Traveling`) |
+| cooked_today / food_stock | 60 / 3,944 | 77 / 4,042 |
+| works (lane None) / travel per claim | 325 / 30.8 (control 481 / 30.2) | 411 / 33.2 |
+| EMBED WATCH / stall probes / rejected (solid) | 12 / -- / 4,096+ | 25 / 67 / 2,048 |
+| house placed / panics | -- / 0 | 6 / 0 |
+
+The reach gate costs nothing (no food search fails, the starving read
+is the same single walker) and shows no benefit of its own on this
+arm: the starving tail it was aimed at was the wedge, closed by W9.
+The gate stays on (it refuses an item a body cannot stand beside, which
+W9's world no longer offers often). E1-f holds. The rise in stall
+probes (67) and embeds (25, the terrace class) belongs to W9-b's
+sidestep and W10-b's cliff; the work recovered to 85% of the control
+on this arm.

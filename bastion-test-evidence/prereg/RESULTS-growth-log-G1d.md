@@ -328,6 +328,15 @@ summary (the store filter misses the town's stores). Not evidenced by
 this row: private shelves (they come back into the general store),
 bags, a save taken mid-delivery.
 
+R3 landed as 6126ef4001 (03:17; its first chain refused on
+`rtsim/src/generate/mod.rs`, which builds the rtsim data with every
+field named -- the initializer gained `bastion_store_items`, and the
+resume chain passed check and pin; staged 03:29). Falsified at the
+commit: the store filter dropped (road litter saved) turned
+`a_kept_world_keeps_its_larder` red at `bastion_jobs.rs:53116`
+(03:33); the tree restored clean. The eighth restart test runs on b3
+from 03:30; its section follows.
+
 Also seen on that boot, an instrument gap and not a defect:
 `HOUSEHOLDS` prints only when a bed assignment changed that pass
 (`assigned > 0 || released > 0`), so a restored boot with a settled

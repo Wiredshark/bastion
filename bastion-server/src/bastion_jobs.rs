@@ -1290,6 +1290,22 @@ pub static TRUNK_NODES_LIFTED: core::sync::atomic::AtomicU64 =
 /// had no standable cell in reach (a tile centre inside a wall line).
 pub static TRUNK_NODES_SIDESTEPPED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+/// ★ W9-i: the trunk's routes, profiled. Lifts split by direction (a node
+/// lifted UP onto something is the wall-top question); the walked length
+/// and the straight line summed in hundredths of a block so the detour
+/// ratio is a measurement, not a guess.
+pub static TRUNK_NODES_LIFTED_UP: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_NODES_LIFTED_DOWN: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_PROFILE_ROUTES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_PROFILE_NODES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_PROFILE_LEN_X100: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_PROFILE_STRAIGHT_X100: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 pub static TRUNK_ROUTES_REJECTED_SOLID: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 pub static COMMITTED_GLIDE_DROPS: core::sync::atomic::AtomicU64 =
@@ -1690,6 +1706,29 @@ pub(crate) fn trunk_node_z(walkable: impl Fn(i32) -> bool, z0: i32) -> Option<i3
 /// world the same route.
 pub(crate) const TRUNK_SIDESTEP_ORDER: [(i32, i32); 8] =
     [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)];
+
+/// ★ W9-i: a route's walked length and its straight line, xy, in
+/// hundredths of a block. Fewer than two nodes: nothing walked, no line.
+pub(crate) fn route_profile(wps: &[Vec3<i32>]) -> (u64, u64) {
+    if wps.len() < 2 {
+        return (0, 0);
+    }
+    let len: f64 = wps
+        .windows(2)
+        .map(|w| {
+            let dx = (w[1].x - w[0].x) as f64;
+            let dy = (w[1].y - w[0].y) as f64;
+            (dx * dx + dy * dy).sqrt()
+        })
+        .sum();
+    let (a, b) = (wps[0], wps[wps.len() - 1]);
+    let straight = {
+        let dx = (b.x - a.x) as f64;
+        let dy = (b.y - a.y) as f64;
+        (dx * dx + dy * dy).sqrt()
+    };
+    ((len * 100.0).round() as u64, (straight * 100.0).round() as u64)
+}
 
 pub(crate) fn trunk_node_fix(
     walkable: impl Fn(Vec3<i32>) -> bool,
@@ -33738,6 +33777,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                                 1,
                                                                 core::sync::atomic::Ordering::Relaxed,
                                                             );
+                                                            // ★ W9-i: which way.
+                                                            if q.z > wp.z {
+                                                                TRUNK_NODES_LIFTED_UP.fetch_add(
+                                                                    1,
+                                                                    core::sync::atomic::Ordering::Relaxed,
+                                                                );
+                                                            } else {
+                                                                TRUNK_NODES_LIFTED_DOWN.fetch_add(
+                                                                    1,
+                                                                    core::sync::atomic::Ordering::Relaxed,
+                                                                );
+                                                            }
                                                         } else {
                                                             TRUNK_NODES_SIDESTEPPED.fetch_add(
                                                                 1,
@@ -33750,6 +33801,46 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                         trunk_solid_nodes
                                                             .set(trunk_solid_nodes.get() + 1);
                                                     },
+                                                }
+                                            }
+                                            // ★ W9-i: THE ROUTE PROFILE. The town's
+                                            // work fell by more than half when the
+                                            // wedge closed and the counters cannot say
+                                            // whether the longer trips are honest
+                                            // (around walls instead of through them)
+                                            // or a regression (nodes lifted onto wall
+                                            // tops, zigzags beside them). Measured on
+                                            // every trunk route before the filters,
+                                            // reported per 1,024.
+                                            {
+                                                use core::sync::atomic::Ordering::Relaxed;
+                                                let (len_x100, straight_x100) = route_profile(&wps);
+                                                let n = TRUNK_PROFILE_ROUTES.fetch_add(1, Relaxed) + 1;
+                                                TRUNK_PROFILE_LEN_X100.fetch_add(len_x100, Relaxed);
+                                                TRUNK_PROFILE_STRAIGHT_X100
+                                                    .fetch_add(straight_x100, Relaxed);
+                                                TRUNK_PROFILE_NODES.fetch_add(wps.len() as u64, Relaxed);
+                                                if n % 1024 == 0 {
+                                                    let l = TRUNK_PROFILE_LEN_X100.load(Relaxed) as f64 / 100.0;
+                                                    let st =
+                                                        TRUNK_PROFILE_STRAIGHT_X100.load(Relaxed) as f64 / 100.0;
+                                                    info!(
+                                                        routes = n,
+                                                        mean_nodes = TRUNK_PROFILE_NODES.load(Relaxed) as f64
+                                                            / n as f64,
+                                                        mean_len = l / n as f64,
+                                                        mean_straight = st / n as f64,
+                                                        detour_ratio = if st > 0.0 { l / st } else { 0.0 },
+                                                        lifted_up = TRUNK_NODES_LIFTED_UP.load(Relaxed),
+                                                        lifted_down = TRUNK_NODES_LIFTED_DOWN.load(Relaxed),
+                                                        sidestepped = TRUNK_NODES_SIDESTEPPED.load(Relaxed),
+                                                        rejected_solid =
+                                                            TRUNK_ROUTES_REJECTED_SOLID.load(Relaxed),
+                                                        rejected_dz = TRUNK_ROUTES_REJECTED.load(Relaxed),
+                                                        "bastion: TRUNK ROUTE PROFILE — the trunk's routes \
+                                                         against their straight lines, and where their \
+                                                         nodes went"
+                                                    );
                                                 }
                                             }
                                             wps.push(
@@ -53060,6 +53151,19 @@ mod tests {
         assert_eq!(trunk_node_z(|_| false, 174), None, "inside a structure: nothing in reach, the route is rejected");
         assert_eq!(trunk_node_z(|z| z == 185, 181), None, "four up is a wall, not a step");
         assert_eq!(trunk_node_z(|z| z == 181 || z == 183, 181), Some(181), "level wins over up");
+    }
+
+    /// ★ W9-i pinned: a route's profile is its walked length against its
+    /// straight line; fewer than two nodes is nothing. Planted defect: the
+    /// straight line reported as the length -> the 3-4-5 case goes red.
+    #[test]
+    fn a_route_profile_is_its_length_against_its_line() {
+        let r = vec![Vec3::new(0, 0, 181), Vec3::new(3, 0, 181), Vec3::new(3, 4, 182)];
+        assert_eq!(route_profile(&r), (700, 500), "walked 3 + 4 along a 5 line: hundredths of a block, xy only");
+        assert_eq!(route_profile(&[]), (0, 0), "no route");
+        assert_eq!(route_profile(&[Vec3::new(1, 1, 1)]), (0, 0), "one node: nothing walked");
+        let straight = vec![Vec3::new(0, 0, 0), Vec3::new(6, 0, 0), Vec3::new(12, 0, 0)];
+        assert_eq!(route_profile(&straight), (1200, 1200), "a straight road: ratio one");
     }
 
     /// ★ W9-b pinned: a node whose column is a wall moves to the first
