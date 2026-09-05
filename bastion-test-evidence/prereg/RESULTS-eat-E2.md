@@ -822,6 +822,29 @@ house (the shelf is one cell beside the FIRST bed; a sleeper in the
 second bed, or upstairs, fails a radius) -- registered below once
 the reach's producer is read.
 
+### E2-j night 1 on b2 (pair 98d548575d, read 18:22 at hour 6 of day 1): FAILED ITS OWN CLAUSE
+
+The bars as registered: EatFrom/Waiting at 16-20 at most 3 an hour
+-- PASSED (0, 0, 0, 2, 2; was 11); EatFrom/Traveling at 16-20 not
+above 12 an hour -- FAILED (6, 12, 20, 22, 28; the E2-i1 pair read
+5, 7, 7 at 18-20): the clause "falsified if EatFrom/Traveling
+doubles (the spread walks too far)" fired. Meals day 1: 46 (bar 45,
+passed). The night, which the row said it would leave unchanged:
+NIGHT MEAL AT HOME 33 (E2-i1 pair: 14) and arrivals to private
+shelves before the sweep 50 (45), general 27 -- better; but
+EatFrom/Waiting 12, 14, 16 at hours 21-23 and 17, 19, 14, 16 at
+0-3 (E2-i1 pair: none before hour 4), in-bed starving 5, 17, 21,
+24 (7, 8, 7, 16), distinct starving sleepers 5 (2), NIGHT SHELF
+EMPTY 17 (Refused 14, Empty 3), no_food_found 414 (184). The queue
+the row cleared from the evening re-formed at the night shelves.
+Disposition: E2-j does not stand as written. E2-j-b (registered
+below) keeps the spread but bounds it to the store: an unreserved
+stack beats a reserved one only within SPREAD_REACH of the nearest
+admissible stack; queued ahead of E2-l so the night rows read on
+the bounded pick. The reader's own EatFrom/Waiting-by-hour python
+block died on an unterminated string (a heredoc-eaten newline); the
+hour table above is from the census block, which printed.
+
 ### E2-g-b night 2 on b1 (pair 7d28997261, read 18:04 at hour 6 of day 2): WORSE THAN NIGHT 1
 
 In-bed starving at hours 0-3: 16, 34, 56, 73 samples (night 1: 7,
@@ -846,6 +869,63 @@ Check clean, the pin green, both halves staged 17:58, shipped to
 lab-bin 17:59. The falsifier (the walk home from noon) went RED at
 18:01, the tree restored clean. The b1 reader (`wait-e2gc-b1.sh`)
 restarts b1 after E2-g-b's night-2 read and reads nights 1-2.
+
+## E2-j-b, registered 18:33 (keyed on the W12-b stage; ahead of E2-l, E2-k, E2-i2)
+
+THE SPREAD STAYS WITHIN THE STORE. E2-j's order (reservations, then
+distance) with no bound sent eaters across town to any unreserved
+pile: Traveling at 18-20 tripled while the evening queue cleared.
+Now `eat_pick_key(reserved, dist2, nearest_dist2, uid)` = (band,
+reserved.min(8), dist2, uid), band 0 when the stack's distance is
+within SPREAD_REACH (12 blocks) of the nearest admissible stack's;
+`pick_within_store` collects the admissible stacks, bounds by the
+nearest, picks by the key. Pin `the_spread_stays_within_the_store`
+(reserved and two off beats unreserved and thirty off; beyond reach
+the less reserved first; the picker keeps the eater at the near
+store and spreads within it; nothing: none) and the E2-j pin
+re-stated; planted: the reach unbounded (x1000), red. Prediction
+(b2 fresh, `wait-e2jb-b2.sh`, after W12-b's day-1 read; night 1 at
+hour 6): Traveling at 18-20 at most 12 an hour (20, 22, 28 / 5, 7,
+7); Waiting at 16-20 at most 4 (E2-j 0-2; before 11); Waiting at
+21-3 at most 6 (12-19); in-bed starving at 0-3 at most 16 (24);
+distinct starving sleepers at most 3 (5 / 2); NIGHT MEAL AT HOME at
+least 25 (33 / 14); meals day 1 at least 45. Falsified if Traveling
+at 18-20 stays above 16, or the evening Waiting returns above 8, or
+NIGHT MEAL AT HOME falls under 20. Rejected: withdrawing E2-j
+outright (its evening bar passed and the night meals doubled); a
+reach of 30 (across town on this world); reservations ignored
+beyond reach. NOT evidenced: night 2; the night Waiting's cause
+(E2-i2); b1's evening. The E2-l chain was re-keyed behind this row
+and the dry tree rebuilt in the order W12-a, W12-b, E2-j-b, E2-l,
+E2-k, E2-i2.
+
+## E2-l, registered 18:16 (keyed on the W12-b stage, the end of the chain, before the binary; ahead of E2-k and E2-i2)
+
+THE WALK HOME IS NOT WORK. On the E2-g-b run (b1, pair 7d28997261)
+the eaters' SUPPER CARRIED HOME claims fell at DAY SCHEDULE hours 13
+(1), 14 (5) and 15 (3), none at 16-21: ROW 27's door
+(`work_claims_open`) refuses every colonist outside the Work block
+before the scorer runs, so the Leisure half of every supper window
+(E2-g 12-21, E2-g-b 15-21, E2-g-c 14-21) never produced a claim,
+and the windows' differences were their Work hours only. Now
+`claims_admit(block, own_supper_pending)`: Work always; Leisure when
+a supper load bound for the claimant's own shelf is still unclaimed;
+Sleep never; through the leisure door every other job is zero.
+Witness THE WALK HOME OPENS (colonist, hour, opened). Pin
+`the_walk_home_is_not_work`; planted: Leisure always open, red.
+Prediction (b1 fresh, `wait-e2l-b1.sh`, after E2-g-c's night-1 read;
+night 1 at hour 6): Leisure-hour SUPPER CARRIED HOME claims at least
+15 (0 on every pair); THE WALK HOME OPENS at least 20; arrivals to
+private shelves at least 40; SUPPER CARRIED HOME at least 30; NIGHT
+MEAL AT HOME at least 10; distinct starving sleepers at most 4;
+in-bed starving at most 12 an hour at hours 0-3; works at least 420.
+Falsified if the Leisure claims stay 0, or works fall under 400, or
+colonists claim anything but their own load in Leisure (the reader
+counts every leisure-hour claim). Rejected: opening Leisure for all
+hauls; a self-job at the whistle; the haulers alone. NOT evidenced:
+night 2; the night watch's own Leisure; E2-g-c's 14-15 (its own
+read, the pair before). The queue was reordered W12-a, W12-b, E2-l,
+E2-k, E2-i2 and the dry tree rebuilt from HEAD in that order.
 
 ## E2-i2, registered 18:02 (keyed on the E2-k stage, the end of the chain, before the binary)
 

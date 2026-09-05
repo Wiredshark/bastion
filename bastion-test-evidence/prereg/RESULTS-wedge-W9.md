@@ -1227,6 +1227,37 @@ re-claimed 8. A real loop, a modest count: the bodies' stalls (56)
 are the root and W12-a/b come first; a bench for the same claimant
 after a TimedOut fetch is the candidate if the loop survives them.
 
+### W12-a landed (64d42eb0cb, staged 18:20)
+
+Check clean, the pin green, both halves staged 18:20 and shipped to
+lab-bin 18:21. The chain's symbol-name marker read 0 (release
+binaries carry no symbol names); the binary was verified by its
+witness string instead: "SEARCH TARGET MOVED TO A STAND" present
+once in the staged and the shipped server. The falsifier (the stand
+never sought) went RED at 18:24, the tree restored clean. The b2
+reader restarted b2 on the pair at 18:24 after E2-j's night-1 read;
++4, +10, day 1 and day 2 follow.
+
+W12-a +4 on b2 (read 18:28, hour 11 of day 0): PUMP delivered_path
+267, delivered_unreachable 0, unreachable_open 0 (the W12-i2 pair at
++10: 17 of 17 open); UNREACHABLE APPROACH 0; DOOR PROBE 0; EMBED
+WATCH 4 (writers: chaser-hold 1, chaser-pure-glide 2,
+chaser-refused-rock 1); STALL BLAMED 0; pump pending max 45, worst
+max_wait 344, mean 33; arrivals 359; stuck 0, panics 0. SEARCH
+TARGET MOVED fired 2,048 times by +4 -- not the twenty the row
+expected: the moved targets are the general store's own cells
+((7648..7655, 6354..6355, 182), the seed rows) and the stands are
+their neighbours at the same z or one up ((7647, 6353, 183); (7648,
+6355, 182); (7649, 6354, 182)...). The store's item cells sit at z
+181 (DELIVERED pos) and the searches aim at z 182, one above the
+standable cell, which colonist_walkable refuses (no ground under
+it) while the old exact search accepted as a goal (it delivered
+paths to them before). So the witness counts a convention gap (the
+search's target is the item cell plus one) rather than unwalkable
+objects; the moves are one cell and harmless, and the outcome bars
+hold at +4. The +1 convention is read before anything is built on
+it; the +10 and day-1 reads decide the row.
+
 ## W12-b, registered 17:50 (keyed on the W12-a stage, the end of the chain, before the binary)
 
 The shared unreachable target (7672, 6426, 182) is the minimum

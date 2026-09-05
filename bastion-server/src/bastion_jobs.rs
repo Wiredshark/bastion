@@ -10043,9 +10043,16 @@ pub fn deposit_chunks(amount: u32, cap: u32) -> Vec<u32> {
     out
 }
 
+pub(crate) static DROP_CELLS_SPREAD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ W12-b pinned: THE DROP CELL SPREADS FROM THE CENTRE OUT, NOT FROM THE
+/// CORNER IN. A candidate must be standable; among the least filled the
+/// nearest to the centre wins (squared xy distance, ties by (y, x)); the
+/// centre when it is among them; nothing standable leaves the centre.
 pub(crate) fn stockpile_drop_cell_spread(
     surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
     occupancy: impl Fn(i32, i32) -> u32,
+    standable: impl Fn(Vec3<i32>) -> bool,
     r: &Region,
 ) -> Vec3<i32> {
     let centre = stockpile_drop_cell_impl(&surface_z, r);
@@ -10054,6 +10061,7 @@ pub(crate) fn stockpile_drop_cell_spread(
         for x in r.min.x..=r.max.x {
             if let Some(sz) = surface_z(x, y, r.min.z)
                 && sz + 1 <= centre.z + SPREAD_MAX_RISE
+                && standable(Vec3::new(x, y, sz + 1))
             {
                 cells.push((occupancy(x, y), Vec3::new(x, y, sz + 1)));
             }
@@ -10065,7 +10073,32 @@ pub(crate) fn stockpile_drop_cell_spread(
     if cells.iter().any(|(o, c)| *o == min && *c == centre) {
         return centre;
     }
-    cells.iter().find(|(o, _)| *o == min).map(|(_, c)| *c).unwrap_or(centre)
+    // ★ W12-b: the FIRST least-filled cell in row order was the region's
+    // minimum corner -- 33 blocks off a 54 x 42 store's centre and, at the
+    // village's edge, not a cell the A* admits (every unreachable target on
+    // both arms was that one corner). The nearest wins.
+    let chosen = cells
+        .iter()
+        .filter(|(o, _)| *o == min)
+        .min_by_key(|(_, c)| {
+            let d = Vec2::new(c.x - centre.x, c.y - centre.y);
+            (d.x * d.x + d.y * d.y, c.y, c.x)
+        })
+        .map(|(_, c)| *c)
+        .unwrap_or(centre);
+    let n = DROP_CELLS_SPREAD.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+    if n <= 8 || n.is_power_of_two() {
+        let d = chosen - centre;
+        info!(
+            centre = ?centre,
+            cell = ?chosen,
+            dist2 = d.x * d.x + d.y * d.y,
+            candidates = cells.len(),
+            spread = n,
+            "bastion: DROP CELL SPREAD FROM THE CENTRE OUT — the centre holds a load; the nearest standable least-filled cell takes the next"
+        );
+    }
+    chosen
 }
 
 /// ★ GUARDS PATROL (Ben, live 2026-09-01: "guards need to patrol the
@@ -19797,6 +19830,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             stockpile_drop_cell_spread(
                                 |x, y, h| column_surface_z(&terrain, x, y, h),
                                 |x, y| occ.get(&(x, y)).copied().unwrap_or(0),
+                                |c| common::path::colonist_walkable(&*terrain, c),
                                 r,
                             )
                         })
@@ -19828,6 +19862,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 let cell = stockpile_drop_cell_spread(
                                     |x, y, h| column_surface_z(&terrain, x, y, h),
                                     |x, y| occ.get(&(x, y)).copied().unwrap_or(0),
+                                    |c| common::path::colonist_walkable(&*terrain, c),
                                     r,
                                 );
                                 let mut it = comp::Item::new_from_asset_expect(&def);
@@ -29174,7 +29209,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         })
                         // Ground, not painted top — see `stockpile_drop_cell`:
                         // max.z above a house snapped the goal onto the ROOF.
-                        .map(|(z, r)| (*z, stockpile_drop_cell_spread(|x, y, h| column_surface_z(&terrain, x, y, h), &occ, r)))
+                        .map(|(z, r)| (*z, stockpile_drop_cell_spread(|x, y, h| column_surface_z(&terrain, x, y, h), &occ, |c| common::path::colonist_walkable(&*terrain, c), r)))
                     else {
                         continue;
                     };
@@ -39107,6 +39142,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                         let cell = stockpile_drop_cell_spread(
                                                             |x, y, h| column_surface_z(&terrain, x, y, h),
                                                             |x, y| occ_map.get(&(x, y)).copied().unwrap_or(0),
+                                                            |c| common::path::colonist_walkable(&*terrain, c),
                                                             r,
                                                         );
                                                         let item = if can_split {
@@ -39427,6 +39463,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     job.pos = stockpile_drop_cell_spread(
                                         |x, y, h| column_surface_z(&terrain, x, y, h),
                                         |x, y| occ_map.get(&(x, y)).copied().unwrap_or(0),
+                                        |c| common::path::colonist_walkable(&*terrain, c),
                                         r,
                                     );
                                     board
@@ -54310,33 +54347,34 @@ mod tests {
         // Without any general store: identity, everyone may use the shelf.
         assert!(store_admits(&shelf, &houses, None, false));
 
-        // Spread: a 3x3 zone whose centre holds 5 units drops elsewhere, first row-major.
+        // Spread: a 3x3 zone whose centre holds 5 units drops beside it: the
+        // nearest free cell, ties by (y, x) (W12-b; the corner was the old tie rule).
         let zone = Region { min: Vec3::new(0, 0, 5), max: Vec3::new(2, 2, 5) };
         let flat = |_x: i32, _y: i32, _h: i32| Some(5);
         let centre_full = |x: i32, y: i32| if (x, y) == (1, 1) { 5 } else { 0 };
-        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, &zone), Vec3::new(0, 0, 6));
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| true, &zone), Vec3::new(1, 0, 6));
         // All empty: the centre, as before.
-        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, &zone), Vec3::new(1, 1, 6));
+        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, |_| true, &zone), Vec3::new(1, 1, 6));
         // Everything but one cell full: that cell.
         let one_free = |x: i32, y: i32| if (x, y) == (2, 1) { 0 } else { 3 };
-        assert_eq!(stockpile_drop_cell_spread(flat, one_free, &zone), Vec3::new(2, 1, 6));
+        assert_eq!(stockpile_drop_cell_spread(flat, one_free, |_| true, &zone), Vec3::new(2, 1, 6));
         // Unstandable cells are skipped.
         let hole = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { None } else { Some(5) };
-        assert_eq!(stockpile_drop_cell_spread(hole, centre_full, &zone), Vec3::new(1, 0, 6));
+        assert_eq!(stockpile_drop_cell_spread(hole, centre_full, |_| true, &zone), Vec3::new(1, 0, 6));
         // ★ A raised cell (a crate top two blocks up) is skipped; one block up is fine.
         let crate_top = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { Some(7) } else { Some(5) };
-        assert_eq!(stockpile_drop_cell_spread(crate_top, centre_full, &zone), Vec3::new(1, 0, 6), "the crate top is not a drop cell");
+        assert_eq!(stockpile_drop_cell_spread(crate_top, centre_full, |_| true, &zone), Vec3::new(1, 0, 6), "the crate top is not a drop cell");
         let step = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { Some(5) } else { Some(5) };
-        assert_eq!(stockpile_drop_cell_spread(step, centre_full, &zone), Vec3::new(0, 0, 6), "floor level: unchanged");
+        assert_eq!(stockpile_drop_cell_spread(step, centre_full, |_| true, &zone), Vec3::new(1, 0, 6), "floor level: unchanged");
         // A uniformly raised zone is its own floor: it spreads like a flat one.
         let all_raised = |_x: i32, _y: i32, _h: i32| Some(8);
-        assert_eq!(stockpile_drop_cell_spread(all_raised, centre_full, &zone), Vec3::new(0, 0, 9), "a uniformly raised zone spreads at its own level");
+        assert_eq!(stockpile_drop_cell_spread(all_raised, centre_full, |_| true, &zone), Vec3::new(1, 0, 9), "a uniformly raised zone spreads at its own level");
         // A zone whose min.z lies BELOW its built floor (the barn) still spreads: the reference is the centre cell.
         let sunk = Region { min: Vec3::new(0, 0, 1), max: Vec3::new(2, 2, 1) };
-        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, &sunk), Vec3::new(0, 0, 6), "min.z below the floor: the floor cells still count");
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| true, &sunk), Vec3::new(1, 0, 6), "min.z below the floor: the floor cells still count");
         // 1x1: identity with the old chooser.
         let one = Region { min: Vec3::new(7, 7, 5), max: Vec3::new(7, 7, 5) };
-        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 9, &one), stockpile_drop_cell_impl(flat, &one));
+        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 9, |_| true, &one), stockpile_drop_cell_impl(flat, &one));
     }
 
     /// ★ GUARDS PATROL, the instrument pinned: entrances are road cells at
@@ -55086,6 +55124,23 @@ mod tests {
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.1, 0.0), 1000 + OVERRIDE_WALL_TICKS), Failed, "still: failed");
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.8, 0.0), 1000 + OVERRIDE_WALL_TICKS), Anchor, "moved: re-anchor");
         assert_eq!(override_verdict(a, node, feet, 1000 + OVERRIDE_ANCHOR_STALE_TICKS + 1), Anchor, "stale");
+    }
+
+    /// ★ W12-b pinned: the least-filled cells are taken from the centre out
+    /// (nearest first, ties by (y, x)), never the corner while a nearer cell
+    /// is free; a cell no body can stand in is not a drop cell; nothing
+    /// standable leaves the centre. Planted defect: the distance ignored
+    /// (the corner first) -> red.
+    #[test]
+    fn the_drop_cell_spreads_from_the_centre_out() {
+        let zone = Region { min: Vec3::new(0, 0, 5), max: Vec3::new(4, 4, 5) };
+        let flat = |_x: i32, _y: i32, _h: i32| Some(5);
+        let centre_full = |x: i32, y: i32| if (x, y) == (2, 2) { 5 } else { 0 };
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| true, &zone), Vec3::new(2, 1, 6), "the nearest free cell, ties by (y, x)");
+        assert_ne!(stockpile_drop_cell_spread(flat, centre_full, |_| true, &zone), Vec3::new(0, 0, 6), "never the corner while a nearer cell is free");
+        let south_blocked = |c: Vec3<i32>| c != Vec3::new(2, 1, 6);
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, south_blocked, &zone), Vec3::new(1, 2, 6), "a cell no body stands in is skipped");
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| false, &zone), Vec3::new(2, 2, 6), "nothing standable: the centre as before");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable
