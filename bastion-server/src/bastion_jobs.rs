@@ -8288,14 +8288,27 @@ pub(crate) fn supper_stack_pick(amounts: &[u32], need: u32) -> Option<usize> {
         .filter(|(_, n)| **n >= need && **n <= SUPPER_STACK_MAX)
         .min_by_key(|(i, n)| (**n, *i))
         .map(|(i, _)| i);
-    covering.or_else(|| {
-        amounts
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| **n > 0 && **n <= SUPPER_STACK_MAX)
-            .max_by_key(|(i, n)| (**n, std::cmp::Reverse(*i)))
-            .map(|(i, _)| i)
-    })
+    covering
+        .or_else(|| {
+            amounts
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| **n > 0 && **n <= SUPPER_STACK_MAX)
+                .max_by_key(|(i, n)| (**n, std::cmp::Reverse(*i)))
+                .map(|(i, _)| i)
+        })
+        // ★ E2-h: no stack within the cap -- the smallest of all; the pickup
+        // splits a load of PICKUP_LOAD_UNITS off it (E2-f), so the carry
+        // stays bounded whatever the stack (b1, E2-e day 1: 23 houses
+        // skipped for want of a small stack).
+        .or_else(|| {
+            amounts
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| **n > 0)
+                .min_by_key(|(i, n)| (**n, *i))
+                .map(|(i, _)| i)
+        })
 }
 
 /// ★ E2-e pinned: a supper load is an errand -- it claims at the
@@ -54928,15 +54941,16 @@ mod tests {
         assert_eq!(errand_priority(2, false), 2, "a plain job keeps its base");
     }
 
-    /// ★ E2-d pinned: for two units among [800, 3, 2, 50] the 2 is taken;
-    /// for five, nothing covers under the cap and the 3 is a partial supper;
-    /// among [800] alone nothing is taken, whatever the need. Planted
-    /// defect: the cap removed (the 800 taken for two) -> red.
+    /// ★ E2-d pinned, E2-h re-stated: for two units among [800, 3, 2, 50]
+    /// the 2 is taken; for five, nothing covers under the cap and the 3 is
+    /// a partial supper; among [800, 900] alone the 800 is taken (the
+    /// pickup splits a load off it, E2-f); among nothing, nothing. Planted
+    /// defect: the last fallback refusing (the [800, 900] case None) -> red.
     #[test]
-    fn a_supper_stack_is_never_bigger_than_the_supper() {
+    fn a_supper_stack_is_small_or_split_at_the_pickup() {
         assert_eq!(supper_stack_pick(&[800, 3, 2, 50], 2), Some(2), "the smallest covering stack");
         assert_eq!(supper_stack_pick(&[800, 3, 2, 50], 5), Some(1), "nothing covers: the largest under the cap");
-        assert_eq!(supper_stack_pick(&[800], 2), None, "a larder stack is not a supper");
+        assert_eq!(supper_stack_pick(&[800, 900], 2), Some(0), "no small stack: the smallest of all, split at the pickup");
         assert_eq!(supper_stack_pick(&[], 2), None, "nothing to take");
     }
 

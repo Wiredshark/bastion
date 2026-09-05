@@ -1085,6 +1085,62 @@ over the bar of 10 and max 27 under 30; sum 56 far under 600; eat
 timeouts 0; streaks 0; the failure count 2 is on pace for the low
 end of 20-200. The day-1-hour-12 read decides.
 
+**Day 1 hour 12 (the defect's window; read 15:09): W11 FAILED.**
+OVERRIDE FAILED AT A WALL failed=128 (in the 20-200 band), but of
+the twelve witnessed lines ELEVEN carry had_route=false (uid 943 six
+times, uid 54 five, uid 57 once; stuck at failure 1.06-7.06 -- the
+crumb-reset clock throughout); CHASER GLIDE OVERRIDE 586 lines;
+override loops 82, wall-seconds p50 2.9, p90 27.0 (bar 10), max
+246.4 (bar 30 -- one loop as long as the E2-d pair's worst), sum
+1,061 (bar 600), loops over thirty seconds 6 (E2-d: 20); TimedOut
+releases eat 40, build 18, cook 10 (E2-d pair: eat 20, build 8);
+starving EatFrom/Traveling streaks 23, p50 7, p90 25, max 47 (E2-d:
+18 / 5 / 18 / 38); EMBED WATCH 10; working=4 moving=34 idle=12 at
+hour 12; PUMP CENSUS pending=18 mean_wait=49 max_wait=122; arrived
+1,030; panics 0. The mechanism fires by the feet as designed, and
+its ACTION is wrong for eleven of twelve: with no committed path the
+chaser's head is the rtsim chaser's own route (fetch legs and eat
+legs walk that way, `committed.or_else(snap.route_head)`), and
+dropping `path_cache` changes nothing, so the same body fails every
+three seconds at the same node (uid 943 x6) for as long as before.
+The eat timeouts (40 against 20) are not a clean comparison: this
+pair carries E2-e's supper traffic and W10-g's glide and the E2-d
+pair carried neither; no control with W11 absent was read on this
+world. Disposition: the verdict stands, the escape must also reset
+the chaser's own route (W11-b, registered below once the chaser's
+API is read); the eat-timeout doubling is NOT evidenced as W11's.
+
+### W12-i1 landed (79ff47e087, staged 15:09)
+
+Check clean, the pin green, both halves staged 15:09 and in lab-bin
+from 15:10. The falsifier (Boxed at three of four) and the b2 reader
+(`wait-w12i1-b2.sh`: after E2-f's second-day read, a fresh b2; the
+unreachable split summed over the census lines and the first eight
+witnesses at +4, +10, days 1-2) run from the stage; the E2-h chain
+keys on it. The falsifier went red and restored clean at 15:12.
+
+## W11-b, registered 15:15 (keyed on the E2-h stage, the end of the chain, before the binary)
+
+`wall_escape_targets(had_route) -> (had_route, true)`: on Failed the
+committed route goes when there is one, and the chaser's own route
+goes always (`Chaser::drop_route`, which by the W2c rule escalates
+the next search's tier); CHASER_ROUTES_DROPPED_AT_WALL counted and
+carried on the witness as chaser_dropped. The prior art is in this
+file: the W2 stall arm drops the chaser's route the same way. Pin
+`the_wall_escape_drops_the_chasers_own_route`; planted: the chaser
+kept, red. Prediction (b1 fresh, `wait-w11b-b1.sh`, day 1 hour 12):
+loops p90 under 10 s and max under 30 s (27.0 / 246.4), sum under
+400 (1,061), loops over thirty seconds 0 (6), a body failing at most
+3 times (6), chaser_dropped at least 80% of failed, TimedOut eat
+under 15 (40 on this pair, its own number to beat), streaks p90
+under 12 (25). Falsified if the loops persist with chaser_dropped
+high (the next search puts the head back in the same wall: the node
+placement is the defect, W12's question) or the failures triple.
+Rejected: dropping the chaser on every override tick; banning the
+wall cell before the tier has been tried (the W2 bans are the row
+after this one). NOT evidenced: the eat timeouts' own cause on this
+pair; a control read with W11 absent.
+
 ## W12-i1, registered 13:45 (keyed on the E2-g stage, the end of the chain, before the binary)
 
 An instrument row from W10-i1's census (seven of ten deliveries
