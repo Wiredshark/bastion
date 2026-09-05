@@ -1047,6 +1047,18 @@ search from indoors finds no way out; then the fix at the admission
 read: EMBED WATCH 8 at +10 (4 chaser-pure-glide, 4
 bridge-refused-rock), routes=3072, arrived 474, working=8, p95 476.
 
+Day 1 (hour 0 of day 1, read 13:54; 116 census lines): the last
+PUMP CENSUS pending=10 oldest_wait=60 delivered_path=0
+delivered_unreachable=0 delivered_exhausted=13 mean_wait=58
+max_wait=60 -- at night the pump's deliveries are all
+BudgetExhausted (the detour lane's tiers, a different population
+from the day's fill searches; the reader prints the last line, and
+the day's sum is W12-i1's reader's job); over the day the worst
+max_wait 442 and the largest pending 47 stand. EMBED WATCH 10 (6
+chaser-pure-glide, 4 bridge-refused-rock; idx0 8) -- W10-g's second
+replicate under its bar of 12; routes=6144, arrived 637, working=26
+at hour 0, p95 700 us (at the bar), starving 2, panics 0.
+
 ### W11 landed (af70369a91, staged 13:55)
 
 Check clean, the pin green, both halves staged 13:55. The falsifier
@@ -1056,6 +1068,22 @@ override loops' wall-seconds, the eat timeouts, the starving streaks
 at +10 and at day 1 hour 12) run from the stage; the E2-f chain keys
 on it. The falsifier went red and restored clean at 13:58; lab-bin
 carries the pair from 13:55.
+
+b1 +10 min (hour 13 of day 0, boot 14:17, read 14:27): OVERRIDE
+FAILED AT A WALL 2 (uid 57 with stuck=7.06 and had_route=true, uid 54
+with stuck=1.76 and had_route=false -- the second after three
+seconds of pushing with the stall clock at 1.8 s: the clock the
+crumbs reset, read rather than inferred); CHASER GLIDE OVERRIDE 44
+lines; override loops 12, wall-seconds p50 3.1, p90 13.3, max 27.0,
+sum 56, loops over thirty seconds 0 (the E2-d pair at day 1 hour 12:
+113, 4.5 / 68.9 / 246.1, sum 2,627, 20); TimedOut releases haul 2,
+cook 1, build 4, EAT 0 (E2-d: eat 20); starving EatFrom/Traveling
+streaks 0 (18); EMBED WATCH 5; PUMP CENSUS pending=13 mean_wait=28
+max_wait=79; working=11 moving=33 stuck=0; arrived 445; panics 0.
+Against the bars at +10 (the window runs to day 1 hour 12): p90 13.3
+over the bar of 10 and max 27 under 30; sum 56 far under 600; eat
+timeouts 0; streaks 0; the failure count 2 is on pace for the low
+end of 20-200. The day-1-hour-12 read decides.
 
 ## W12-i1, registered 13:45 (keyed on the E2-g stage, the end of the chain, before the binary)
 

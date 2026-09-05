@@ -446,6 +446,17 @@ Rejected: a bigger load (the chain, the backlog and the deposit cell
 already agree on 16); splitting at the store's drop instead (the walk
 is where the larder is invisible).
 
+### E2-f landed (5175194ed1, staged 14:20)
+
+Check clean (common and bastion-server), the pin green, both halves
+built fresh (the common change rebuilds both) and staged 14:20. The
+falsifier (the Whole test inverted) and the b2 reader
+(`wait-e2f-b2.sh`: after W10-i1's day-1 read, a fresh b2; the bags,
+the holders, the food frame, the hauls and the meals at +10 and day
+1) run from the stage; the E2-g chain keys on it. The falsifier (the
+Whole test inverted) went red and restored clean at 14:25; lab-bin
+carries the pair from 14:21.
+
 ## E2-e, registered 11:15 (keyed on the T1-b stage, the end of the chain, before the binary)
 
 The claim scoring gave a supper load the Haul base priority, then a
@@ -523,6 +534,49 @@ throughput is the limit (35 hauls a day for seven haulers), and
 more loads will not deliver. The next lever is not the lane: the
 eater carries its own supper home (E2-g, registered below once the
 round's destination and the home lookup are read).
+
+### E2-e after night 2 (b1, read at day 2 hour 6, 14:16)
+
+SUPPER ROUND day=1 hour=12 houses=? shortfall=98 loads=31 no_shelf=0
+**skipped_no_small=23** stale_removed=18; arrivals to private shelves
+before the sweep 16 (day 0: 21); SWEPT day=2 swept=17; NIGHT MEAL AT
+HOME 9 cumulative (night 2 added ONE); no_food_found 6,823 on the
+day-2 census (day 1: 204); meals 119; YEAR day=2 food_stock 3,610 /
+3,655 / 22.6 days (day 1: 4,052; down 442 against ~150 eaten).
+in_bags through day 1 and night 2: 510, 549, 490, 518, 472, 472,
+469, 467 -- about five hundred units in bags all day (E2-f's class;
+E2-f is building). Starving by clock, night 2: RestAt/Arrived 18, 24,
+15 at hours 1-3 (night 1: 14, 17, 22); distinct starving sleepers 7
+cumulative (night 2 added two); the EVENING rush EatFrom/Traveling
+14, 20, 24, 24, 16 at hours 15-19 (night 1's evening: 6-9) -- the
+town hunts food in the evening because the larder is in bags and the
+shelves are bare. **E2-e FAILS its night bars on both nights**; its
+mechanism holds (the loads that are claimed arrive: 16 of 31), and
+the round found nothing to mint for 23 houses: `supper_stack_pick`
+returns None when no store stack is within SUPPER_STACK_MAX (8) --
+by day 1 the store's small stacks are gone and the big ones (harvest,
+consolidation) are all that is left. Two rows carry it: E2-f (the
+pickup splits a load, so the carry is bounded whatever the stack) and
+E2-h below (the round may then pick any stack).
+
+## E2-h, registered 14:20 (keyed on the W12-i1 stage, the end of the chain, before the binary)
+
+`supper_stack_pick`: the smallest stack covering the need within
+the cap; else the largest under the cap; else -- new -- the SMALLEST
+stack of all (E2-f's pickup splits a load of sixteen off it; the
+carry stays bounded and the shelf's deposit cell caps at sixteen).
+skipped_no_small becomes a count of "no food in the store at all".
+Pin: E2-d's `the_supper_load_is_a_small_stack` gains the case
+[800, 900] -> index 0 (800, the smallest of all) and [] -> None;
+planted: the fallback removed (None again), red. Prediction (b2
+fresh on the pair, day 1's round at hour 12): skipped_no_small 0
+(23) with loads = the short houses (31 with 23 skipped -> 49-54);
+private-shelf arrivals before the sweep at least 30; with E2-f in
+the pair, no supper carry above 16 units. Falsified if the picks
+land on the largest stacks and the store's food frame drops by more
+than the loads' units (the split did not bound the carry).
+Rejected: raising SUPPER_STACK_MAX (the cap was the E2-d fix for the
+whole-stack strand; E2-f bounds the carry at the pickup instead).
 
 ### E2-e's second replicate: b2 on the W10-i1 pair (65db6d4cab, which carries E2-e), day-1 line at 13:52
 

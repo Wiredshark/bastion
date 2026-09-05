@@ -8217,7 +8217,7 @@ pub const SUPPER_UNITS_PER_HEAD: u32 = 2;
 /// over the last two Work hours at about a minute a load carry roughly
 /// thirty; b1 has 32 shelved houses to stock. A round is one afternoon's
 /// errand, not a warehouse move -- the shortfall caps it below this.
-pub const SUPPER_ROUND_LOADS_MAX: u32 = 36;
+pub const SUPPER_ROUND_LOADS_MAX: u32 = 64;
 pub(crate) static SUPPER_LOADS_MINTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) static SHELVES_ADDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -8276,6 +8276,14 @@ pub(crate) fn supper_stack_pick(amounts: &[u32], need: u32) -> Option<usize> {
 pub(crate) fn errand_priority(base: u8, is_errand: bool) -> u8 {
     if is_errand { base.max(5) } else { base }
 }
+
+/// ★ E2-g pinned: a supper load bound for the claimant's OWN shelf claims
+/// at 6 -- above the haulers' errand -- whatever the claimant's lane
+/// (a miner's Haul base is zero); any other job keeps its base.
+pub(crate) fn own_supper_priority(base: u8, own_supper: bool) -> u8 {
+    if own_supper { 6 } else { base }
+}
+pub(crate) static OWN_SUPPER_CLAIMS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// ★ E2 pinned: the shelf's shortfall against its household -- zero when
 /// the shelf already holds enough, never negative.
@@ -14494,6 +14502,9 @@ pub struct JobBoard {
     /// ★ E2-e: the supper loads on the board (errands: first claim, no clump
     /// penalty); cleaned on remove_job.
     pub supper_jobs: std::collections::HashSet<JobId>,
+    /// ★ E2-g: each supper load's eaters (the bed owners of its house);
+    /// an eater claims its own load at 6. Cleaned on remove_job.
+    pub supper_eaters: HashMap<JobId, Vec<Uid>>,
     /// ★ W10-i1: the pump's deliveries and steps since the last census.
     pub pump_census: PumpCensus,
     /// ★ W11: the glide override's anchor per body -- (node, feet, tick)
@@ -16673,6 +16684,7 @@ impl JobBoard {
         self.par_jobs.remove(&id);
         self.chop_crew.remove(&id);
         self.supper_jobs.remove(&id);
+        self.supper_eaters.remove(&id);
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
             && let Some(rid) = j.reservation
@@ -28302,7 +28314,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         (0u32, 0u32, 0u32, 0u32, 0u32);
                     // ★ E2-c: the emptiest shelves first, so the houses a
                     // capped round misses one evening come first the next.
-                    let mut short: Vec<(u32, Vec3<i32>, common::bastion::ZoneId, u32)> = Vec::new();
+                    let mut short: Vec<(u32, Vec3<i32>, common::bastion::ZoneId, u32, Vec<Uid>)> = Vec::new();
                     for h in &houses {
                         let heads = board
                             .beds
@@ -28327,11 +28339,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let need = supper_shortfall(heads, have, SUPPER_UNITS_PER_HEAD);
                         shortfall_total += need;
                         if need > 0 {
-                            short.push((have, h.min, z, need));
+                            // ★ E2-g: the house's eaters -- its bed owners.
+                            let eaters: Vec<Uid> = board
+                                .beds
+                                .iter()
+                                .filter(|(p, sl)| sl.owner.is_some() && h.contains_point_xy(**p))
+                                .filter_map(|(_, sl)| sl.owner)
+                                .collect();
+                            short.push((have, h.min, z, need, eaters));
                         }
                     }
                     short.sort_by_key(|(have, hmin, ..)| (*have, hmin.x, hmin.y, hmin.z));
-                    for (_, _, z, mut need) in short {
+                    for (_, _, z, mut need, eaters) in short {
                         while need > 0 && loads < SUPPER_ROUND_LOADS_MAX {
                             // ★ E2-d: a supper is a small stack -- never a
                             // stack over the cap, whatever the need.
@@ -28366,6 +28385,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 affordance: AffordanceClass::Untargeted,
                             });
                             board.supper_jobs.insert(id);
+                            board.supper_eaters.insert(id, eaters.clone());
                             loads += 1;
                             need = need.saturating_sub(n);
                         }
@@ -47376,8 +47396,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // ★ BATCHED HAULS (see `haul_admits`): a worker stays on the
                 // work; the haul waits for shift end, a full backlog, or a
                 // hauler. Refusals are counted and printed daily.
+                // ★ E2-g: SUPPER IS CARRIED HOME BY ITS EATER -- the load bound
+                // for the claimant's own shelf claims at 6, before the haul
+                // gate, the guard door and the zero skip below.
+                let own_supper = board.supper_eaters.get(&id).is_some_and(|v| v.contains(uid));
+                let priority = own_supper_priority(priority, own_supper);
                 let priority = if job.work == common::bastion::WorkType::Haul
                     && priority > 0
+                    && !own_supper
                     && std::env::var_os("BASTION_NO_HAUL_GATE").is_none()
                     && !haul_admits(
                         board.professions.get(uid).copied()
@@ -47394,6 +47420,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 };
                 // ★ THE GUARD DOOR (see `guard_door_shuts`).
                 let priority = if priority > 0
+                    && !own_supper
                     && guard_door_cfg
                     && guard_door_shuts(
                         board.professions.get(uid).copied() == Some(common::bastion::WorkType::Guard),
@@ -47906,6 +47933,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     board.last_claimed_work.insert(*uid, (work, time.0));
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
+                if board.supper_eaters.get(&job_id).is_some_and(|v| v.contains(uid)) {
+                    let n = OWN_SUPPER_CLAIMS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                    if n <= 8 || n.is_power_of_two() {
+                        info!(
+                            job = job_id,
+                            colonist = %uid,
+                            own_supper_claims = n,
+                            "bastion: SUPPER CARRIED HOME — the eater claimed the load bound for its own shelf"
+                        );
+                    }
+                }
                 // The committed stance (B15/FR12, generalized by task #64):
                 // the standable set's pinned offset, computed per-job by
                 // `job_stance` from `job.affordance` in the loop above — no
@@ -54784,6 +54822,16 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2-g pinned: an eater's own supper load claims at 6 whatever the
+    /// base (a zero base included); any other job keeps its base. Planted
+    /// defect: the lift removed -> red.
+    #[test]
+    fn supper_is_carried_home_by_its_eater() {
+        assert_eq!(own_supper_priority(0, true), 6, "a zero base (a miner's haul) is lifted to 6");
+        assert_eq!(own_supper_priority(5, true), 6, "the haulers' errand 5 is below the eater's 6");
+        assert_eq!(own_supper_priority(0, false), 0, "another's supper keeps the base");
     }
 
     /// ★ E2-e pinned: an errand claims at the player-order priority whatever
