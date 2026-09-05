@@ -947,6 +947,27 @@ timeout; a boot-only exception; more pump slices before the pump has
 a witness (W10-i1). NOT evidenced: why the approach search from a
 house delivers no route (W10-i1's census answers it); the door's part.
 
+### W10-g landed (1ad1870abc, staged 12:35; falsifier red 12:38; the town moves)
+
+Check clean, the pin green, both halves staged 12:35 and in lab-bin
+from 12:36; the falsifier (the hold restored) went red and restored
+clean at 12:38. b2 fresh on the pair, read at tick 912 (12:37, thirty
+seconds in): "job claimed" 21, "arrived at job site" 32, GLIDE HELD 0,
+GLIDE INTO A WALL (counted) glides_into_wall=16,384 (a wall on the
+next six blocks of the line for about a third of colonist-ticks --
+the base rate that the hold turned into a frozen town), claim census
+colonists_seen=1 assigned=1, CHASER GLIDE OVERRIDE 1, EMBED WATCH 0.
+The two held pairs had 0 and 0 at hour 13. +4 min (hour 11, read
+12:41): "job claimed" 173 (bar 40), "arrived at job site" 239 (bar
+20 by +10), EXPERIENCE working=8 moving=41 stuck=0 (bar 8 at +10),
+TRUNK ROUTE PROFILE routes=1024 detour_ratio=1.63 rejected_solid=407
+rejected_dz=438 rejected_crossing=157 (bar: one line), EMBED WATCH 2
+(both writer_site="chaser-pure-glide", the class W11 takes at the
+wall; bar 12 by day 1), GLIDE INTO A WALL glides_into_wall=65,536,
+p95 400 us (bar 700), panics 0. **W10-g PASSED its +4 bars**; the
++10 and day-1 reads (embeds by day, the wall count as the base rate)
+follow. The E2-e pair (with this rule) restarts b1 at ~13:05.
+
 ## W10-i1, registered 11:30 (keyed on the E2-e stage, the end of the chain, before the binary)
 
 An instrument row. The pump had no witness: W10-e's failure was read

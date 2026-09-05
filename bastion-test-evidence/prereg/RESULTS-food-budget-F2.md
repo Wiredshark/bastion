@@ -450,3 +450,17 @@ waiting for the bounds; sites outside) do not depend on walking, but
 the mission arrivals and exchanges do, and those reads are void on
 this pair. The mission bars are re-read on the E2-e pair (with W10-g
 in it) when b1 restarts for E2-e.
+
+b1 +15 min on the pair (read 12:29, hour 18 of day 0): "trade price
+book WAITS for the settlement bounds" once at tick 23 (the bar); the
+first real refresh sites=10 (T1's 11 with home is gone); one mission
+minted (job 330, food_stock 3,700 ratio 1.0, selling wood) with
+site=(7280, 7824, 182) outside the bounds (7518-7873 x 6068-6549)
+and mission_stand=(7280, 7824, 182) -- THE SAME CELL as the site, so
+the "stand differs from the site cell" bar is NOT met as written
+(the stand rule keeps the site when the site cell itself stands;
+the bar assumed it never does); arrivals 0 and exchanges 0, void on
+a town that does not walk. Disposition: the bounds bar and the
+sites bar pass; the stand bar is re-stated for the E2-e read (the
+stand is standable and within two blocks of the site); the arrival
+and exchange bars are read there.

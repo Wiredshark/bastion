@@ -8152,6 +8152,13 @@ pub(crate) fn supper_stack_pick(amounts: &[u32], need: u32) -> Option<usize> {
     })
 }
 
+/// ★ E2-e pinned: a supper load is an errand -- it claims at the
+/// player-order priority whatever the lane's base; any other job keeps
+/// its base.
+pub(crate) fn errand_priority(base: u8, is_errand: bool) -> u8 {
+    if is_errand { base.max(5) } else { base }
+}
+
 /// ★ E2 pinned: the shelf's shortfall against its household -- zero when
 /// the shelf already holds enough, never negative.
 pub(crate) fn supper_shortfall(heads: u32, shelf_units: u32, per_head: u32) -> u32 {
@@ -8176,9 +8183,9 @@ pub(crate) fn shift_end_hour(
 ) -> bool {
     let block = |h: u32| colonist_schedule_block(night_watch, uid, h % 24);
     let work_now = matches!(block(hour), ScheduleBlock::Work);
-    work_now
-        && (!matches!(block(hour + 1), ScheduleBlock::Work)
-            || !matches!(block(hour + 2), ScheduleBlock::Work))
+    // ★ E2-e: the last FOUR Work hours (12-15 on the default schedule) --
+    // two were not enough for thirty-six loads.
+    work_now && (1..=4).any(|d| !matches!(block(hour + d), ScheduleBlock::Work))
 }
 
 pub(crate) fn supper_hour(
@@ -14366,6 +14373,9 @@ pub struct JobBoard {
     pub supper_round_day: Option<i64>,
     /// ★ E2-d: the day the unclaimed supper loads were last swept.
     pub supper_stale_day: Option<i64>,
+    /// ★ E2-e: the supper loads on the board (errands: first claim, no clump
+    /// penalty); cleaned on remove_job.
+    pub supper_jobs: std::collections::HashSet<JobId>,
     /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
     /// `None` when there is nothing left to replay.
     ///
@@ -16539,6 +16549,7 @@ impl JobBoard {
         self.idle_breaks.remove(&id);
         self.par_jobs.remove(&id);
         self.chop_crew.remove(&id);
+        self.supper_jobs.remove(&id);
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
             && let Some(rid) = j.reservation
@@ -28231,6 +28242,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 reservation: Some(rid),
                                 affordance: AffordanceClass::Untargeted,
                             });
+                            board.supper_jobs.insert(id);
                             loads += 1;
                             need = need.saturating_sub(n);
                         }
@@ -47132,6 +47144,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     priority
                 };
+                // ★ E2-e: a supper load is the haulers' first claim.
+                let is_errand = board.supper_jobs.contains(&id);
+                let priority = errand_priority(priority, is_errand);
                 // 2. TOP-DOWN — one level of height outweighs any plausible in-dig travel
                 //    distance AND the dispersion penalty, so the shallowest frontier clears
                 //    first (DF-style layer- by-layer). RELATIVE to the colonist and CLAMPED: an
@@ -47152,9 +47167,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     0.0
                 };
-                let clump_penalty = if claimed_pos
-                    .iter()
-                    .any(|c| (c.x - job.pos.x).abs() < 2 && (c.y - job.pos.y).abs() < 2)
+                let clump_penalty = if !is_errand
+                    && claimed_pos
+                        .iter()
+                        .any(|c| (c.x - job.pos.x).abs() < 2 && (c.y - job.pos.y).abs() < 2)
                 {
                     12.0
                 } else {
@@ -54387,6 +54403,16 @@ mod tests {
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
     }
 
+    /// ★ E2-e pinned: an errand claims at the player-order priority whatever
+    /// its base; a plain job keeps its base. Planted defect: the lift removed
+    /// -> red.
+    #[test]
+    fn a_supper_load_is_the_haulers_first_claim() {
+        assert_eq!(errand_priority(2, true), 5, "a low base is lifted");
+        assert_eq!(errand_priority(7, true), 7, "a high base is kept");
+        assert_eq!(errand_priority(2, false), 2, "a plain job keeps its base");
+    }
+
     /// ★ E2-d pinned: for two units among [800, 3, 2, 50] the 2 is taken;
     /// for five, nothing covers under the cap and the 3 is a partial supper;
     /// among [800] alone nothing is taken, whatever the need. Planted
@@ -54421,10 +54447,10 @@ mod tests {
     #[test]
     fn the_supper_round_runs_at_shift_end() {
         let nw = HashSet::new();
-        for h in [14u32, 15] {
-            assert!(shift_end_hour(&nw, None, h), "hour {h}: the last two Work hours");
+        for h in [12u32, 13, 14, 15] {
+            assert!(shift_end_hour(&nw, None, h), "hour {h}: the last four Work hours (E2-e)");
         }
-        for h in [13u32, 16, 20, 3] {
+        for h in [11u32, 16, 20, 3] {
             assert!(!shift_end_hour(&nw, None, h), "hour {h}: not shift end");
         }
     }
