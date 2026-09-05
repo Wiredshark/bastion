@@ -470,6 +470,17 @@ arrivals stay under 10 (the errand is dropped on the way), or if field
 hauls fall to zero while the errands run (the lift starves the lane's
 own work).
 
+### E2-e landed (b10b561b59, staged 12:58)
+
+Check clean, both pins green (its own and E2-b's re-stated for the
+four-hour window), both halves staged 12:58. The pair carries W10-g
+(the glide back) and T1-b. The falsifier (the lift removed) and the
+b1 reader (`wait-e2e-b1.sh`: the round's hour, the errands' arrivals
+to shelves before 16, the sweep, night meals and the starving, read
+at hour 6 of days 1 and 2) run from the stage; b1 leaves the held
+T1-b pair for this one. The falsifier (the lift removed) went red and
+restored clean at 13:01; lab-bin carries the pair from 12:59.
+
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under
 28 RestAt/Arrived over a comparable window) and FED at the day

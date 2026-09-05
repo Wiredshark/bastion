@@ -299,6 +299,51 @@ pub struct PendingSearch {
     pub target: Vec3<f32>,
     pub cfg: common::path::TraversalConfig,
     pub lane: SearchLane,
+    /// ★ W10-i1: the tick this search was enqueued (its wait is read at
+    /// delivery).
+    pub since: u64,
+}
+
+/// ★ W10-i1: what the pump delivered.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PumpOutcome {
+    Path,
+    Unreachable,
+    Exhausted,
+}
+
+/// ★ W10-i1 pinned: the pump's deliveries since the last census -- by
+/// kind, with the wait (ticks from enqueue to delivery) summed and its
+/// maximum kept -- and the steps it took.
+#[derive(Default, Clone, Debug)]
+pub struct PumpCensus {
+    pub delivered_path: u32,
+    pub delivered_unreachable: u32,
+    pub delivered_exhausted: u32,
+    pub wait_sum: u64,
+    pub wait_max: u64,
+    pub steps: u32,
+}
+
+impl PumpCensus {
+    pub fn note(&mut self, outcome: PumpOutcome, wait: u64) {
+        match outcome {
+            PumpOutcome::Path => self.delivered_path += 1,
+            PumpOutcome::Unreachable => self.delivered_unreachable += 1,
+            PumpOutcome::Exhausted => self.delivered_exhausted += 1,
+        }
+        self.wait_sum += wait;
+        self.wait_max = self.wait_max.max(wait);
+    }
+
+    pub fn delivered(&self) -> u32 {
+        self.delivered_path + self.delivered_unreachable + self.delivered_exhausted
+    }
+
+    pub fn mean_wait(&self) -> u64 {
+        let n = u64::from(self.delivered());
+        if n == 0 { 0 } else { self.wait_sum / n }
+    }
 }
 
 pub enum SearchLane {
@@ -14376,6 +14421,8 @@ pub struct JobBoard {
     /// ★ E2-e: the supper loads on the board (errands: first claim, no clump
     /// penalty); cleaned on remove_job.
     pub supper_jobs: std::collections::HashSet<JobId>,
+    /// ★ W10-i1: the pump's deliveries and steps since the last census.
+    pub pump_census: PumpCensus,
     /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
     /// `None` when there is nothing left to replay.
     ///
@@ -34927,6 +34974,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     + Vec3::new(0.5, 0.5, 0.0),
                                                 cfg,
                                                 lane: SearchLane::Fill,
+                                                since: tick.0,
                                             },
                                         );
                                     } else {
@@ -34945,6 +34993,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             target,
                                             cfg,
                                             lane: SearchLane::Fill,
+                                            since: tick.0,
                                         },
                                     );
                                 }
@@ -42057,6 +42106,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // ★ THE SEARCH PUMP: two slices per tick across all pending
         // searches, deterministic rotation, deliveries by lane.
         {
+            // ★ W10-i1: PUMP CENSUS -- what the pump did in the last 300
+            // ticks and how long its searches wait.
+            if tick.0 % 300 == 17 {
+                let c = std::mem::take(&mut board.pump_census);
+                let oldest_wait = board
+                    .path_searches
+                    .values()
+                    .map(|ps| tick.0.saturating_sub(ps.since))
+                    .max()
+                    .unwrap_or(0);
+                info!(
+                    tick = tick.0,
+                    pending = board.path_searches.len(),
+                    oldest_wait,
+                    delivered_path = c.delivered_path,
+                    delivered_unreachable = c.delivered_unreachable,
+                    delivered_exhausted = c.delivered_exhausted,
+                    mean_wait = c.mean_wait(),
+                    max_wait = c.wait_max,
+                    steps = c.steps,
+                    "bastion: PUMP CENSUS — the search pump's last 300 ticks: what is pending \
+                     and for how long, what was delivered and how long it waited"
+                );
+            }
             let keys: Vec<u64> = board.path_searches.keys().copied().collect();
             if !keys.is_empty() {
                 let rot = (tick.0 as usize) % keys.len();
@@ -42070,6 +42143,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         continue;
                     };
                     stepped += 1;
+                    board.pump_census.steps += 1;
                     match common::path::bastion_full_path_step(
                         &mut ps.search,
                         &*terrain,
@@ -42081,6 +42155,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             board.path_searches.insert(k, ps);
                         },
                         common::path::FullPathStep::Done(outcome) => {
+                            board.pump_census.note(
+                                match &outcome {
+                                    common::path::FullPathOutcome::Path(_) => PumpOutcome::Path,
+                                    common::path::FullPathOutcome::Unreachable => {
+                                        PumpOutcome::Unreachable
+                                    },
+                                    common::path::FullPathOutcome::BudgetExhausted => {
+                                        PumpOutcome::Exhausted
+                                    },
+                                },
+                                tick.0.saturating_sub(ps.since),
+                            );
                             let u = Uid(
                                 std::num::NonZeroU64::new(k).expect("uid nonzero"),
                             );
@@ -42276,6 +42362,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     target: to,
                     cfg,
                     lane: SearchLane::Detour { tier, job },
+                    since: tick.0,
                 });
             }
             continue;
@@ -54287,6 +54374,20 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ W10-i1 pinned: two deliveries waiting 10 and 30 ticks count two
+    /// (one path, one unreachable), sum 40, max 30, mean 20; a fresh census
+    /// reads zero. Planted defect: the maximum not kept -> red.
+    #[test]
+    fn the_pump_census_keeps_its_waits() {
+        let mut c = PumpCensus::default();
+        assert_eq!((c.delivered(), c.mean_wait(), c.wait_max), (0, 0, 0), "fresh: zero");
+        c.note(PumpOutcome::Path, 10);
+        c.note(PumpOutcome::Unreachable, 30);
+        assert_eq!(c.delivered(), 2, "two delivered");
+        assert_eq!((c.delivered_path, c.delivered_unreachable), (1, 1), "by kind");
+        assert_eq!((c.wait_sum, c.wait_max, c.mean_wait()), (40, 30, 20), "sum, max, mean");
     }
 
     /// ★ W10-g pinned (W10-f re-stated): the glide's next leg is the line

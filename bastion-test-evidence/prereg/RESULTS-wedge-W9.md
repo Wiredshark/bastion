@@ -968,6 +968,33 @@ p95 400 us (bar 700), panics 0. **W10-g PASSED its +4 bars**; the
 +10 and day-1 reads (embeds by day, the wall count as the base rate)
 follow. The E2-e pair (with this rule) restarts b1 at ~13:05.
 
++10 min (hour 14, read 12:47): "job claimed" 356, "arrived at job
+site" 450, EXPERIENCE working=6 moving=39 stuck=0 idle=4 (the bar of
+8 at +10 is NOT met at this one sample; +4 read 8; hour 14 is the
+shift's end and the day line's works decide), TRUNK ROUTE PROFILE
+routes=3072 detour_ratio=1.71 rejected_solid=1385 rejected_dz=1197
+rejected_crossing=429; FIRST LEG GATE routes=512 crossed=74
+stitched=70; EMBED WATCH 6 (5 chaser-pure-glide, 1
+bridge-refused-rock; idx0 1), STALL BLAMED 5, ROUTE FAULT 2; GLIDE
+INTO A WALL 262,144; p95 441 us; panics 0. Six embeds in seven game
+hours is on pace past the day-1 bar of 12: the glide-into-a-wall
+class is back at its W10-d rate, which is the rate W11 is built to
+take at the wall (W11 stages ~14:05). The day-1 read decides the bar.
+
+Day 1 (the day frame, hour 0 of day 1, read 13:04): EMBED WATCH 11
+(9 chaser-pure-glide, 2 bridge-refused-rock; idx0 6) against the bar
+of 12 and W10-d's 10; "job claimed" 419, "arrived at job site" 735;
+TRUNK ROUTE PROFILE routes=7168 detour_ratio=1.83 rejected_solid=3166
+rejected_dz=2698 rejected_crossing=1213; FIRST LEG GATE routes=1280
+crossed=122 stitched=114; STALL BLAMED 6, ROUTE FAULT 4; GLIDE INTO A
+WALL glides_into_wall=524,288 (the base rate: about a fifth of
+colonist-ticks over the day have solid on the next six blocks of the
+line); EXPERIENCE working=34 moving=7 stuck=0 idle=9; p95 487 us;
+starving 1; panics 0. **W10-g PASSED** (the one miss: working 6 at
+the +10 sample against 8, with 8 at +4 and 34 at the day line). The
+town is back to its W10-d shape with the wall counted; W11 takes the
+nine glide embeds at the wall.
+
 ## W10-i1, registered 11:30 (keyed on the E2-e stage, the end of the chain, before the binary)
 
 An instrument row. The pump had no witness: W10-e's failure was read
