@@ -7251,10 +7251,20 @@ pub(crate) enum FoundingCell {
     Bare,
     Ripe,
     Growing,
+    /// ★ F2c'-c: a worldgen crop or wild growth the colony has no item for
+    /// (flax, corn, green wheat, flowers, grass): cleared and planted like a
+    /// bare cell at founding. b1: 1,966 such cells, three whole fields.
+    Clearable,
+    /// Anything else standing on the cell (a scarecrow, a fence): kept.
     Foreign,
 }
 
-pub(crate) fn founding_cell_class(sprite: Option<SpriteKind>, growth: u8) -> FoundingCell {
+pub(crate) fn founding_cell_class(
+    sprite: Option<SpriteKind>,
+    growth: u8,
+    resource: Option<common::rtsim::TerrainResource>,
+) -> FoundingCell {
+    use common::rtsim::TerrainResource as R;
     match sprite {
         None | Some(SpriteKind::Empty) => FoundingCell::Bare,
         Some(s) if crop_roster_index(s).is_some() => {
@@ -7264,7 +7274,10 @@ pub(crate) fn founding_cell_class(sprite: Option<SpriteKind>, growth: u8) -> Fou
                 FoundingCell::Growing
             }
         },
-        Some(_) => FoundingCell::Foreign,
+        Some(_) => match resource {
+            Some(R::Plant | R::Flower | R::Grass | R::Vegetable | R::Fruit) => FoundingCell::Clearable,
+            _ => FoundingCell::Foreign,
+        },
     }
 }
 
@@ -18356,7 +18369,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let mut harvest_units = 0u32;
                             let mut founding_items: HashMap<String, u32> = HashMap::new();
                             let mut drawn_units = 0u32;
-                            let (mut growing, mut foreign) = (0u32, 0u32);
+                            let (mut growing, mut foreign, mut cleared) = (0u32, 0u32, 0u32);
                             let origin = Vec3::new(min_xy.x, min_xy.y, hint_z);
                             if std::env::var_os("BASTION_NO_FOUNDING_FIELDS").is_none() {
                                 for y in region.min.y..=region.max.y {
@@ -18376,10 +18389,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             continue;
                                         }
                                         let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
-                                        let class = founding_cell_class(crop.get_sprite(), g);
+                                        let class =
+                                            founding_cell_class(crop.get_sprite(), g, crop.get_rtsim_resource());
                                         // ★ F2c'-b: `Some(Empty)` is a BARE cell; it falls through to
                                         // the lived-in planting below instead of counting as cropped.
-                                        if let (Some(sprite), true) = (crop.get_sprite(), class != FoundingCell::Bare) {
+                                        // ★ F2c'-c: so does a Clearable one (a worldgen crop the colony
+                                        // has no item for): the town clears its fields at founding.
+                                        if class == FoundingCell::Clearable {
+                                            cleared += 1;
+                                        }
+                                        if let (Some(sprite), true) = (
+                                            crop.get_sprite(),
+                                            class != FoundingCell::Bare && class != FoundingCell::Clearable,
+                                        ) {
                                             // ★ F2c' THE FOUNDING HARVEST IS THE WHOLE FIELD: a ripe
                                             // roster crop of ANY kind is stocked at once and the cell
                                             // restarts sown with a clock (the town's field from now on).
@@ -18448,10 +18470,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     already_cropped = already,
                                     growing,
                                     foreign,
+                                    cleared,
                                     ripe,
                                     harvest_units,
                                     crop = ?plan.crop,
-                                    "bastion: FOUNDING FIELDS PLANTED — the town was here before you: its fields stand at every stage; the ripe ones are stocked at once (F2c': THE FOUNDING HARVEST IS THE WHOLE FIELD; F2c'-b: a bare cell is planted)"
+                                    "bastion: FOUNDING FIELDS PLANTED — the town was here before you: its fields stand at every stage; the ripe ones are stocked at once (F2c': THE FOUNDING HARVEST IS THE WHOLE FIELD; F2c'-b: a bare cell is planted; F2c'-c: a foreign crop is cleared and planted)"
                                 );
                             } else {
                                 cells = ((region.max.x - region.min.x + 1) * (region.max.y - region.min.y + 1)).max(0) as u32;
@@ -52339,12 +52362,29 @@ mod tests {
     #[test]
     fn an_empty_sprite_is_a_bare_founding_cell() {
         use common::terrain::SpriteKind as S;
-        assert_eq!(founding_cell_class(None, 0), FoundingCell::Bare, "no sprite");
-        assert_eq!(founding_cell_class(Some(S::Empty), 15), FoundingCell::Bare, "the Empty sprite is bare");
-        assert_eq!(founding_cell_class(Some(S::Tomato), FARM_GROWTH_MAX), FoundingCell::Ripe, "a ripe roster crop");
-        assert_eq!(founding_cell_class(Some(S::WheatYellow), 3), FoundingCell::Growing, "a growing roster crop");
-        assert_eq!(founding_cell_class(Some(S::WheatGreen), 15), FoundingCell::Foreign, "worldgen's green wheat is off the roster");
-        assert_eq!(founding_cell_class(Some(S::Scarecrow), 15), FoundingCell::Foreign, "a scarecrow");
+        use common::rtsim::TerrainResource as R;
+        assert_eq!(founding_cell_class(None, 0, None), FoundingCell::Bare, "no sprite");
+        assert_eq!(founding_cell_class(Some(S::Empty), 15, None), FoundingCell::Bare, "the Empty sprite is bare");
+        assert_eq!(founding_cell_class(Some(S::Tomato), FARM_GROWTH_MAX, Some(R::Vegetable)), FoundingCell::Ripe, "a ripe roster crop");
+        assert_eq!(founding_cell_class(Some(S::WheatYellow), 3, Some(R::Plant)), FoundingCell::Growing, "a growing roster crop");
+        assert_eq!(founding_cell_class(Some(S::Scarecrow), 15, None), FoundingCell::Foreign, "a scarecrow stays");
+        assert_eq!(founding_cell_class(Some(S::FenceWoodWoodland), 15, None), FoundingCell::Foreign, "a fence stays");
+    }
+
+    /// ★ F2c'-c pinned: a worldgen crop the colony has no item for (flax,
+    /// corn, green wheat, a flower, grass) is CLEARABLE at founding -- planted
+    /// like a bare cell; a scarecrow is not. Planted defect: make plants
+    /// Foreign -> red.
+    #[test]
+    fn a_worldgen_crop_the_colony_cannot_use_is_cleared_at_founding() {
+        use common::rtsim::TerrainResource as R;
+        use common::terrain::SpriteKind as S;
+        assert_eq!(founding_cell_class(Some(S::Flax), 15, Some(R::Plant)), FoundingCell::Clearable, "flax");
+        assert_eq!(founding_cell_class(Some(S::Corn), 15, Some(R::Plant)), FoundingCell::Clearable, "corn");
+        assert_eq!(founding_cell_class(Some(S::WheatGreen), 15, Some(R::Plant)), FoundingCell::Clearable, "worldgen's green wheat");
+        assert_eq!(founding_cell_class(Some(S::BlueFlower), 15, Some(R::Flower)), FoundingCell::Clearable, "a flower");
+        assert_eq!(founding_cell_class(Some(S::LongGrass), 15, Some(R::Grass)), FoundingCell::Clearable, "grass");
+        assert_eq!(founding_cell_class(Some(S::Scarecrow), 15, None), FoundingCell::Foreign, "a scarecrow is not cleared");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.

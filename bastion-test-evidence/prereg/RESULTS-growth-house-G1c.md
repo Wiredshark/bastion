@@ -250,3 +250,29 @@ priorities from the argmax and may build beside the drafted five (the
 known edge: up to 10 on a cap of 6). The draft took five cooks; the
 kitchen cap admits two at a time, so the four cooks left are enough
 (read `cooked_today` at day 2 against day 1's 90 on b1 to be sure).
+
+| read | placed (day) | placed (total) | remaining | builders | z | releases (day 1) |
+|---|---:|---:|---:|---:|---|---|
+| day 2 (hour 0) | 96 | 118 | 1,813 | 10 | 180:27 181:32 182:49 183:10 | 118 Completed, 18 TimedOut, 60 Other |
+
+Day 1 placed 113 cells (the control day placed 62): the crew works, and
+the house is now a fifteen-day house at this rate. Per builder the
+rate FELL, 31 to about 12 cells a builder-day, with ten builders on a
+25 x 13 plot (the drafted five, the four zero-hour names, and 142) and
+18 timed-out releases -- crowding on the scaffold is the likely price
+of the over-count, which makes the zero-hour naming the next row
+rather than a footnote: the argmax's switch rule (`c * 2 >= inc_c *
+3`) also renames any colonist with an idle day to Build (0 >= 0), so
+the over-count recurs every morning. Sweeps: 3 Build cells at the
+plot's south edge, no longer in the plan's block map; negligible.
+
+#### P-zero-hours, registered before its binary
+
+`argmax_verdict(top_count, incumbent)`: a zero top keeps the incumbent;
+a zero top with no incumbent takes `scarcest_lane(lane_pop)`; a
+positive top switches as before. Bars for the next b3 house-day boot on
+its pair: `BUILD DRAFT SIZED named_build == builders_now + drafted`
+(no zero-hour names), the crew reads 6 (7 at most), day-1 placement
+near 180 with the per-builder rate back toward 30. Falsified if
+named_build exceeds builders_now by three or more, or the crew reads
+above seven. Planted defect for the pin: `(0, Some(_)) => Switch`.
