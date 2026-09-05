@@ -14244,6 +14244,10 @@ pub struct JobBoard {
     /// deferred-delivery queue), which lands it in the town's store when the
     /// chunks load.
     pub pending_store_restore: Vec<(Vec3<i32>, String, u32)>,
+    /// ★ T1: jobs whose B5 arrival line has printed (cleared each day), so a
+    /// walker standing at a target it cannot close on prints once, not
+    /// every tick (5,682 lines from two missions on one boot).
+    pub arrival_logged: std::collections::HashSet<JobId>,
     /// ★ E2: the day the supper round last ran (None: never).
     pub supper_round_day: Option<i64>,
     /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
@@ -16899,6 +16903,35 @@ pub struct MineReadbackQueue(pub Vec<MineReadbackEntry>);
 /// twice now: pitread for the readback queue, chain11 cookdiag for this).
 #[derive(Default)]
 pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
+
+/// ★ T1: A TRADE MISSION GOES SOMEWHERE A BODY CAN STAND. The price book's
+/// site cell is `get_alt_approx + 2` at the site's origin -- inside the
+/// town hall, under a roof, whatever stands there -- and a walker carrying
+/// the lot stood 7.99 blocks from it re-arriving every tick, admitted by
+/// the arrival radius and refused by the sale's. The mission's target is
+/// the first cell a body can stand in, searched in a fixed ring order
+/// within TRADE_STAND_REACH of the site (the site itself if none), so the
+/// same site gives the same stand.
+pub const TRADE_STAND_REACH: i32 = 8;
+
+pub(crate) fn trade_mission_pos(site: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> bool) -> Vec3<i32> {
+    for r in 0..=TRADE_STAND_REACH {
+        for dx in -r..=r {
+            for dy in -r..=r {
+                if dx.abs() != r && dy.abs() != r {
+                    continue;
+                }
+                for dz in [0, 1, -1, 2, -2] {
+                    let c = site + Vec3::new(dx, dy, dz);
+                    if standable(c) {
+                        return c;
+                    }
+                }
+            }
+        }
+    }
+    site
+}
 
 /// ★ R3 (2026-09-05): A KEPT WORLD KEEPS ITS LARDER. Dropped items are
 /// entities and none survives a restart; the sixth restart test's restored
@@ -25355,6 +25388,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 })
                                 .map(|(item, _)| item.amount() as u32)
                                 .sum();
+                            // ★ T1: a new day, a fresh arrival ledger.
+                            board.arrival_logged.clear();
                             let harvested_today = std::mem::take(&mut board.harvested_today);
                             let cooked_today = std::mem::take(&mut board.cooked_today);
                             let matured_today = std::mem::take(&mut board.matured_today);
@@ -27479,7 +27514,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         player_ordered: false,
                         kind: common::bastion::JobKind::TradeMission { site, ratio },
                         work: common::bastion::WorkType::Haul,
-                        pos: site,
+                        // ★ T1: the stand beside the site, not the site's cell.
+                        pos: trade_mission_pos(site, |c| conn_standable(&*terrain, c)),
                         skill_floor: 0,
                         claimed_by: None,
                         suspended_for: None,
@@ -27512,6 +27548,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         ratio,
                         food_stock,
                         sell = sell_def,
+                        mission_stand = ?trade_mission_pos(site, |c| conn_standable(&*terrain, c)),
                         "bastion: ITEM 29 trade mission minted (food below par, a surplus good to sell)"
                     );
                 }
@@ -33755,6 +33792,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 "bastion: ITEM 14 patrol leg switch — heading for the other end"
                             );
                         }
+                        // ★ T1: once per job, not every tick a walker stands
+                        // at a target it cannot close on.
+                        if board.arrival_logged.insert(active.job) {
                         info!(
                             job = active.job,
                             // The arrival emit named the JOB but never the
@@ -33816,6 +33856,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }),
                             "bastion: colonist arrived at job site, working (B5)"
                         );
+                        }
                     } else {
                         if is_emergency_access
                             && fetch_steer.is_none()
@@ -53954,6 +53995,21 @@ mod tests {
         assert!(!larder_delivery_due(293, 70), "orders still waiting: hold");
         assert!(!larder_delivery_due(293, 2), "even two");
         assert!(!larder_delivery_due(0, 0), "nothing to deliver");
+    }
+
+    /// ★ T1 pinned: the mission stands on the first standable cell in ring
+    /// order within reach of the site; the site itself when nothing stands.
+    /// Planted defect: the site returned as it is -> red.
+    #[test]
+    fn a_trade_mission_stands_where_a_body_can() {
+        let site = Vec3::new(7696, 6288, 182);
+        let beside = |c: Vec3<i32>| c == Vec3::new(7699, 6288, 181);
+        assert_eq!(trade_mission_pos(site, beside), Vec3::new(7699, 6288, 181), "three east, one down: the stand");
+        assert_eq!(trade_mission_pos(site, |_| false), site, "nothing stands within reach: the site as before");
+        let itself = |c: Vec3<i32>| c == site;
+        assert_eq!(trade_mission_pos(site, itself), site, "the site stands: unchanged");
+        let far = |c: Vec3<i32>| c == Vec3::new(7696 + 9, 6288, 182);
+        assert_eq!(trade_mission_pos(site, far), site, "nine away is out of reach");
     }
 
     /// ★ R3 pinned: the larder snapshot is every item in a store cell,

@@ -135,6 +135,18 @@ paths on the eight-day arm fed no sleeper, since the night scan found
 none (b2's night 1 had no starving sleepers to feed: EatFrom/Traveling
 7 and 4 at hours 21-22, sleepers 0). Same mechanism, same failure.
 
+Night 2 on b1 (08:38, the day-2 line): the second round at day 1
+hour 20 (houses 50, shortfall 64, loads 12, no_shelf 18); 32 Haul
+arrivals during day 1 after the first round, and still NIGHT MEAL AT
+HOME 0 and private_units 0 at the day-2 line; the small hours read
+RestAt/Arrived 21 at hour 0, 27 at 1, 29 at 2, 46 at 3, then
+EatFrom/Traveling 38 at hour 4 (the sleepers get up and walk to eat).
+The night-1 loads were hauled in the morning and the shelves still
+hold nothing, so the hour is not the whole defect: the drop is. The
+haul's deposit path is read next; E2-b's live read (Haul arrivals
+after a shift-end round against private_units at the day line) names
+it either way.
+
 ## E2-b, registered 08:02 (keyed on the P-zero-hours-d stage, before the binary; T1 re-keyed behind it)
 
 `shift_end_hour(night_watch, uid, hour)`: Work now and Work does not
@@ -150,6 +162,50 @@ tonight's 16; at most one distinct starving sleeper with a shelf.
 Falsified if the loads mint and arrivals stay near 0 (the deposit
 refuses the private destination), or if the shelves fill and NIGHT
 MEAL AT HOME stays 0 (the night scan does not see the shelf's cell).
+
+Where the night-1 loads went (b1's E2 log, read 08:44): after the
+round, Haul arrivals by destination zone -- 68 (general) 22, 48
+(general) 3, and one each to zones 2, 11, 1, 0, 13 (private, 1-cell
+shelves) and 25 (general); `haul deposited` for those jobs 16 units.
+The supper hauls reached the shelves and dropped; at the day-2
+STORAGE CENSUS those five shelves read units=0. The food landed in
+the morning (the round's loads waited for the work day) and the
+household drew it during the day as an ordinary meal -- a private
+shelf admits its own household at any hour -- so by night the shelf
+was bare again. The deposit is not the defect; the hour is, as E2-b
+says.
+
+**Amendment to E2-b's prediction, before its read** (the binary
+exists, the first night has not): "private_units above 60 at the
+day-1 line" is withdrawn as a frame error -- the shelf is stocked at
+15, supper is eaten from it at 20-21, and the day line reads it at 0,
+so a working mechanism reads near zero there. The bars that stand:
+SUPPER ROUND at 14 or 15 with 20-36 loads; Haul arrivals to private
+zones after the round at least 15 before hour 16; and the OUTCOME --
+Sleep-block RestAt starving samples under a third of the E2 night
+(under 6 of 16) and at most one distinct starving sleeper with a
+shelf. NIGHT MEAL AT HOME above 5 stays as a secondary read (it fires
+only for a sleeper the scan wakes; a household that ate supper at
+home before bed does not need it).
+
+E2-b landed bcb0c2b60c at 08:40: check clean, pin green (1 passed),
+staged 08:40, shipped to lab-bin 08:41. Falsified at the commit: the
+Work test inverted turned the pin red (0 passed, 1 failed), tree
+restored clean at 08:43. The b1
+reader (`wait-e2b-b1.sh`: the round's hour and loads, Haul arrivals
+after it, private_units at the day line, NIGHT MEAL AT HOME, the
+starving by clock, at days 1-2) run from the stage.
+
+### E2-b live, b1 (bcb0c2b60c, boot 08:41)
+
+Early read at hour 15 (08:55): SUPPER ROUND day=0 hour=14 houses=49
+shortfall=66 loads=33 no_shelf=16 -- the round in the Work block with
+the cap no longer binding; one game hour later, Haul arrivals after
+the round to private shelves 6 (general 6), units deposited on
+private shelves 5, the rest of the 33 loads in flight. The window
+bar holds (14, loads 20-36); the arrivals bar (15 to private zones
+before hour 16) and the outcome (the first night's starving) read at
+the day-1 line.
 
 Prediction for the row that follows, registered now: after it, the
 Sleep-block STARVING samples fall below 10% of tonight's (281 -> under

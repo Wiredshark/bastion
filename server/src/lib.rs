@@ -8973,9 +8973,17 @@ impl Server {
             let data = rtsim.state().data();
             let index_res = ecs.read_resource::<IndexOwned>();
             let index = index_res.as_index_ref();
+            // ★ T1: the colony's own site is not a trading partner (the
+            // nearest priced site to the store was always home: two missions
+            // to (7696,6288) on one boot, 5,682 arrival lines, one walker
+            // frozen eight minutes at a cell inside a structure).
+            let home = ecs.read_resource::<bastion_jobs::JobBoard>().settlement_bounds;
             data.sites
                 .iter()
                 .filter_map(|(_, site)| {
+                    if !price_book_admits(site.wpos, home) {
+                        return None;
+                    }
                     let ws = site.world_site?;
                     let prices = index.get_site_prices(ws.id())?;
                     let food = prices
@@ -9130,9 +9138,30 @@ pub(crate) fn bastion_record_applied_changes(
     n
 }
 
+/// ★ T1: a priced site inside the colony's own settlement bounds is the
+/// colony itself and is never a trading partner. No bounds yet (before
+/// the founding): every site admits, as before.
+pub(crate) fn price_book_admits(wpos: Vec2<i32>, home: Option<(Vec2<i32>, Vec2<i32>)>) -> bool {
+    !home.is_some_and(|(mn, mx)| {
+        wpos.x >= mn.x && wpos.x <= mx.x && wpos.y >= mn.y && wpos.y <= mx.y
+    })
+}
+
 #[cfg(test)]
 mod bastion_founding_tests {
     use super::bastion_founding_decision;
+
+    /// ★ T1 pinned: the price book drops the colony's own site and keeps
+    /// the neighbours; with no bounds it keeps everything. Planted defect:
+    /// the bounds ignored -> home admitted -> red.
+    #[test]
+    fn the_price_book_has_no_home_site() {
+        use vek::*;
+        let home = Some((Vec2::new(7518, 6068), Vec2::new(7873, 6549)));
+        assert!(!super::price_book_admits(Vec2::new(7696, 6288), home), "the spawn is home");
+        assert!(super::price_book_admits(Vec2::new(8400, 6300), home), "a neighbour east of the bounds");
+        assert!(super::price_book_admits(Vec2::new(7696, 6288), None), "no bounds yet: as before");
+    }
 
     /// ★ R2 pinned: what the tick records, a fresh persistence instance on
     /// the same directory reads back into a chunk; with no store nothing is

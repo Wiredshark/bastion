@@ -438,4 +438,18 @@ first pass (nobody to demote); arrivals by lane in five minutes: Mine
 the storm T1 is queued for); BUILD CELL PLACED 63. **PASSED** every
 registered bar (arrivals above 10, cells above 15 within ten minutes;
 no lane above half the roster, by the arrivals' spread) at half the
-time allowed. The +10 and +25 reads follow.
+time allowed.
+
+Plan +10 min (08:28, hour 13): arrivals Build 255, Mine 136,
+DepositRun 84, Haul 71, Cook 41, Guard 19, Chop 15 (TradeMission 924);
+BUILD CELL PLACED 197; HAUL LANE CEILING none at the first pass;
+panics 0. A fresh town now builds from its plan on day 0 -- 197 cells
+in ten minutes against the eighth test's 0 in forty and the E1-f
+boot's 6 in a day.
+
+Plan +25 min (08:43, hour 20, the work day over): Build arrivals 314,
+Mine 145, DepositRun 129, Haul 115, Cook 63, Recreate 52, Guard 31;
+BUILD CELL PLACED 239 on day 0; panics 0; b3 stopped 08:43. The
+P-zero-hours series (call at the plan, heads counted, every head
+named at the first pass) is CLOSED for a fresh town; the restored
+boot's crew is the tenth restart test.
