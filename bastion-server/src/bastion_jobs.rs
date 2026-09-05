@@ -16757,6 +16757,15 @@ pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 /// is the same bytes for the same larder (determinism by construction:
 /// the aggregate is a hash map). What is NOT in a store -- litter on a
 /// road, a bag -- is not the larder and is not saved.
+/// ★ R3-b: THE LARDER WAITS FOR THE ORDERS. Delivered in the same second
+/// the saved houses began to replay, the larder went to a house shelf the
+/// delivery took for the general store (two of 58 Bed regions known), and
+/// the town starved beside 4,000 food. The saved larder joins the delivery
+/// queue only once every saved order has replayed.
+pub(crate) fn larder_delivery_due(store_pending: usize, orders_pending: usize) -> bool {
+    store_pending > 0 && orders_pending == 0
+}
+
 pub(crate) fn store_snapshot_from(
     items: impl IntoIterator<Item = (Vec3<i32>, String, u32)>,
     in_store: impl Fn(Vec3<i32>) -> bool,
@@ -18960,7 +18969,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // waiting entries. `terrain.get` Ok is the load probe (the
             // surface drain's own test).
             // ★ R3: the saved larder joins the founding's delivery queue, once.
-            if !board.pending_store_restore.is_empty() {
+            // ★ R3-b: and only after every saved order has replayed, so the
+            // stores and the houses are what they were.
+            if !board.pending_store_restore.is_empty()
+                && !larder_delivery_due(
+                    board.pending_store_restore.len(),
+                    board.pending_restore.len(),
+                )
+                && tick.0 % 300 == 0
+            {
+                info!(
+                    larder_entries = board.pending_store_restore.len(),
+                    orders_waiting = board.pending_restore.len(),
+                    "bastion: STORE RESTORE WAITING — the saved larder holds until the saved \
+                     orders have replayed (the houses and the stores first)"
+                );
+            }
+            if larder_delivery_due(board.pending_store_restore.len(), board.pending_restore.len()) {
                 let items = std::mem::take(&mut board.pending_store_restore);
                 let units: u32 = items.iter().map(|(_, _, n)| *n).sum();
                 info!(
@@ -53412,6 +53437,17 @@ mod tests {
     fn a_committed_glide_into_a_solid_node_drops_the_route() {
         assert_eq!(committed_glide_verdict(true), CommittedGlide::DropRoute, "the premise failed: plan again");
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
+    }
+
+    /// ★ R3-b pinned: the larder is delivered only when it has entries and
+    /// no saved order is still waiting. Planted defect: the orders ignored
+    /// -> red.
+    #[test]
+    fn the_larder_waits_for_the_orders() {
+        assert!(larder_delivery_due(293, 0), "every order landed: deliver");
+        assert!(!larder_delivery_due(293, 70), "orders still waiting: hold");
+        assert!(!larder_delivery_due(293, 2), "even two");
+        assert!(!larder_delivery_due(0, 0), "nothing to deliver");
     }
 
     /// ★ R3 pinned: the larder snapshot is every item in a store cell,

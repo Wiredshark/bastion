@@ -429,6 +429,15 @@ limit planted back at six turned the pin red (0 passed, 1 failed),
 tree restored clean at 04:46. The live read waits for W10-a's pair on
 b2 (`wait-w10a-b2.sh`), where the two rows are read together.
 
+### W10-a landed (0192879b24, 05:07)
+
+Check clean, pin `the_first_leg_is_searched_and_stitched` green (1
+passed), staged 05:07, shipped to lab-bin 05:07. Falsified at the
+commit: the approach planted as dropped turned the pin red (0 passed,
+1 failed), tree restored clean at 05:10. The b2 reader (`wait-w10a-b2.sh`: the
+wedge witnesses, FIRST LEG STITCHED, the profile at +4/+10 and days
+1-3) run from the stage; both rows are read together there.
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground
