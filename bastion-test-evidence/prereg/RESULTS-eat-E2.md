@@ -482,6 +482,27 @@ is from a stack of hundreds. The comparable read is b2's day-1
 series at the day-2 line (`read-e2f-day2.sh`, ~15:35); the W12-i1
 reader is re-keyed behind it.
 
+The second day (day 1, hours 7-23; read at the day-2 line, 15:33):
+A LOAD, NOT THE STACK splits=64; in_bags 222, 221, 259, 236, 192,
+201, 198, 153, 126, 107, 97, 69, 67 through hours 7-21 (max 274) with
+in_stockpile 3,828 -> 4,074 (the harvest lands and stays); BAG CENSUS
+lines on day 1: 0 (E2-d's day 1: 122); the largest holder over the
+whole run 32 units (E2-d: 520, 945, 1,444); YEAR day=2 food_stock
+4,074 / 25.5 days (E2-d day 2: 3,525; E2-e: 3,610); the day-1 lane
+line works 336 hauls 106; meals 117; no_food_found 8,221 on the day-2
+census (this pair has E2-e's round but not E2-h's stack fallback nor
+E2-g's carrying: the night rush stands); panics 0. Against the bars:
+no holder above 64 MET; census lines under 10 MET; the food frame
+within 250 MET (up, not down); hauls at least 15 and meals at least
+80 MET; in_bags under 120 at every line NOT met as written (200-260
+through the morning) -- the producer is fifteen carriers with loads
+of sixteen in transit, the bounded carry the row was built to make,
+and the bar assumed fewer carriers than a town with 106 hauls a day
+has. **E2-f PASSED on its mechanism** (the larder no longer rides in
+bags: 0 census lines, 32 the largest holder, the stockpile up); the
+aggregate bar is re-stated for the next read as "no holder above 64
+and no census line", which is what it measured.
+
 ## E2-e, registered 11:15 (keyed on the T1-b stage, the end of the chain, before the binary)
 
 The claim scoring gave a supper load the Haul base priority, then a
@@ -612,6 +633,53 @@ HOME, the round, the shelf arrivals, the sweep, night meals and the
 starving at hour 6 of days 1 and 2) run from the stage; the W12-i1
 chain keys on it. The falsifier went red and restored clean at 14:48;
 lab-bin carries the pair from 14:46.
+
+b1 day-1 line (hour 0 of day 1, 15:40): STORAGE SUMMARY
+private_units=39 (E2-e's day 1: 21; E2-d: 0 and 12); the lanes'
+works Build 86, Cook 67, Mine 56, Farm 50, Craft 40, Guard 6 (about
+305) with hauls in every lane (Mine 9, Farm 9, Build 15, Cook 5 --
+the eaters carrying), the Haul lane 37 hauls; the E2-e day on this
+world: Build 183, Mine 115, Cook 72, Craft 76, Farm 66 (about 530).
+**The works fell by about two fifths**, past the third the row named
+as its own falsifier: the eater's supper claims at 6 from hour 12,
+and four of the eight work hours go to the errand. The lane counts
+differ between the two days (Build 8 against 12) and colony counts
+vary, so the size is not exact; the direction is. The night-1 read
+(hour 6) gives the benefit side; the re-cut (E2-g-b) is the window:
+the eater carries its supper on the way home -- the last work hour
+and the Leisure hours -- not from noon.
+
+### E2-h landed (9cbeb09719, staged 15:31)
+
+Check clean, the pin green (E2-d's re-stated), both halves staged
+15:31. The falsifier (the last fallback refusing) and the b2 reader
+(`wait-e2h-b2.sh`: after W12-i1's +10 read, a fresh b2 with the
+fresh-boot guard; the day-0 round at hour 13, then nights 1 and 2 at
+hour 6) run from the stage; the W11-b chain keys on it. The falsifier
+went red and restored clean at 15:34; lab-bin carries the pair from
+15:32.
+
+## E2-g-b, registered 15:45 (keyed on the W11-b stage, the end of the chain, before the binary)
+
+`supper_walk_home_hour(night_watch, uid, hour)`: the last Work hour
+(Work now, not Work next) and the Leisure hours after it (walking
+back from a Leisure hour, the nearest non-Leisure hour is Work) --
+15 and 16-21 on the default schedule; not the work day's middle, the
+morning Leisure or Sleep. The own-supper lift (6) applies only then;
+the haulers' errand (5) fills the shelves from noon as E2-e did. Pin
+`the_eater_carries_supper_on_the_way_home` (15, 16, 17, 20, 21 yes;
+12, 13, 14, 6, 7, 22, 3 no); planted: the walk home from noon, red.
+Prediction (b1 fresh, `wait-e2gb-b1.sh`, the day-1 line and night 1
+at hour 6): the lanes' works at least 450 (305; E2-e 530); SUPPER
+CARRIED HOME at least 15; private_units at midnight at least 25 (39
+/ 21); NIGHT MEAL AT HOME at least 10; in-bed starving at most 8 an
+hour at 1-3 and sleepers at most 3; the Haul lane's hauls at least
+25. Falsified if the works stay under 400 (the loads themselves pull
+the lanes: E2-e's errand is the cost, its own row) or SUPPER CARRIED
+HOME falls under 5 with shelves still short. Rejected: a per-hour
+cap on the eaters (a queue is the work day); a lift only in Leisure
+(the last work hour is when the store is on the way). NOT evidenced:
+night 2; the night watch's walk home.
 
 ### E2-e's second replicate: b2 on the W10-i1 pair (65db6d4cab, which carries E2-e), day-1 line at 13:52
 

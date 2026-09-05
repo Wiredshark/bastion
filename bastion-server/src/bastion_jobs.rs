@@ -2055,6 +2055,15 @@ pub const OVERRIDE_WALL_MIN_MOVE: f32 = 0.5;
 pub const OVERRIDE_ANCHOR_STALE_TICKS: u64 = 600;
 pub(crate) static OVERRIDES_FAILED_AT_WALL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// ★ W11-b pinned: what the wall escape drops -- (the committed route,
+/// the chaser's own route). The committed route only when there is one;
+/// the chaser's own route ALWAYS (eleven of twelve failures on b1 had no
+/// committed route: fetch and eat legs walk the chaser's route).
+pub(crate) fn wall_escape_targets(had_route: bool) -> (bool, bool) {
+    (had_route, true)
+}
+pub(crate) static CHASER_ROUTES_DROPPED_AT_WALL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OverrideVerdict {
     /// No anchor, another node, a stale anchor, or real movement: (re)anchor.
@@ -36204,13 +36213,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                                     stuck = active.stuck_time,
                                                                     strikes = job.stuck_strikes,
                                                                     had_route = board.path_cache.contains_key(&Uid(std::num::NonZeroU64::new(uk).expect("uid nonzero"))),
+                                                                    chaser_dropped = CHASER_ROUTES_DROPPED_AT_WALL.load(std::sync::atomic::Ordering::Relaxed),
                                                                     failed = n,
                                                                     "bastion: OVERRIDE FAILED AT A WALL — three seconds of gliding by ruling moved the feet less than half a block; the route is dropped and rebuilt from the feet (its first leg goes to the pump)"
                                                                 );
                                                             }
-                                                            board.path_cache.remove(&Uid(
+                                                            // ★ W11-b: both routes go -- the
+                                                            // committed one and the chaser's own.
+                                                            let had = board.path_cache.contains_key(&Uid(
                                                                 std::num::NonZeroU64::new(uk).expect("uid nonzero"),
                                                             ));
+                                                            let (drop_route, drop_chaser) = wall_escape_targets(had);
+                                                            if drop_route {
+                                                                board.path_cache.remove(&Uid(
+                                                                    std::num::NonZeroU64::new(uk).expect("uid nonzero"),
+                                                                ));
+                                                            }
+                                                            if drop_chaser
+                                                                && let Some(a) = agent.as_deref_mut()
+                                                            {
+                                                                a.chaser.drop_route();
+                                                                CHASER_ROUTES_DROPPED_AT_WALL
+                                                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                                            }
                                                             new_pos = None;
                                                             overridden = false;
                                                         },
@@ -54759,6 +54784,15 @@ mod tests {
         assert_eq!(pickup_take(520, 10, 16), Split(6), "the room aboard");
         assert_eq!(pickup_take(520, 16, 16), Nothing, "a load aboard takes nothing");
         assert_eq!(pickup_take(16, 0, 16), Whole, "exactly a load goes whole");
+    }
+
+    /// ★ W11-b pinned: the escape drops the committed route only when there
+    /// is one, and the chaser's own route always. Planted defect: the chaser
+    /// kept -> red.
+    #[test]
+    fn the_wall_escape_drops_the_chasers_own_route() {
+        assert_eq!(wall_escape_targets(true), (true, true), "a committed route: both go");
+        assert_eq!(wall_escape_targets(false), (false, true), "no committed route: the chaser's own goes");
     }
 
     /// ★ W11 pinned: no anchor anchors; another node anchors; within the
