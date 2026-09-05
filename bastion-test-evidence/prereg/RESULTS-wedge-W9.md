@@ -911,7 +911,18 @@ them indoors. On the W10-d pair the same boot glided them out,
 through the wall now and then (the embed class, ten a day). The
 hold fixed ten embeds a day by stopping the town. The W10-e read was
 this same shape (its "far walker" story was the rule's, not the
-town's). Disposition: the hold is withdrawn in both forms.
+town's). +10 min (hour 16, read 12:03): held_ticks=524,288, ARRIVED
+0, working=0 moving=49, EMBED WATCH 0 (the null a held town produces
+by construction), p95 744 us. Disposition: the hold is withdrawn in
+both forms.
+
+Replicate on the other world (b1, the 160-day arm, fresh on the T1-b
+pair 5599d1cbd6 which carries the W10-f hold; boot 12:14, read at
+tick 7,512 / 12:20): "job claimed" 0, "arrived at job site" 2, GLIDE
+HELD held_ticks=262,144, TRUNK ROUTE PROFILE 0, EXPERIENCE working=2
+moving=47, claim census colonists_seen=0, UNREACHABLE PROVEN 124. The
+same arm on the E2-d pair had 941 claims and 1,665 arrivals by day 2.
+Two worlds, two arms, one shape: the freeze is the hold's.
 
 ## W10-g, registered 12:05 (keyed on the T1-b stage; inserted ahead of E2-e; before the binary)
 

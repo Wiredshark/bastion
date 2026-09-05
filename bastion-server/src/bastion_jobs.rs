@@ -1912,12 +1912,15 @@ pub(crate) fn glide_leg_end(feet: Vec3<f32>, target: Vec3<f32>) -> Vec3<i32> {
     };
     Vec3::new(end.x.floor() as i32, end.y.floor() as i32, feet.z.floor() as i32)
 }
-pub(crate) static GLIDES_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static GLIDES_INTO_WALL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// ★ W10-f pinned: with no route in the cache, the chaser holds at its
-/// own position only when the next leg of the line crosses a solid.
-pub(crate) fn glide_held_for_path(leg_crosses: bool) -> bool {
-    leg_crosses
+/// ★ W10-g pinned: with no route in the cache the steer is the target --
+/// the body glides, wall or no wall (the hold of W10-e/W10-f kept every
+/// colonist inside its house from tick 300: claims zero, routes zero). A
+/// leg that crosses solid is counted, and W11 catches the body at the
+/// wall by its feet.
+pub(crate) fn no_path_steer(_feet: Vec3<f32>, target: Vec3<f32>, _leg_crosses: bool) -> Vec3<f32> {
+    target
 }
 
 pub(crate) fn first_leg_needs_search(feet: Vec3<f32>, node0: Vec3<i32>) -> bool {
@@ -34971,20 +34974,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let solid = |q: Vec3<i32>| terrain.get(q).map(|b| b.is_solid()).unwrap_or(false);
                                     first_leg_crosses_solid(&solid, pos.0, leg)
                                 };
-                                if glide_held_for_path(crosses) {
-                                    let n = GLIDES_HELD.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                // ★ W10-g: THE GLIDE RETURNS. The wall on the
+                                // line is counted, never held (W10-e/W10-f
+                                // held the town indoors from tick 300).
+                                steer = no_path_steer(pos.0, target, crosses);
+                                if crosses {
+                                    let n = GLIDES_INTO_WALL.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                     if n.is_power_of_two() {
                                         info!(
                                             uid = u.0.get(),
                                             dist_xy,
                                             leg = ?leg,
                                             pending = board.path_searches.contains_key(&u.0.get()),
-                                            held_ticks = n,
-                                            "bastion: GLIDE HELD AT A WALL — no route and the line's \
-                                             next leg crosses solid; the body waits for the path"
+                                            glides_into_wall = n,
+                                            "bastion: GLIDE INTO A WALL (counted) — no route and the \
+                                             line's next leg crosses solid; the body glides on (W10-g)"
                                         );
                                     }
-                                    steer = pos.0;
                                 }
                             }
                             steer
@@ -54267,19 +54273,21 @@ mod tests {
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
     }
 
-    /// ★ W10-f pinned: the glide's next leg is the line cut at six blocks
-    /// (a goal eighty-four away is checked six along the line, a goal two
-    /// away at the goal); a body holds only when that leg crosses solid.
-    /// Planted defect: the leg not cut (checked at the goal) -> red.
+    /// ★ W10-g pinned (W10-f re-stated): the glide's next leg is the line
+    /// cut at six blocks (a goal eighty-four away is checked six along the
+    /// line, a goal two away at the goal); with no route the steer is the
+    /// target whether or not that leg crosses solid. Planted defect: the
+    /// hold restored (a crossing leg steers at the feet) -> red.
     #[test]
-    fn no_path_glides_only_a_clear_leg() {
+    fn no_path_glides_and_the_wall_is_counted() {
         let feet = Vec3::new(10.5, 10.5, 7.0);
         let far = glide_leg_end(feet, Vec3::new(94.8, 10.5, 7.0));
         assert_eq!((far.x, far.y, far.z), (16, 10, 7), "eighty-four along +x: the leg ends six along");
         let near = glide_leg_end(feet, Vec3::new(12.2, 10.5, 7.0));
         assert_eq!((near.x, near.y), (12, 10), "two along +x: the leg ends at the goal");
-        assert!(!glide_held_for_path(false), "a clear leg glides at any distance");
-        assert!(glide_held_for_path(true), "a leg through a wall holds");
+        let target = Vec3::new(94.8, 10.5, 7.0);
+        assert_eq!(no_path_steer(feet, target, false), target, "a clear leg glides");
+        assert_eq!(no_path_steer(feet, target, true), target, "a leg through a wall glides too (counted, not held)");
     }
 
     /// ★ W10-d pinned: a fence mid-way on a flat leg is crossed; a one-block

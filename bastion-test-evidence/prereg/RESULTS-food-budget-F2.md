@@ -437,3 +437,16 @@ outside the bounds and its stand differs from the site cell; arrivals
 per mission under 5; exchanges per mission. Falsified if a mission
 still mints inside the bounds, or arrivals per mission stay in the
 tens with the site outside.
+
+### T1-b landed (5599d1cbd6, staged 12:13; falsifier red 12:21)
+
+Check clean, the pin green, both halves built and staged 12:13; the
+falsifier (the book built without bounds) went red in its own
+worktree and restored clean at 12:21. lab-bin carried the pair from
+12:13. b1 restarted on it at 12:14; note that this pair still holds
+the W10-f no-route hold, so b1's town on it stands still (claims 0 at
++4, see RESULTS-wedge-W9.md) -- the price-book bars (the refresh
+waiting for the bounds; sites outside) do not depend on walking, but
+the mission arrivals and exchanges do, and those reads are void on
+this pair. The mission bars are re-read on the E2-e pair (with W10-g
+in it) when b1 restarts for E2-e.
