@@ -17365,6 +17365,36 @@ pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 /// same site gives the same stand.
 pub const TRADE_STAND_REACH: i32 = 8;
 
+/// ★ W12-a: how far from an unwalkable target the fill search's stand
+/// may be (rings out; the arrive step beelines the last leg as before).
+pub const SEARCH_STAND_REACH: i32 = 3;
+pub(crate) static SEARCH_TARGETS_MOVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ W12-a pinned: the search's target is the target cell when a body can
+/// stand in it; else the nearest standable cell within SEARCH_STAND_REACH
+/// (rings out, then z 0, +1, -1, +2, -2); else the target as before.
+pub(crate) fn search_stand(target: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> bool) -> Vec3<i32> {
+    if standable(target) {
+        return target;
+    }
+    for r in 1..=SEARCH_STAND_REACH {
+        for dx in -r..=r {
+            for dy in -r..=r {
+                if dx.abs() != r && dy.abs() != r {
+                    continue;
+                }
+                for dz in [0, 1, -1, 2, -2] {
+                    let c = target + Vec3::new(dx, dy, dz);
+                    if standable(c) {
+                        return c;
+                    }
+                }
+            }
+        }
+    }
+    target
+}
+
 pub(crate) fn trade_mission_pos(site: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> bool) -> Vec3<i32> {
     for r in 0..=TRADE_STAND_REACH {
         for dx in -r..=r {
@@ -35351,6 +35381,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 } else {
                                     // → the SEARCH PUMP: enqueue, never
                                     // compute inline (the collapse class).
+                                    // ★ W12-a: THE SEARCH AIMS AT THE STAND, NOT
+                                    // THE STONE -- a bed, a shelf item, a face or
+                                    // a site is not a cell a body stands in.
+                                    let target_cell = target.map(|e| e.floor() as i32);
+                                    let stand = search_stand(target_cell, |c| {
+                                        common::path::colonist_walkable(&*terrain, c)
+                                    });
+                                    let search_target = if stand == target_cell {
+                                        target
+                                    } else {
+                                        let n = SEARCH_TARGETS_MOVED
+                                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+                                            + 1;
+                                        if n <= 8 || n.is_power_of_two() {
+                                            info!(
+                                                uid = u.0.get(),
+                                                target = ?target_cell,
+                                                stand = ?stand,
+                                                moved = n,
+                                                "bastion: SEARCH TARGET MOVED TO A STAND — the target cell is not walkable; the fill search aims beside it"
+                                            );
+                                        }
+                                        stand.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0)
+                                    };
                                     board.path_searches.insert(
                                         u.0.get(),
                                         PendingSearch {
@@ -35358,7 +35412,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 common::path::PathLength::Medium,
                                             ),
                                             startf: pos.0,
-                                            target,
+                                            target: search_target,
                                             cfg,
                                             lane: SearchLane::Fill,
                                             since: tick.0,
@@ -55032,6 +55086,19 @@ mod tests {
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.1, 0.0), 1000 + OVERRIDE_WALL_TICKS), Failed, "still: failed");
         assert_eq!(override_verdict(a, node, feet + Vec3::new(0.0, 0.8, 0.0), 1000 + OVERRIDE_WALL_TICKS), Anchor, "moved: re-anchor");
         assert_eq!(override_verdict(a, node, feet, 1000 + OVERRIDE_ANCHOR_STALE_TICKS + 1), Anchor, "stale");
+    }
+
+    /// ★ W12-a pinned: a standable target is its own stand; an unwalkable
+    /// target with a standable neighbour one east takes that neighbour;
+    /// nothing standable within reach leaves the target as before. Planted
+    /// defect: the stand never sought (the target always) -> red.
+    #[test]
+    fn the_search_aims_at_the_stand_not_the_stone() {
+        let t = Vec3::new(10, 10, 5);
+        assert_eq!(search_stand(t, |c| c == t), t, "a standable target stands");
+        assert_eq!(search_stand(t, |c| c == t + Vec3::new(1, 0, 0)), t + Vec3::new(1, 0, 0), "one east stands");
+        assert_eq!(search_stand(t, |c| c == t + Vec3::new(0, -2, 1)), t + Vec3::new(0, -2, 1), "two south, one up, in the second ring");
+        assert_eq!(search_stand(t, |_| false), t, "nothing within reach: the target as before");
     }
 
     /// ★ W12-i2 pinned: no door is NoDoor whatever the probe; a door the

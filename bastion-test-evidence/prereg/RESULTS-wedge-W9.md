@@ -1195,6 +1195,76 @@ embeds rose to 18 on this pair: the dropped chaser re-searches and
 its first leg glides again; W12-a is expected to cut that too, and
 the count is carried as its baseline.
 
+### The build lane's 74 blocks a claim is re-claim churn by stalled fetchers (b1 day 2, read 18:08)
+
+JOB SEQUENCE CENSUS on b1 day 2: Build colonists 13, works 171,
+mean_travel_blocks_per_claim 74, far_claim_pct 43. The producer:
+`note_travel` adds the feet-to-job xy distance at CLAIM time, once
+per claim commit. But successive build ARRIVALS by the same colonist
+are 2 blocks apart (266 arrivals, 17 colonists, 12 site cells of
+8x8; median hop 2.0, p90 8.1, max 21, none over 30). The gap is the
+re-claims: build job 1681 (stones) was claim-committed 13 times in
+13 minutes by seven colonists (28; 18 five times; 39 three; 57 two;
+25; 53), every one "fetch=true carried=false", and each fetch ended
+FETCH STALLED (no displacement) -> FETCH BUDGET EXPIRED (15.5 s) ->
+RELEASE-DIAG TimedOut -> the same colonist re-claims the same job
+within a second, from the same feet, 74 then 146 blocks from the
+next item. Whole log: FETCH STALLED 56, BUDGET EXPIRED 45, TARGET
+SHUNNED 33, STALL BLAMED ON THE WALKER 5; the stalled feet cluster
+at three spots ((7649, 6390) x10, (7748, 6328) x8, (7587, 6502) x8).
+Per build job on day 2: 16 claimed once, 8 twice, 3 three times, 2
+four, 2 five, one each of 6, 7, 8 and 13. So the 74 is the wedge
+class wearing a census: a body that does not move re-claims every
+fifteen seconds and each re-claim is a "far claim". W12-a/W12-b are
+the rows for the bodies; the re-claim loop itself (no bench after a
+TimedOut fetch for the same claimant) is measured below before any
+row is built on it.
+
+The measure (b1 whole log to 18:10, RELEASE-DIAG TimedOut of work
+classes: build 28, work 2, craft 2): re-claimed within 60 s by the
+SAME colonist 19 (median gap 0.7 s, p90 14.4 s), by another 5, not
+re-claimed 8. A real loop, a modest count: the bodies' stalls (56)
+are the root and W12-a/b come first; a bench for the same claimant
+after a TimedOut fetch is the candidate if the loop survives them.
+
+## W12-b, registered 17:50 (keyed on the W12-a stage, the end of the chain, before the binary)
+
+The shared unreachable target (7672, 6426, 182) is the minimum
+corner of stockpile zone 61, region min (7672, 6426, 178) max
+(7725, 6467, 184), a 54 x 42 general store. Every deposit run's pos
+is `stockpile_drop_cell_spread`: the centre when it is among the
+least filled, else the FIRST least-filled cell in (y, x) order --
+the corner; a claimed run counts 16 at its cell, so the centre is
+full after one claim and every later run of the day aims at the
+corner, 33 blocks off the centre and not a cell the A* admits. The
+pin `private_shelves_belong_to_households_and_drops_spread_out`
+blessed the corner by name ("first row-major"). Now a candidate must
+be standable (the callers pass colonist_walkable on the live
+terrain); among the least filled the nearest to the centre wins
+(squared xy distance, ties by (y, x)); the centre when it is among
+them; nothing standable leaves the centre. Witness DROP CELL SPREAD
+FROM THE CENTRE OUT (centre, cell, dist2, candidates) at the first
+eight and powers of two; five call sites. Pin
+`the_drop_cell_spreads_from_the_centre_out` (5x5, centre full: (2,
+1); never the corner while a nearer cell is free; the nearest
+blocked: (1, 2); nothing standable: the centre) and the old pin
+re-stated (3x3, centre full: (1, 0)); planted: the distance
+ignored, red. Prediction (b2 fresh, `wait-w12b-b2.sh`, after W12-a's
+day-1 read): unreachable targets at the corner 0 (8 of 8; 8 of 11
+on b1); every printed dist2 at most 50 (the corner's 1,089);
+unreachable_open per +10 at most 3; W12-a's SEARCH TARGET MOVED for
+deposit targets 0 on this pair; delivered_path at least four times
+delivered_unreachable over the day; STUCK on deposit runs 0.
+Falsified if the corner stays a target, or if unreachable_open
+stays above 5 with the targets within 7 of the centre (the path
+between), or if a haul's delivered count falls (the standable
+filter refusing the store's own cells). Rejected: a ring search
+from the corner (W12-a's rule covers the search, not the
+destination; the corner is wrong even when walkable); an occupancy
+cap per cell; a random cell. NOT evidenced: private shelves (1x1,
+identity); the spawn-side deposit cells' fetch reach; the NoDoor
+probes (W12-i3).
+
 ### The two NoDoor probes explained (b2 read 17:43, the W12-i2 pair)
 
 The six probes were two bodies: uid 32 four times from the house at

@@ -787,6 +787,109 @@ CENSUS night keys at hour 6 of days 1 and 2) run from the stage. The
 falsifier went red and restored clean at 17:14; lab-bin carries the
 pair from 17:11.
 
+### E2-i1 night 1 on b2 (pair 61fbaebf71, read 17:48 at hour 6 of day 1): REFUSED BY REACH, then EMPTY
+
+NIGHT SHELF EMPTY 16 lines: Refused 9, Empty 7. Every printed
+Refused carries present 1, refused_reach 0, refused_cap 1,
+refused_closed 0: the house held ONE food stack and `has_capacity`
+refused it -- as many reservations against the stack as it has
+units (the eat path's per-unit reservation, #89), so a one-unit
+stack reserved by the housemate, or by the sleeper's own earlier
+pick, is a refusal. Not the reach: the component index admitted
+every one. The sixteen lines are FOUR sleepers: colonist 64 nine
+times Refused from the house at min (7744, 6402), the same single
+stack every time; colonists 20 (five times), 34 and 44 once each,
+Empty. So the night's shape on this arm is one sleeper locked out
+of its own house's one stack by a reservation that never clears,
+and three bare shelves. Colonist 64's house (min (7744, 6402), two
+adopted beds at (7756, 6412, 186) and (7757, 6412, 186), one pot):
+SHELF ADDED put the one-cell shelf at (7757, 6412, 186) -- the
+SECOND BED's own cell ("beside its first bed" walked one east into
+the other bed). The nine refusals came six seconds apart at
+21:32:28-21:33:20 (the night pick's retry cadence); at 21:33:31 the
+hunger preempt sent 64 to the general store at (7774, 6355) and it
+ate there (EatFrom item 846, arrived). The refuser's identity (the
+housemate's reservation, or 64's own stale one) is not in the
+witness; E2-i2 prints it before anything is built on it. The round: shortfall 98, loads 49, no_shelf 0, skipped 0,
+swept 8; arrivals before the sweep general 29, private 45 (E2-h's
+count on this arm); SUPPER CARRIED HOME 2 (the one-hour window, this
+pair); NIGHT MEAL AT HOME 14; in-bed starving at hours 0-3: 7, 8, 7,
+16; hour 4: EatFrom/Waiting 9, EatFrom/Traveling 3; distinct
+starving sleepers 2 (b1 on E2-g-b: 8 -- another arm, another world);
+food_stock 4,117, days_of_food 26; panics 0. The disposition: E2-i2,
+the night pick reaches its own house's shelf from any bed of the
+house (the shelf is one cell beside the FIRST bed; a sleeper in the
+second bed, or upstairs, fails a radius) -- registered below once
+the reach's producer is read.
+
+### E2-g-b night 2 on b1 (pair 7d28997261, read 18:04 at hour 6 of day 2): WORSE THAN NIGHT 1
+
+In-bed starving at hours 0-3: 16, 34, 56, 73 samples (night 1: 7,
+18, 35, 43); hour 4: EatFrom/Traveling 50, Recreate/Traveling 12;
+hour 5: EatFrom/Traveling 16; distinct starving sleepers 13 (night
+1: 8). The round on day 1: shortfall 96, loads 55, stale_removed 30
+(the day-0 loads never delivered); arrivals before the sweep private
+27, general 1; SWEPT day 2: 32; SUPPER CARRIED HOME 16 claims over
+two days; NIGHT MEAL AT HOME 7 over two nights. EAT CENSUS day 2:
+meals 113, no_food_found 9,046 (the pick retried every tick through
+the night). food_stock 3,867, days_of_food 24.7. In-bags rose
+through day 1 (89 -> 192 at hour 14) and fell to 96-123 by night:
+the bags are not the larder (E2-f held). The one-hour window
+(E2-g-b) FAILS night 2 by every bar; E2-g-c (two hours) boots on b1
+from this read. The bed count that matters: 13 of 50 asleep hungry,
+and 50 samples of eaters travelling at hour 4 -- the curfew's end
+sends the whole starving house out at once.
+
+### E2-g-c landed (1c3ebf3a2e, staged 17:58)
+
+Check clean, the pin green, both halves staged 17:58, shipped to
+lab-bin 17:59. The falsifier (the walk home from noon) went RED at
+18:01, the tree restored clean. The b1 reader (`wait-e2gc-b1.sh`)
+restarts b1 after E2-g-b's night-2 read and reads nights 1-2.
+
+## E2-i2, registered 18:02 (keyed on the E2-k stage, the end of the chain, before the binary)
+
+THE NIGHT SHELF NAMES ITS HOLDERS. An instrument row: E2-i1's Refused
+could not say whose reservation held the stack. `has_capacity(item,
+amount)` is reserved_count(item) < amount; the candidates are the
+housemate's Waiting EatFrom (E2-j's queue holds its reservation),
+a supper haul's whole-stack reservation (u32::MAX) outliving its
+arrival, or the sleeper's own pick released without its
+reservation. `reservation_holders(jobs, ids)` names the jobs whose
+reservation is one of the stack's ids as job:class:claimant; the
+witness adds units, reserved and holders (named when the capacity
+refused). Pin `the_night_shelf_names_its_holders`; planted: nobody
+named, red. Prediction (b1 fresh, `wait-e2i2-b1.sh`, night 1 after
+E2-k's read): every Refused line names a holder; holders=[] with
+reserved > 0 is a reservation with no job (the leak; the row after
+is the release); the class decides the next row (eat by another:
+the housemate's Waiting pick on a stack too small for two; haul:
+the round's reservation; eat by the sleeper: a stale self-hold).
+Falsified as an instrument if a Refused line shows reserved 0.
+
+## E2-k, registered 17:58 (keyed on the W12-b stage, the end of the chain, before the binary)
+
+THE SHELF IS NEVER A BED. `shelf_cell_beside` took the first
+standable cell around the first bed, east first; worldgen lays beds
+side by side and a bed sprite on an air block over a floor is
+standable, so five of b2's nineteen added shelves sit on the second
+bed (beds 114, shelves 19, on a bed cell 5, all nineteen on the
+bedroom storey), colonist 64's among them. Now the function takes
+the house's beds and never picks one; the caller passes
+`beds_here`; SHELF ADDED gains beds_in_house. Pin
+`the_shelf_is_never_a_bed` (a bed east: west; beds east and west:
+north; no beds: east as before); planted: the beds ignored, red.
+Prediction (b1 fresh, `wait-e2k-b1.sh`, after E2-g-c's night-1
+read; boot +3 and night 1): shelves on a bed cell 0 (b2: 5 of 19;
+b1's own baseline is in its previous log); NIGHT SHELF EMPTY Refused
+by cap from a house whose shelf was a bed 0; the rest of the night
+is E2-g-c's read. Falsified if a shelf still lands on a bed, or if
+shelves added falls (a bed on every neighbour cell yields None).
+Rejected: the pot's cell as the shelf; a two-cell shelf; the last
+bed instead of the first. NOT evidenced: the reservation that
+locked colonist 64 out (the housemate's or its own stale one:
+E2-i2's witness names it); haulers reaching upstairs shelves.
+
 ### E2-j landed (98d548575d, staged 17:36)
 
 Check clean, the pin green, both halves staged 17:36. The falsifier
