@@ -897,6 +897,53 @@ that walked toward its bed for 28,000 ticks and never arrived. Not
 a night-shelf case: a stranded walker, the wedge class (W12-b, W13
 in the queue); E2-l's read watches whether it recurs.
 
+### E2-g-c night 2 on b1 (read 19:17 at hour 6 of day 2): AS BAD AS E2-g-b's
+
+In-bed starving at hours 0-3: 9, 29, 50, 64 (E2-g-b night 2: 16,
+34, 56, 73); distinct starving sleepers 13 (13); hour 4: EatFrom/
+Traveling 34 (50); day-1 round loads 55, stale_removed 43 (the
+day-0 loads never delivered), arrivals to private shelves 25 (day
+0: 23), SWEPT 36; SUPPER CARRIED HOME 32 claims over two days; NIGHT
+MEAL AT HOME 15 over two nights; no_food_found 7,725 by day 2;
+food_stock 3,907. A second replicate of the same verdict: the
+window's width does not stock the shelves. New in this read:
+RestAt/Waiting 5-8 samples an hour at hours 22-3 -- sleepers
+WAITING at their bed's anchor because another body stands nearer
+it (the Waiting rule is the eat queue's, applied to beds): either
+two sleepers on one bed, or a housemate standing beside it. Read
+below before it is named (B7-2 assigns beds to sleepers; a shared
+bed would be a defect of that row).
+
+## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
+
+THE QUEUE IS FOR THE SAME ANCHOR. The anchor queue (the eat queue's
+rule, `staged_at_anchor`) holds a body when ANY colonist stands
+nearer its steer by half a block within four blocks of height, and
+`queue_snapshot` is every colonist's position; so the housemate
+lying in the adjacent bed (worldgen lays beds side by side) is
+"ahead of me" as long as it sleeps, and the E2-g-c night-2 read's
+RestAt/Waiting 5-8 an hour at hours 22-3 (no shared bed: 0 of 40)
+is that lock. Now the snapshot carries each colonist's job anchor
+and `queue_ahead` counts a body only when its anchor is mine; THE
+QUEUE IGNORES A STRANGER (uid, anchor, my_d, strangers) counts the
+holds the old rule would have made. Pin
+`the_queue_is_for_the_same_anchor` (the next bed's sleeper does not
+queue me; a nearer body bound for my anchor does; no anchor or
+nobody: none; a farther one is behind me); planted: the stranger
+counted, red. Prediction (b1 fresh, `wait-e2m-b1.sh`, after E2-l's
+night-1 read; night 1): RestAt/Waiting starving at hours 22-3 at
+most 1 an hour (5-8); strangers ignored at least 20; RestAt/
+Traveling starving at 0-3 at most 4 an hour (3-13); EatFrom/Waiting
+at 16-20 unchanged in kind; in-bed starving no worse than E2-l's
+read (the row puts the waiting sleepers in bed, it does not feed
+them). Falsified if RestAt/Waiting persists above 4 an hour, or if
+the evening eat queue loses its members (Waiting 0 while Traveling
+rises). Rejected: exempting RestAt only; a per-bed lock; a shorter
+wait. NOT evidenced: night 2; the climb queue; eaters at the W12-b
+pairs' one-cell store. The E2-k chain and reader were re-keyed
+behind this row and the dry tree rebuilt in the order W12-b-b,
+E2-j-b, E2-l, E2-m, E2-k, E2-i2, W12-a-b, W15-i1.
+
 ## E2-j-b, registered 18:33 (keyed on the W12-b stage; ahead of E2-l, E2-k, E2-i2)
 
 THE SPREAD STAYS WITHIN THE STORE. E2-j's order (reservations, then

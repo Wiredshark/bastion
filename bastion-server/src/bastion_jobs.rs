@@ -8328,12 +8328,33 @@ pub(crate) static SUPPER_STALE_REMOVED: std::sync::atomic::AtomicU64 = std::sync
 /// smallest stack that covers the need and is no larger than the cap;
 /// else the largest stack under the cap (a partial supper); else none.
 /// Never a stack over the cap, whatever the need.
-/// ★ E2-j pinned: the eat pick's order -- the stack's reservations first
-/// (eaters already bound for it, capped at eight), then the squared
-/// distance, then the uid. An unreserved stack ten blocks off beats a
-/// reserved one at the feet; among unreserved stacks the nearest wins.
-pub(crate) fn eat_pick_key(reserved: u32, dist2: i64, uid: u64) -> (u32, i64, u64) {
-    (reserved.min(8), dist2, uid)
+/// ★ E2-j-b: how far past the nearest admissible stack the spread may
+/// reach (blocks). E2-j's unbounded spread doubled the evening walk.
+pub const SPREAD_REACH: f64 = 12.0;
+
+/// ★ E2-j pinned, E2-j-b re-stated: the eat pick's order -- the near band
+/// first (a stack within SPREAD_REACH of the nearest admissible stack's
+/// distance), then the stack's reservations (eaters already bound for it,
+/// capped at eight), then the squared distance, then the uid. An
+/// unreserved stack ten blocks off beats a reserved one at the feet; an
+/// unreserved stack across town does not.
+pub(crate) fn eat_pick_key(reserved: u32, dist2: i64, nearest_dist2: i64, uid: u64) -> (u8, u32, i64, u64) {
+    let within = (dist2.max(0) as f64).sqrt() <= (nearest_dist2.max(0) as f64).sqrt() + SPREAD_REACH;
+    (if within { 0 } else { 1 }, reserved.min(8), dist2, uid)
+}
+
+/// ★ E2-j-b pinned: THE SPREAD STAYS WITHIN THE STORE -- the pick over the
+/// admissible stacks, the nearest one's distance bounding the spread.
+pub(crate) fn pick_within_store<T>(
+    cands: Vec<T>,
+    dist2: impl Fn(&T) -> i64,
+    reserved: impl Fn(&T) -> u32,
+    uid: impl Fn(&T) -> u64,
+) -> Option<T> {
+    let nearest = cands.iter().map(|c| dist2(c)).min().unwrap_or(0);
+    cands
+        .into_iter()
+        .min_by_key(|c| eat_pick_key(reserved(c), dist2(c), nearest, uid(c)))
 }
 
 pub(crate) fn supper_stack_pick(amounts: &[u32], need: u32) -> Option<usize> {
@@ -31869,7 +31890,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let night_ok = |c: Vec3<i32>| {
                                 !night_now || night_home.is_some_and(|h| h.contains_point_xy(c))
                             };
-                            let pick_food = |respect_verdicts: bool| (&pickup_items, &positions, &uids)
+                            let pick_food = |respect_verdicts: bool| pick_within_store(
+                                (&pickup_items, &positions, &uids)
                                 .join()
                                 .filter(|(pi, ipos, iuid)| {
                                     let icell = ipos.0.map(|e| e.floor() as i32);
@@ -31910,19 +31932,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // T0.39 (T0-003): equal-distance ties
                                 // break on the stable item uid, not join
                                 // (entity-allocation) order.
-                                .min_by_key(|(_, ipos, iuid)| {
+                                .collect::<Vec<_>>(),
+                                // ★ E2-j: THE PICK SPREADS OVER THE STACKS --
+                                // a stack others are bound for ranks after
+                                // one nobody is (the queue at one pile).
+                                // ★ E2-j-b: THE SPREAD STAYS WITHIN THE STORE --
+                                // bounded by the nearest admissible stack.
+                                |(_, ipos, _)| {
                                     let c = ipos.0.map(|e| e.floor() as i32) - feet;
-                                    // ★ E2-j: THE PICK SPREADS OVER THE STACKS --
-                                    // a stack others are bound for ranks after
-                                    // one nobody is (the queue at one pile).
-                                    eat_pick_key(
-                                        board.reserved_count(**iuid),
-                                        (c.x as i64).pow(2)
-                                            + (c.y as i64).pow(2)
-                                            + (c.z as i64).pow(2),
-                                        iuid.0.get(),
-                                    )
-                                });
+                                    (c.x as i64).pow(2) + (c.y as i64).pow(2) + (c.z as i64).pow(2)
+                                },
+                                |(_, _, iuid)| board.reserved_count(**iuid),
+                                |(_, _, iuid)| iuid.0.get(),
+                            );
                             let food = pick_fail_open(pick_food)
                                 .map(|(pi, ipos, iuid)| {
                                     // The matched def as the job's
@@ -55437,15 +55459,30 @@ mod tests {
         assert_eq!(errand_priority(2, false), 2, "a plain job keeps its base");
     }
 
-    /// ★ E2-j pinned: an unreserved stack a hundred squared blocks off
-    /// ranks before a reserved one four off; among unreserved stacks the
-    /// nearer ranks first; nine reservations rank as eight. Planted defect:
-    /// the reservations ignored -> red.
+    /// ★ E2-j pinned, E2-j-b re-stated: an unreserved stack ten blocks off
+    /// ranks before a reserved one two off (within reach); among unreserved
+    /// stacks the nearer ranks first; nine reservations rank as eight.
     #[test]
     fn the_pick_spreads_over_the_stacks() {
-        assert!(eat_pick_key(0, 100, 7) < eat_pick_key(1, 4, 3), "unreserved and far beats reserved and near");
-        assert!(eat_pick_key(0, 4, 9) < eat_pick_key(0, 100, 1), "among unreserved, the nearer");
-        assert_eq!(eat_pick_key(9, 1, 1).0, 8, "capped at eight");
+        assert!(eat_pick_key(0, 100, 4, 7) < eat_pick_key(1, 4, 4, 3), "unreserved and ten off beats reserved and two off");
+        assert!(eat_pick_key(0, 4, 4, 9) < eat_pick_key(0, 100, 4, 1), "among unreserved, the nearer");
+        assert_eq!(eat_pick_key(9, 1, 1, 1).1, 8, "capped at eight");
+    }
+
+    /// ★ E2-j-b pinned: an unreserved stack thirty blocks off does NOT beat
+    /// a reserved one two off (beyond reach); beyond reach the less
+    /// reserved still ranks first; the picker takes the near reserved stack
+    /// over the far unreserved one and the near unreserved one over the
+    /// near reserved one. Planted defect: the reach unbounded -> red.
+    #[test]
+    fn the_spread_stays_within_the_store() {
+        assert!(eat_pick_key(1, 4, 4, 3) < eat_pick_key(0, 900, 4, 7), "reserved and near beats unreserved and across town");
+        assert!(eat_pick_key(0, 900, 4, 1) < eat_pick_key(1, 1000, 4, 2), "beyond reach, the less reserved first");
+        let far = pick_within_store(vec![(1u32, 4i64, 3u64), (0, 900, 2)], |c| c.1, |c| c.0, |c| c.2);
+        assert_eq!(far, Some((1, 4, 3)), "the picker keeps the eater at the near store");
+        let near = pick_within_store(vec![(1u32, 4i64, 3u64), (0, 100, 2)], |c| c.1, |c| c.0, |c| c.2);
+        assert_eq!(near, Some((0, 100, 2)), "the picker spreads within the store");
+        assert_eq!(pick_within_store(Vec::<(u32, i64, u64)>::new(), |c| c.1, |c| c.0, |c| c.2), None, "nothing: none");
     }
 
     /// ★ E2-d pinned, E2-h re-stated: for two units among [800, 3, 2, 50]

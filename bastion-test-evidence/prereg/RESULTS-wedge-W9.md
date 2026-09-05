@@ -1391,6 +1391,44 @@ replicates: the b2 reader restarts b2 after W12-b's day-1 read; a
 b1 reader restarts the 160-day arm after E2-g-c's night-2 read and
 reads +4, +10 and day 1 until E2-l's stage takes b1 back.
 
+W13 +10 on b2 (read 19:27, hour 13 of day 0), against the bars:
+pure-glide embeds at most 2 -- 1 (8), PASSED; EMBED WATCH 2 in all
+(chaser-hold 1); GLIDE HELD 0 -- PASSED; snaps at least 50 -- 16,384
+(every step snaps), PASSED; stuck 0 -- PASSED; arrivals at least 450
+-- 301 (W12-a 502, W12-b 437): the clause "arrivals under 350 (the
+snap holds bodies at edges)" FIRED as written. But the pair carries
+W12-b's one-cell store, and with every haul's anchor the same cell
+the anchor queue (E2-m's finding: any nearer body holds me) queues
+the haulers behind each other -- the pump on this read waited
+twice as long (mean 104 ticks, max 253; W12-b: 51, 77) with 33
+pending, which is a queue at the pile, not a body held at a step.
+So the arrivals clause is CONFOUNDED by a defect this row does not
+own; it is not excused. The deciding replicates: b1's W13 read
+(the E2-g-c world, the same pile) and, above all, W12-b-b's b2 read
+(the same snap with the store spread): arrivals at +10 at least
+450 there, or W13's snap is the cost and comes out. For b1 the
+baseline (the three previous b1 runs, arrivals within 4 and 10
+minutes of the first log line): 335 and 562 (E2-g-c), 274 and 617
+(E2-g-b), 209 and 527 (the run before); W13 on b1 at +4 read 221 --
+inside that range -- with EMBED WATCH 1 and snaps 2,048; its +10
+follows. (Both W13 replicates carry the one-cell store; only the
+W12-b-b read is clean of it.)
+
+W13 +10 on b1 (read 19:28, hour 12 of day 0): pure-glide embeds 5
+(bar at most 2) -- FAILED on this replicate; EMBED WATCH 5 in all,
+STALL BLAMED 1; snaps 16,384; GLIDE HELD 0; stuck 1; arrivals 471
+(baseline 527-617, the pile aboard); unreachable 0 of 245. The five
+embeds have a NEW signature: entry z 181.96 -> embedded 181.996,
+181.09 -> 181.01, 180.09 -> 180.003 (three at the store rows, (7687,
+6353) and (7649..7654, 6417)): the body snapped onto an integer z
+and the watch read it as inside the block below. Together with
+W12-b-b's void witness (surface 752, standable 0 for the general
+store) this says the store's cells at the picked z are not air:
+the drop-cell surface (`column_surface_z`, which deliberately
+resolves through Wood) sits one block UNDER a wooden floor, so
+every item, target and snapped body at z 181 is inside the plank.
+Read below (the probe's block map) before it is named.
+
 ## W15-i1, registered 19:07 (keyed on the W12-a-b stage, the end of both queues)
 
 THE PUMP NAMES THE EXHAUSTED SEARCH. On the E2-j pair (b2) the
@@ -1417,6 +1455,65 @@ hypothesis if flat is the majority (the curfew's routes on the
 flat, not the stairs). Rejected: routing the stairs before
 counting; a longer budget. NOT evidenced: the router's stair
 admission (W15, if the count says so); the day's exhaustions.
+
+### W12-b-b landed (e27cb07886, staged 19:29)
+
+Check clean, the pin green, both halves staged 19:29; the binary
+verified by its witness string ("DROP CELL FILTER EMPTIED THE
+STORE" present once), shipped to lab-bin 19:30. The falsifier (the
+fallback removed) went RED at 19:32, the tree restored clean. The
+b2 reader restarted b2 at 19:31 after W13's +10 read and reads +4,
++10, day 1 -- the deciding replicate for W13's arrivals bar and
+this row's own.
+
+### W12-b-b at boot on b2 (pair e27cb07886, read 19:33): the store spreads again, and the void is named
+
+The founding deliveries spread from the centre out ((7665, 6364),
+(7666, 6364), (7667, 6365)...); STORAGE SUMMARY day 0 general_units
+12,200, general_max_cell 128 (W12-b: 12,022; the older pairs 200).
+DROP CELL FILTER EMPTIED THE STORE fired on every call for the
+general store: region min (7642, 6342, 178), surface 752, standable
+0 -- no cell of the store passes colonist_walkable at surface + 1.
+The row's own bars are read at +10 and day 1; the void's cause is
+W12-c's row.
+
+W12-b-b +4 on b2 (read 19:35, hour 11 of day 0): FILTER VOIDS 15
+(every call, surface 752, standable 0 -- the fallback carried every
+pick); DROP CELL SPREAD 15 lines, dist2 1, 1, 1, 1, 2, 2, 2, 2, 5,
+10, 20, 40, 80, 169 (from the centre out, as pinned); founding
+delivery cells 24 distinct (1 on W12-b); DepositRun job_pos 50
+distinct (4); general_max_cell 128 (12,022); EMBED WATCH 0 (W12-a
+at +4: 4); unreachable 0 of 173; arrivals 256 (W12-a's +4 on b2:
+359); pump pending 32, mean wait 73, max 236 (W12-a's +4: 33, 85);
+stuck 0, panics 0. The store spreads and the corner stays gone; the
+pump has been slower on every pair since W12-b (W12-b-b's +10 and
+W12-c's read say whether the plank floor is that too).
+
+## W12-c, registered 19:36 (keyed on the E2-j-b stage; ahead of E2-l and the rest)
+
+THE DROP CELL STANDS ON THE FLOOR, NOT UNDER IT. `column_surface_z`
+resolves through Wood by design (a roof over a house), so under a
+plank floor it finds the ground beneath the floor and surface + 1
+is the plank: items delivered at z 181, targets accepted at 182,
+colonist_walkable false at 181 for all 752 cells, W13's b1 embeds
+at z 181.96 in the store rows. Now the drop cell is the first
+standable cell above the surface (up to DROP_CELL_LIFT_MAX 6),
+surface + 1 when none is; the centre lifts the same way; DROP CELLS
+LIFTED ONTO THE FLOOR (region_min, centre, lifted, surface, lifts).
+Pin `the_drop_cell_stands_on_the_floor` (a plank lifts the cell to
+surface + 2; bare ground surface + 1; nothing standable surface +
+1); planted: the lift ignored, red. Prediction (b1 fresh,
+`wait-w12c-b1.sh`, after W13's b1 day-1 read; +10 and day 1): the
+void witness 0; lifted about 752; DELIVERED z 182 in the general
+store; DepositRun job_pos z 182; embeds at the store rows 0 and
+under 8 in all by day 1; general_max_cell under 600. Falsified if
+the void still fires for the general store, or the delivered z
+stays 181, or the store-row embeds persist with items at 182.
+Rejected: stopping the surface at Wood (a roof again); a per-zone
+offset; a walkable-only scan from the top. NOT evidenced: the four
+other stores' floors; the haul re-aim's cells. The E2-l chain and
+reader were re-keyed behind this row; the dry tree was rebuilt in
+the order E2-j-b, W12-c, E2-l, E2-m, E2-k, E2-i2, W12-a-b, W15-i1.
 
 ## W12-a-b, registered 18:32 (keyed on the E2-i2 stage, the end of the queue)
 
