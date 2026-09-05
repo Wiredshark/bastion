@@ -449,6 +449,12 @@ wedge witnesses, FIRST LEG STITCHED, the profile at +4/+10 and days
 | STALL BLAMED ON THE WALKER / ROUTE FAULT | 0 / 1 | 5 / 2 |
 | panics | 0 | 0 |
 
+Day 1 (05:38, hour 0 of day 1): FIRST LEG lines still 0; EMBED WATCH
+15 for the day (W9-c day 1: 10), idx0 embeds 11, stall probes 32,
+rejected_dz 2,048, STALL BLAMED 5, ROUTE FAULT 2; meals 45, shunned
+16; panics 0. W10-b's limit did not move the embed class on this
+replicate either.
+
 **W10-a FAILED live: the arm never fires.** Zero first-leg lines in
 ten minutes while the class it was built for goes on (seven embeds at
 the route's first node, twenty stall probes). Either the gate
@@ -490,6 +496,68 @@ boot only (read on test 9); searched > 0, stitched = 0, tail_dropped =
 searched = the completion arrives under another target (the match).
 Falsified if the sum misses routes, or if stitched > 0 (W10-a was
 alive and +10 was early).
+
+### W10-a-i landed (87ff5dbec4, 05:53)
+
+Check clean, pin `the_first_leg_gate_names_its_arm` green (1 passed),
+staged 05:53, shipped to lab-bin 05:54. Falsified at the commit:
+blocked reading as searched turned the pin red (0 passed, 1 failed),
+tree restored clean at 05:56. The b2 reader (`wait-w10ai-b2.sh`:
+FIRST LEG GATE at +4, +10, days 1-2, with the embed and profile lines
+beside it) runs from the stage.
+
+### W10-a-i live (b2, 87ff5dbec4, boot 05:55)
+
++4 min (hour 11): FIRST LEG GATE routes=256 near=256 blocked_pending=0
+searched=0 stitched=0 unreachable=0 tail_dropped=0; the profile at the
+same read: routes=1,024, detour 1.71, lifted_up 1,039, walltop_refused
+3,490, rejected_solid 392, rejected_dz 475; EMBED WATCH 3, all three at
+the route's first node (idx0); stall probes 0; panics 0.
+
++10 min (hour 15): FIRST LEG GATE routes=768 near=768, the rest 0;
+profile routes=3,072, detour 1.90, rejected_solid 1,319, rejected_dz
+1,114 (79% of routes refused, so the gate's 768 against 3,072 is the
+accepted share, as the code's structure says); EMBED WATCH 7, idx0 5;
+ROUTE FAULT 4; ITEM 39 p95 422 us; panics 0.
+
+Two findings, both against W10-a's premise. **Near is 100%**: on a
+fresh arm the first node is never farther than a tile, so
+`first_leg_needs_search` is never true and the stitch can never fire;
+and the embeds still happen at that near first node, so the body
+glides a SHORT first leg through something -- the wall between a
+house or store and the nearest road tile -- not a long one. **The
+"quarter" is two frames compared as one, withdrawn**: the gate prints
+at multiples of 256 and the profile at multiples of 1,024, so "256"
+and "1,024" are the last thresholds each crossed, not counts at the
+read; the fraction is unknown from this line. What IS known from the
+profile: rejected_solid 392 + rejected_dz 475 of 1,024 routes -- the
+W9-c ground rule and W10-b's step limit refuse most trunk routes on
+this arm, and the gate sits under `if let Some(wps) = trunked`, so a
+refused route never has a first leg at all; where those bodies walk
+instead is the next read. The fix that follows (W10-a-b) must (1) sit
+where every accepted route is built and (2) gate on the LINE, not the distance:
+the straight first leg is walked cell by cell against
+`colonist_walkable` and searched when it crosses a cell a body cannot
+pass -- prior art is Detour's raycast before a straight move.
+
+## W10-a-b, registered 06:08 (keyed on the P-zero-hours-b stage, before the binary; E2 re-keyed behind it)
+
+`first_leg_crosses_solid(solid, feet, node0)`: the straight segment
+from the feet to node 0's centre sampled every half block at the
+feet's z and the head's z; any solid cell but the body's own means
+the approach goes to the pump and the trunk waits as a tail (W10-a's
+search-and-stitch, unchanged). The gate is far OR crossing;
+`crossed` joins the FIRST LEG GATE line. Unseen terrain is clear
+(identity). Pin `the_first_leg_is_walked_before_it_is_assumed`;
+planted defect: the line is never walked, red.
+
+Prediction (b2 fresh, +10 min): crossed > 0, searched >= crossed -
+blocked_pending, FIRST LEG STITCHED prints for the first time, idx0
+embeds in the first ten minutes at most 1 (3 at +4 on W10-a-i, 7 at
++10 on W10-a), EMBED WATCH at +10 at most 3 (11, 6), ITEM 39 p95
+under 600 us. Falsified if crossed > 0 and stitched stays 0 (the arm
+that eats the search is named by blocked_pending or tail_dropped), or
+if stitched > 0 and idx0 embeds do not fall.
 
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 

@@ -4269,6 +4269,18 @@ pub(crate) fn argmax_verdict(top_count: u32, incumbent: Option<(bool, u32)>) -> 
 }
 pub static NAMED_BY_NEED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// ★ P-zero-hours-b: THE DRAFT RUNS AT THE PLAN. A plan with cells to
+/// build and no colonist who counts as a builder calls the day's naming
+/// block now rather than at midnight; a fresh town built nothing on its
+/// first day and a restored one nothing on its first, because the crew
+/// was drafted only at the day line.
+pub(crate) fn draft_at_plan(builders_now: usize, plan_cells: usize) -> bool {
+    plan_cells > 0 && builders_now == 0
+}
+
+/// Times the plan called the draft.
+pub static DRAFTS_AT_PLAN: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn scarcest_lane(
     lanes: &[(common::bastion::WorkType, usize, usize)],
 ) -> Option<common::bastion::WorkType> {
@@ -18538,6 +18550,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             outcome = ?plotb::HouseRequestOutcome::Grown,
                             "bastion: PLOT PLAN QUEUED — the colonists will build what shows"
                         );
+                        // ★ P-zero-hours-b: no builder yet? the day's naming block
+                        // runs on the next tick instead of at midnight.
+                        let builders_now = board
+                            .professions
+                            .iter()
+                            .filter(|(u, w)| {
+                                crate::bastion_plot_build::counts_as_builder(
+                                    **w == common::bastion::WorkType::Build,
+                                    board
+                                        .lane_counts
+                                        .get(&(**u, common::bastion::WorkType::Build))
+                                        .copied()
+                                        .unwrap_or(0),
+                                    board.builder_former_trade.contains_key(*u),
+                                )
+                            })
+                            .count();
+                        if draft_at_plan(builders_now, queued) {
+                            board.profession_day = i64::MIN;
+                            let n = DRAFTS_AT_PLAN.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                            info!(
+                                plan = plan_id,
+                                cells = queued,
+                                builders_now,
+                                drafts_at_plan = n,
+                                "bastion: BUILD DRAFT CALLED AT THE PLAN — no colonist counts as a \
+                                 builder; the day's naming block runs now, not at midnight"
+                            );
+                        }
                     },
                     // NOT AN ERROR, and not a reason to give up: the index is
                     // being read by a chunk job this tick. Nothing was spent
@@ -53515,6 +53556,16 @@ mod tests {
         assert_eq!(first_leg_gate(false, true), FirstLegGate::Near, "near wins over pending");
         assert_eq!(first_leg_gate(true, true), FirstLegGate::BlockedPending);
         assert_eq!(first_leg_gate(true, false), FirstLegGate::Searched);
+    }
+
+    /// ★ P-zero-hours-b pinned: a plan with cells and no builder calls the
+    /// draft; a plan with a builder, or no cells, does not. Planted defect:
+    /// never -> red.
+    #[test]
+    fn a_plan_with_no_builder_calls_the_draft() {
+        assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
+        assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
+        assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
     }
 
     /// ★ R3-b pinned: the larder is delivered only when it has entries and
