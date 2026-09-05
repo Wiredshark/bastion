@@ -718,6 +718,16 @@ the accepted share no lower than 15%. Falsified if rejected_crossing
 is under 1% and the embeds hold (the wall is off the trunk's lines),
 or if p95 passes 800 us (the pump's budget is the row).
 
+### W10-d landed (56bdcff764, 09:34)
+
+Check clean, pin `every_leg_is_walked_before_it_is_assumed` green (1
+passed), staged 09:34, shipped to lab-bin 09:34. Falsified at the
+commit: the height not following the segment turned the pin red (0
+passed, 1 failed), tree restored clean at 09:37. The b2 reader
+(`wait-w10d-b2.sh`: rejected_crossing on the profile, the embeds and
+their writers, the pump cost, at +4, +10, days 1-2) run from the
+stage.
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground

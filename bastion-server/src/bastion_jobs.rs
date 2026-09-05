@@ -16989,6 +16989,17 @@ pub(crate) fn larder_delivery_due(store_pending: usize, orders_pending: usize) -
     store_pending > 0 && orders_pending == 0
 }
 
+/// ★ W9-i2: a body's height above the natural surface of its own column:
+/// 0 = on the ground, 1 = a step up (a stair, a doorstep), 2 = two or
+/// more above (a wall top, a fence, a roof, a pile). A slope is ground.
+pub(crate) fn height_class(feet_z: i32, surface_z: i32) -> u8 {
+    match feet_z - (surface_z + 1) {
+        d if d <= 0 => 0,
+        1 => 1,
+        _ => 2,
+    }
+}
+
 pub(crate) fn store_snapshot_from(
     items: impl IntoIterator<Item = (Vec3<i32>, String, u32)>,
     in_store: impl Fn(Vec3<i32>) -> bool,
@@ -19638,6 +19649,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     colonists = (&colonists).join().count(),
                     "bastion FOOD-WIPE DISCRIMINATOR — the same food counted four ways"
                 );
+                // ★ W9-i2: every colonist's height above its own column's
+                // natural surface (the frame a wall top or a roof shows in).
+                {
+                    let (mut on_ground, mut one_above, mut two_plus, mut unseen) = (0u32, 0u32, 0u32, 0u32);
+                    for (_, pos) in (&colonists, &positions).join() {
+                        let feet = pos.0.map(|e| e.floor() as i32);
+                        match column_surface_z(&terrain, feet.x, feet.y, feet.z) {
+                            None => unseen += 1,
+                            Some(sz) => match height_class(feet.z, sz) {
+                                0 => on_ground += 1,
+                                1 => one_above += 1,
+                                _ => two_plus += 1,
+                            },
+                        }
+                    }
+                    info!(
+                        tick = tick.0,
+                        on_ground,
+                        one_above,
+                        two_plus_above = two_plus,
+                        unseen,
+                        "bastion: BODY HEIGHT CENSUS — colonists by height above the natural \
+                         surface of their own column (a wall top or a roof is two or more; a \
+                         slope is ground)"
+                    );
+                }
                 // ★ R3: the larder snapshot -- same join, same tick, every
                 // item kind (seeds, stone and wood are the town's too).
                 let snap = store_snapshot_from(
@@ -54072,6 +54109,19 @@ mod tests {
         assert!(supper_round_due(true, Some(3), 4), "ran yesterday: due");
         assert!(!supper_round_due(true, Some(4), 4), "ran today: not again");
         assert!(!supper_round_due(false, None, 4), "outside the supper hour: never");
+    }
+
+    /// ★ W9-i2 pinned: feet on the block above the surface is ground; one
+    /// higher is a step; two or more is a wall top or a roof; a body below
+    /// the surface (a pit, a cellar) is ground. Planted defect: the step
+    /// counted as ground -> red.
+    #[test]
+    fn a_height_is_measured_from_its_own_ground() {
+        assert_eq!(height_class(181, 180), 0, "standing on the surface block");
+        assert_eq!(height_class(182, 180), 1, "a step up");
+        assert_eq!(height_class(183, 180), 2, "a wall top");
+        assert_eq!(height_class(187, 180), 2, "a roof");
+        assert_eq!(height_class(179, 180), 0, "in a pit: ground");
     }
 
     /// ★ R3-b pinned: the larder is delivered only when it has entries and
