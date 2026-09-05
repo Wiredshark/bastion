@@ -1207,6 +1207,31 @@ triplets at +4, +10, days 1-2) run from the stage; the E2-i1 chain
 keys on it. The falsifier went red and restored clean at 16:43;
 lab-bin carries the pair from 16:40.
 
+b2 +10 min (hour 14 of day 0, boot 17:04, read 17:14): UNREACHABLE
+APPROACH 15 witnesses, all start=Open from_in_house=true
+first_leg=false; the census sum delivered_unreachable=17 =
+unreachable_open 17 (boxed 0, solid 0) -- W12-i1's finding holds on
+a second boot. DOOR PROBE 6 lines: **ExitOpenTargetUnreachable 4,
+NoDoor 2**; doors per probed house 2, 2, 2, 2, 0, 0; at every found
+door colonist_walkable(at)=true, below=false, above=false (the door
+cell walks; the cells under and over it are floor and air over
+nothing, as they should be). Prediction: "SealedInside on at least 5
+of 8" FALSIFIED (0 of 6); "ExitOpenTargetUnreachable on at least 5
+of 8" met in proportion (4 of 6, two-thirds) with the other two
+NoDoor (a house region with no door sprite at the feet's storey --
+the region or the storey, its own question). The way out of the
+house is fine; the search fails at its TARGET. The fill search aims
+at the job's own cell (`ps.target` is the raw target, the arrive
+owning the last leg), and a mine face, a tree, a build site or a
+shelf cell is not a walkable cell: a search to it is Unreachable by
+construction. W12-a (next): the search aims at a STAND cell -- the
+nearest walkable cell beside the target -- not the target; the
+probe's job kinds on b2's current run (which carries the witness)
+are read first to confirm the targets are work cells. Same read:
+EMBED WATCH 9 (4 chaser-pure-glide, 2 chaser-refused-rock, 2
+bridge-refused-rock, 1 chaser-settle), routes=3072, arrived 452,
+working=7, p95 435, panics 0.
+
 ## W11-b, registered 15:15 (keyed on the E2-h stage, the end of the chain, before the binary)
 
 `wall_escape_targets(had_route) -> (had_route, true)`: on Failed the

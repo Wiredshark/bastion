@@ -730,6 +730,29 @@ night-2 read (hour 6 of day 2, ~16:50) gives the deliveries, the
 night meals and the sleepers on a night whose shelves were minted
 for.
 
+After night 2 (b2, hour 6 of day 2, 17:03; cumulative): the day-1
+round's 51 loads -> arrivals to private shelves before the sweep 24,
+SWEPT day 2: 30 (day 0: 58 loads, 38 arrivals, 26 swept); SUPPER
+CARRIED HOME 32 cumulative (16 on each day); NIGHT MEAL AT HOME 8
+cumulative (night 2 added two); no_food_found 4,856 on the day-2
+census (day 1: 282); meals 117; YEAR day=2 food_stock 3,923 / 24.5
+days (day 1: 3,976 -- steady, E2-f holds it); in_bags through day 1
+146-236 (the bounded loads in flight; the pair carries E2-f, and
+BAG CENSUS holders were under 64 on its own read). Starving by
+clock, night 2 alone: RestAt/Arrived 7, 10, 14, 14 at hours 0-3
+(night 1: 5, 8, 11, 16), EatFrom/Traveling 5-14 through the night
+(hungry bodies walking at 1-3: the curfew is not holding them --
+they have no home to be held to? E2-i1 reads it), the rise 22 at
+hour 4; distinct starving sleepers 6 cumulative (night 2 added
+three); the evening EatFrom/Waiting 11, 11, 7 at 17-19 (the queue at
+one pile) and RestAt/Traveling 6-8 through 13-17 (walking to rest
+hungry in the afternoon). **E2-h PASSED its round bars and its
+outcome did not move the night**: the loads exist, 24 of 51 arrive,
+30 are swept, and the sleepers starve as before. The carry is the
+limit on this world too (the pair has E2-g's noon lift and E2-e's
+errand); E2-g-b re-cuts the eaters' window, E2-i1 reads the shelf
+the sleepers wake beside.
+
 ## E2-i1, registered 15:55 (keyed on the W12-i2 stage, the end of the chain, before the binary)
 
 An instrument row from E2-g's night: the curfew never fired
@@ -751,6 +774,64 @@ refused_reach dominant (the shelf cell's component: the shelf's
 placement). Rejected: scoping the pick further; lifting a curfew that
 never fires; guessing between bare and refused. NOT evidenced: the
 day-side no_food_found (the evening rush is a day pick).
+
+### E2-i1 landed (61fbaebf71, staged 17:11)
+
+The first chain refused at cargo check (a double deref of the item
+uid in the new count loop; fixed to a single deref, the tree
+restored to HEAD before the relaunch). Check clean, the pin green,
+both halves staged 17:11. The falsifier (Empty and Refused swapped)
+and the b2 reader (`wait-e2i1-b2.sh`: after W12-i2's +10, a fresh
+b2; the round at hour 13, then the night-shelf verdicts and the EAT
+CENSUS night keys at hour 6 of days 1 and 2) run from the stage. The
+falsifier went red and restored clean at 17:14; lab-bin carries the
+pair from 17:11.
+
+## E2-g-c, registered 17:25 (keyed on the E2-j stage, the end of the chain, before the binary)
+
+`SUPPER_WALK_HOME_WORK_HOURS = 2`: the walk home is any of the day's
+last two Work hours and the Leisure after them (14-15 and 16-21 on
+the default schedule). A stated middle between E2-g's four hours
+(works down two fifths) and E2-g-b's one (half the shelves bare,
+eight sleepers): measured, not a taste. Pin
+`the_eater_carries_supper_on_the_way_home` re-stated (14, 15, 16,
+17, 20, 21 yes; 12, 13, 6, 7, 22, 3 no); planted: four hours, red.
+Prediction (b1 fresh, `wait-e2gc-b1.sh`, the day-1 line and night 1
+at hour 6): shelf arrivals before the sweep at least 40 (25 / 48);
+SUPPER CARRIED HOME at least 24 (16 / 32); the lanes' works at least
+420 (481 / 305); NIGHT MEAL AT HOME at least 8 (4 / 9); distinct
+starving sleepers at most 4 (8 / 3); in-bed starving at most 12 an
+hour at 0-3 (43 / 18); the Haul lane's hauls at least 25. Falsified
+if the shelves stay under 35 (the window is not the lever) or the
+works fall under 400 (the cost returns at two hours); then the carry
+needs another shape (a load per eater minted at the store as the
+eater passes, without a round). Rejected: three hours (the next step
+if two fails the shelves); a per-eater cap; a second round in the
+evening. NOT evidenced: night 2; the night watch; whether the
+starving sleepers' shelves were bare or refused (E2-i1).
+
+## E2-j, registered 17:13 (keyed on the E2-i1 stage, the end of the chain, before the binary)
+
+The evening queue at one pile: EatFrom/Waiting 11, 11, 7 an hour at
+17-19 on b2's two E2-h evenings. `ActiveJobState::Waiting` is the
+anchor queue (a farther body waits while a nearer one takes the
+steer); the eat pick takes the nearest admissible food by squared
+distance with the uid as the tie-break, so the plaza's hungry pick
+the same stack, reserve it (a stack of hundreds admits dozens), and
+queue at its cell. Mechanism: `eat_pick_key(reserved, dist2, uid)` =
+(reserved.min(8), dist2, uid) with reserved = the stack's
+reservation count; the pick's min_by_key uses it -- an unreserved
+stack ten blocks off beats a reserved one at the feet. Prior art:
+RimWorld skips a meal another pawn has reserved; Dwarf Fortress
+claims a food item per job. Pin `the_pick_spreads_over_the_stacks`;
+planted: the reservations ignored, red. Prediction (b2 fresh,
+`wait-e2j-b2.sh`, night 1 at hour 6): EatFrom/Waiting at 16-20 at
+most 3 an hour (11); EatFrom/Traveling there not above 12; meals at
+least 45; the night unchanged (this row is the evening's). Falsified
+if the Waiting stays above 8 (the anchor cell, not the pick) or
+Traveling doubles (the spread walks too far). Rejected: a second
+anchor cell at the pile; widening the capacity refusal; a random
+tie-break. NOT evidenced: the cook-station queue; the night.
 
 ## E2-g-b, registered 15:45 (keyed on the W11-b stage, the end of the chain, before the binary)
 
@@ -783,6 +864,33 @@ works, SUPPER CARRIED HOME, the round, the shelf arrivals, the sweep,
 night meals and the starving at hour 6 of days 1 and 2) run from the
 stage; the W12-i2 chain keys on it. The falsifier went red and
 restored clean at 16:17; lab-bin carries the pair from 16:15.
+
+After night 1 (b1, hour 6 of day 1, 17:20; the pair 7d28997261 =
+W12-i2's, which carries E2-g-b): SUPPER ROUND day=0 hour=12 loads=49;
+arrivals to private shelves before the sweep 25, general 13 (E2-g:
+48 / 9; E2-e: 21 / 4); SUPPER CARRIED HOME 16 (E2-g: 32); SWEPT 30
+(E2-g 14); NIGHT MEAL AT HOME 4 (E2-g 9; bar 10: NOT met);
+no_food_found 423 (305); meals 45; YEAR day=1 food_stock 3,961 /
+25.8 days; the lanes' works Build 180, Farm 74, Mine 71, Craft 55,
+Guard 4 and Cook (cut in the print) -- about 481 with Cook 97 from
+the day line (bar 450: MET; E2-g 305); the Haul lane 36 hauls (bar
+25: MET); in_bags 71-142 by day. Starving by clock: RestAt/Arrived
+7, 18, 35, 43 at hours 0-3 (E2-g: 7, 16, 14, 18 -- bar 8: NOT met,
+and worse); distinct starving sleepers 8 (E2-g 3; bar 3: NOT met);
+the evening EatFrom/Traveling 2-8 at 15-20. **E2-g-b traded the
+shelves for the works**: with the eaters' window cut to one work
+hour and the evening, the eaters carried 16 (32) and the haulers 9
+(E2-e's lane carried 21 in its four-hour window on this world; 36
+hauls a day is the lane's whole capacity, and 49 loads exceed it),
+25 shelves were stocked (48), and the night had eight starving
+sleepers (3). Neither window is right: four hours took two fifths
+of the works, one hour left half the shelves bare. E2-g-c takes the
+middle -- the last TWO work hours and the evening -- as a stated
+assumption to be measured, not a taste: the bars are shelves at
+least 40, works at least 420, sleepers at most 4, and the read will
+say whether the middle holds both or the carry needs a different
+shape (a load per eater minted at the store on the walk home,
+without the round).
 
 ### E2-e's second replicate: b2 on the W10-i1 pair (65db6d4cab, which carries E2-e), day-1 line at 13:52
 

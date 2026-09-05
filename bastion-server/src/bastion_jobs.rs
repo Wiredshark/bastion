@@ -8315,6 +8315,14 @@ pub(crate) static SUPPER_STALE_REMOVED: std::sync::atomic::AtomicU64 = std::sync
 /// smallest stack that covers the need and is no larger than the cap;
 /// else the largest stack under the cap (a partial supper); else none.
 /// Never a stack over the cap, whatever the need.
+/// ★ E2-j pinned: the eat pick's order -- the stack's reservations first
+/// (eaters already bound for it, capped at eight), then the squared
+/// distance, then the uid. An unreserved stack ten blocks off beats a
+/// reserved one at the feet; among unreserved stacks the nearest wins.
+pub(crate) fn eat_pick_key(reserved: u32, dist2: i64, uid: u64) -> (u32, i64, u64) {
+    (reserved.min(8), dist2, uid)
+}
+
 pub(crate) fn supper_stack_pick(amounts: &[u32], need: u32) -> Option<usize> {
     let covering = amounts
         .iter()
@@ -31798,7 +31806,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // (entity-allocation) order.
                                 .min_by_key(|(_, ipos, iuid)| {
                                     let c = ipos.0.map(|e| e.floor() as i32) - feet;
-                                    (
+                                    // ★ E2-j: THE PICK SPREADS OVER THE STACKS --
+                                    // a stack others are bound for ranks after
+                                    // one nobody is (the queue at one pile).
+                                    eat_pick_key(
+                                        board.reserved_count(**iuid),
                                         (c.x as i64).pow(2)
                                             + (c.y as i64).pow(2)
                                             + (c.z as i64).pow(2),
@@ -55213,6 +55225,17 @@ mod tests {
         assert_eq!(errand_priority(2, true), 5, "a low base is lifted");
         assert_eq!(errand_priority(7, true), 7, "a high base is kept");
         assert_eq!(errand_priority(2, false), 2, "a plain job keeps its base");
+    }
+
+    /// ★ E2-j pinned: an unreserved stack a hundred squared blocks off
+    /// ranks before a reserved one four off; among unreserved stacks the
+    /// nearer ranks first; nine reservations rank as eight. Planted defect:
+    /// the reservations ignored -> red.
+    #[test]
+    fn the_pick_spreads_over_the_stacks() {
+        assert!(eat_pick_key(0, 100, 7) < eat_pick_key(1, 4, 3), "unreserved and far beats reserved and near");
+        assert!(eat_pick_key(0, 4, 9) < eat_pick_key(0, 100, 1), "among unreserved, the nearer");
+        assert_eq!(eat_pick_key(9, 1, 1).0, 8, "capped at eight");
     }
 
     /// ★ E2-d pinned, E2-h re-stated: for two units among [800, 3, 2, 50]
