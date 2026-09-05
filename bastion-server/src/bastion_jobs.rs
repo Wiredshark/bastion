@@ -1898,17 +1898,26 @@ pub(crate) fn trunk_crossing_segment(
     wps.windows(2).position(|w| segment_crosses_solid(solid, w[0], w[1]))
 }
 
-/// ★ W10-e: with no route, a body may glide only at a target within this
-/// many blocks (and only when the line to it is clear); farther, it holds
-/// for the path.
-pub const NO_PATH_GLIDE_MAX: f32 = 3.0;
+/// ★ W10-f: with no route, the glide's next leg is the line to the goal
+/// cut at TRUNK_FIRST_LEG_MAX; the body holds only when that leg crosses
+/// solid (W10-e held every far walker for a pump that serves two slices a
+/// tick across the whole town: 524,288 holds and two at work by hour 13).
+pub(crate) fn glide_leg_end(feet: Vec3<f32>, target: Vec3<f32>) -> Vec3<i32> {
+    let d = target.xy() - feet.xy();
+    let len = d.magnitude();
+    let end = if len <= TRUNK_FIRST_LEG_MAX || len < 1e-3 {
+        target.xy()
+    } else {
+        feet.xy() + d * (TRUNK_FIRST_LEG_MAX / len)
+    };
+    Vec3::new(end.x.floor() as i32, end.y.floor() as i32, feet.z.floor() as i32)
+}
 pub(crate) static GLIDES_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// ★ W10-e pinned: NO PATH, NO GLIDE. With no route in the cache, the
-/// chaser holds at its own position when the target is farther than
-/// NO_PATH_GLIDE_MAX or the straight line to it crosses a solid.
-pub(crate) fn glide_held_for_path(dist_xy: f32, line_crosses: bool) -> bool {
-    dist_xy > NO_PATH_GLIDE_MAX || line_crosses
+/// ★ W10-f pinned: with no route in the cache, the chaser holds at its
+/// own position only when the next leg of the line crosses a solid.
+pub(crate) fn glide_held_for_path(leg_crosses: bool) -> bool {
+    leg_crosses
 }
 
 pub(crate) fn first_leg_needs_search(feet: Vec3<f32>, node0: Vec3<i32>) -> bool {
@@ -34949,29 +34958,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             if exhausted {
                                 board.path_cache.remove(&u);
                             }
-                            // ★ W10-e: NO PATH, NO GLIDE -- with no route the
-                            // steer was the raw target, and a walker whose
-                            // trunk was refused glided straight at a goal forty
-                            // blocks away through whatever stood between (b2,
-                            // W10-d: eight of ten embeds). It holds for the
-                            // path unless the goal is near and the line clear.
+                            // ★ W10-f (W10-e narrowed): with no route the steer
+                            // is the raw target and the body glides -- that is
+                            // the town's locomotion while the pump serves two
+                            // slices a tick. It holds only when the next six
+                            // blocks of the line cross solid (the glide INTO a
+                            // wall was the embed: b2, W10-d, eight of ten).
                             if board.path_cache.get(&u).is_none() {
                                 let dist_xy = pos.0.xy().distance(target.xy());
-                                let crosses = dist_xy <= NO_PATH_GLIDE_MAX && {
+                                let leg = glide_leg_end(pos.0, target);
+                                let crosses = {
                                     let solid = |q: Vec3<i32>| terrain.get(q).map(|b| b.is_solid()).unwrap_or(false);
-                                    first_leg_crosses_solid(&solid, pos.0, target.map(|e| e.floor() as i32))
+                                    first_leg_crosses_solid(&solid, pos.0, leg)
                                 };
-                                if glide_held_for_path(dist_xy, crosses) {
+                                if glide_held_for_path(crosses) {
                                     let n = GLIDES_HELD.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                     if n.is_power_of_two() {
                                         info!(
                                             uid = u.0.get(),
                                             dist_xy,
-                                            crosses,
+                                            leg = ?leg,
                                             pending = board.path_searches.contains_key(&u.0.get()),
                                             held_ticks = n,
-                                            "bastion: GLIDE HELD FOR THE PATH — no route yet, the body \
-                                             waits where it stands instead of walking straight at its goal"
+                                            "bastion: GLIDE HELD AT A WALL — no route and the line's \
+                                             next leg crosses solid; the body waits for the path"
                                         );
                                     }
                                     steer = pos.0;
@@ -54257,15 +54267,19 @@ mod tests {
         assert_eq!(committed_glide_verdict(false), CommittedGlide::Step, "the route stands: glide");
     }
 
-    /// ★ W10-e pinned: far with no route holds; near with a clear line
-    /// glides; near through a wall holds. Planted defect: the distance
-    /// limit removed (far glides freely) -> red.
+    /// ★ W10-f pinned: the glide's next leg is the line cut at six blocks
+    /// (a goal eighty-four away is checked six along the line, a goal two
+    /// away at the goal); a body holds only when that leg crosses solid.
+    /// Planted defect: the leg not cut (checked at the goal) -> red.
     #[test]
-    fn no_path_no_glide() {
-        assert!(glide_held_for_path(40.0, false), "forty blocks with no path: hold");
-        assert!(!glide_held_for_path(2.0, false), "two blocks, clear: glide");
-        assert!(glide_held_for_path(2.0, true), "two blocks through a wall: hold");
-        assert!(glide_held_for_path(NO_PATH_GLIDE_MAX + 0.1, false), "just past the limit: hold");
+    fn no_path_glides_only_a_clear_leg() {
+        let feet = Vec3::new(10.5, 10.5, 7.0);
+        let far = glide_leg_end(feet, Vec3::new(94.8, 10.5, 7.0));
+        assert_eq!((far.x, far.y, far.z), (16, 10, 7), "eighty-four along +x: the leg ends six along");
+        let near = glide_leg_end(feet, Vec3::new(12.2, 10.5, 7.0));
+        assert_eq!((near.x, near.y), (12, 10), "two along +x: the leg ends at the goal");
+        assert!(!glide_held_for_path(false), "a clear leg glides at any distance");
+        assert!(glide_held_for_path(true), "a leg through a wall holds");
     }
 
     /// ★ W10-d pinned: a fence mid-way on a flat leg is crossed; a one-block

@@ -841,6 +841,108 @@ embeds and their writers, the experience census, at +4, +10, days
 1-2) run from the stage. The b2 restart ends W9-i2's reader before its
 day-2 line; W9-i3 carries the height census forward.
 
+### W10-e FAILED LIVE (b2 fresh on aa05aa373c, read 11:10-11:17)
+
+The falsifier went red (the distance limit removed, restored clean
+11:08). Live, the town stopped. +4 min (hour 11 of day 0): GLIDE HELD
+held_ticks=262,144, EXPERIENCE working=0 moving=49 stuck=0, EMBED
+WATCH 0, p95 716 us. Hour 13: held_ticks=524,288 against 49 x 14,700
+= 720k colonist-ticks (three in four held), EXPERIENCE working=2
+moving=47 at three consecutive samples, three "arrived at job site"
+lines in six game hours, 214 jobs open. The last witnesses: uid 13
+dist_xy 84.3 crosses=false pending=true; uid 143 dist_xy 39.1
+crosses=false pending=true. Every held walker had a search pending.
+The search pump advances TWO searches a tick, round-robin across the
+whole board (`THE SEARCH PUMP: two slices per tick`; its delivery arm
+calls itself a PURE FALLBACK): with forty-seven walkers holding, each
+search stepped once in twenty-four ticks. The embed bars (0 at +4)
+were met by a town that did not walk, which is the null a hold
+produces by construction and not evidence. Disposition: W10-e's rule
+is withdrawn; the pre-path glide is the town's locomotion, and the
+defect it fixed was the glide INTO a wall, not the glide.
+
+## W10-f, registered 11:22 (keyed on the W9-i3 stage; inserted ahead of T1-b and E2-e; before the binary)
+
+`glide_leg_end(feet, target)`: the line to the goal cut at
+TRUNK_FIRST_LEG_MAX (six blocks; a goal within six is its own end).
+With no route, `first_leg_crosses_solid` is walked on that leg and
+`glide_held_for_path(crosses)` holds the body only when the leg
+crosses solid; NO_PATH_GLIDE_MAX is gone. Witness GLIDE HELD AT A
+WALL (uid, dist_xy, leg, pending, held_ticks). Pin
+`no_path_glides_only_a_clear_leg` replaces `no_path_no_glide`:
+eighty-four along +x from (10.5, 10.5) gives the leg end (16, 10); two
+along gives (12, 10); a clear leg glides, a crossing leg holds.
+Planted defect: the leg not cut (checked at the goal), red.
+Prediction (b2 fresh, `wait-w10f-b2.sh`): GLIDE HELD under 2,000 by
++10 (W10-e 524,288 by +9); working at least 8 at +10 (2); job-site
+arrivals at least 20 by +10 (3); EMBED WATCH at most 2 at +10 and 3
+by day 1 (W10-d: 10 a day, eight glides into walls); stuck at most 3;
+p95 under 600 us. Falsified if the embeds return to W10-d's count
+(the wall sits in the seventh block or on another z), or if the holds
+at walls pass 20,000 with working under 8 (a hold at a wall as
+permanent as W10-e's). Rejected: reverting W10-e outright (eight of
+ten embeds return); a hold with a timeout (the same embed later); more
+pump slices (the pump's budget is the tick's). W9-i3's pair
+(654958baa5) still carries the W10-e hold: its b2 reads are of a held
+town and its height context is read under that confound; the
+lab-bin pairs from aa05aa373c until W10-f ships are not to be played.
+
+## W10-i1, registered 11:30 (keyed on the E2-e stage, the end of the chain, before the binary)
+
+An instrument row. The pump had no witness: W10-e's failure was read
+from the held-glide line alone, and the queue's length (47) and a
+search's wait (one step in 24 ticks) were inferred, not read.
+`PendingSearch.since` (the enqueue tick, stamped at the three enqueue
+sites); `PumpCensus` notes every step and every delivery
+(`PumpOutcome::{Path, Unreachable, Exhausted}`, wait = tick - since);
+at tick % 300 == 17 the PUMP CENSUS line gives pending, oldest_wait,
+the deliveries by kind, mean_wait, max_wait, steps, then resets. Pin
+`the_pump_census_keeps_its_waits` (fresh reads zero; waits 10 and 30
+count two, one of each kind, sum 40, max 30, mean 20); planted: the
+maximum not kept, red. Prediction (b2 fresh, W10-f in force): the
+census fires 180 times a game day; pending under 20 at the day-0
+hour-11 sample; mean_wait under 300 ticks and max_wait under 2,000;
+exhausted under a third of the delivered. If max_wait passes a game
+hour (2,250) while pending stays above 30, the pump is a queue the
+town outgrows and W10-f's hold at a wall is a stall by construction:
+the next row gives the pump slices proportional to pending.
+
+## W11, registered 11:45 (keyed on the W10-i1 stage, the end of the chain, before the binary)
+
+The E2 "day trip" class named. b1 on the E2-d pair (3765c74e87),
+day 0 to day 1 hour 12, read 11:30: 1,637 CHASER GLIDE OVERRIDE
+lines in 113 loops (one uid at one node, lines a second apart);
+wall-seconds p50 4.5, p90 68.9, max 246.1 (uid 30), sum 2,627;
+twenty loops over thirty seconds. uid 77, a miner walking to eat,
+146 s at node (7807,6343,183) from feet (7807.5,6341.95,183), a
+solid between, then RELEASE-DIAG class="eat" reason=TimedOut.
+TimedOut by class: eat 20, build 8, recreate 8, cook 4, haul 3.
+Starving EatFrom/Traveling streaks (300-tick samples): 18, p50 5,
+p90 18, max 38 (uid 77). The override glides a refused node by
+ruling; the mover writes the feet into the wall each tick and physics
+ejects them; the velocity reads as walking (EXPERIENCE stuck=0 at
+every sample with ten bodies looping); no assist applies (a lateral
+cell, not a hop); the clock the ten-second machinery reads is fed the
+same crumbs. Mechanism: `board.override_anchor` (uid -> node, feet,
+tick); `override_verdict`: no anchor / another node / stale (600) ->
+Anchor; younger than 90 ticks -> Pushing; feet within 0.5 -> FAILED;
+else re-anchor. On Failed the route is dropped (the rebuild from the
+feet sends the crossing approach to the pump, W10-a), nothing is
+pushed that tick, OVERRIDE FAILED AT A WALL (uid, node, feet, secs,
+stuck, strikes, had_route, failed). The override witness carries
+stuck and strikes. Pin `the_override_fails_at_a_wall_by_its_feet`;
+planted: the movement test inverted, red. Prediction (b1 fresh, the
+same window): failures 20-200; loops p90 under 10 s and max under
+30 s; wall-seconds under 600; TimedOut eat under 6; streaks p90 under
+8; working at least 8 at day 1 hour 8; EMBED WATCH not above 12.
+Falsified if one body fails more than twenty times at one node (the
+node is the route's defect) or the failures pass 500 (the threshold
+fires on honest slow pushes). Rejected: refusing crossing legs at the
+route (W10-d), disabling the override, keying on stuck_time, a
+lateral assist (row 49's rooftops). NOT evidenced: whose nodes the
+walls are (2 of 1,024 trunk routes cross; the chaser's own corner cut
+is the next suspect).
+
 ## W9-i3, registered 10:30 (keyed on the W10-e stage, the end of the chain, before the binary)
 
 An instrument row. `height_context(indoors, builder)` -> Indoors

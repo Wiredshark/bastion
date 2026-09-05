@@ -349,7 +349,24 @@ hour 22 only; distinct starving sleepers 2; no_food_found 777 (E2-b
 day 1: 583, day 2: 8,339); panics 0. **E2-d PASSED its day-1 bars**
 (bags under 400 at every line, the sweep counted, in-bed starving
 under 6 an hour, sleepers at most 3, no_food_found under 1,000); the
-food frame holds where E2-b's slid. **And the sweep names the next
+food frame holds where E2-b's slid.
+
+CORRECTION (11:30, the same log at day 1 hour 8): that read was taken
+at clock hour=0 game_day=1, where the YEAR CENSUS day line fires,
+which is BEFORE night 1 (the Sleep block runs 22-5). The night bars
+were judged on the evening alone. With the night in: starving by
+clock RestAt/Arrived 14, 16, 14, 24 samples at hours 0-3 (the census
+samples every 300 ticks, 7.5 an hour: two to three sleepers starving
+at any sample), EatFrom/Traveling 42 at hour 4 (the hungry rise
+before the block ends) and 18, 8, 14, 13 through 5-8; distinct
+starving sleepers 5. Against the night bars E2-d FAILS (under 6 an
+hour, sleepers at most 3); against E2-c's night 1 (10-28 an hour, ten
+distinct) the sleepers halve and the samples do not. The bags, the
+sweep and the food frame stand as read. E2-e's baseline for the night
+is this, not the evening's 3 and 2. Every reader that keys a night on
+the YEAR CENSUS day line reads the evening; `wait-e2e-b1.sh` now
+reads day N at hour 6 of day N, and `read-e2d-night2.sh` reads E2-d's
+night 2 the same way. **And the sweep names the next
 defect**: 35 of 36 supper loads were never claimed before dusk --
 arrivals after the round 9, of which 2 to private shelves -- so
 supper reached two houses. The haul lane's day: 8 haulers, 23 hauls,
@@ -371,8 +388,10 @@ removed, red. Prediction (b1 fresh, day 1): the round at hour 12; Haul
 arrivals to private shelves before hour 16 at least 25 of 36 (E2-d:
 2); SUPPER HAULS SWEPT under 10 (35); NIGHT MEAL AT HOME at least 5
 (1); in-bed starving at most 3 an hour and distinct starving sleepers
-at most 1 (2); bags under 400 at every line and the food frame within
-200 of E2-d's. Falsified if the loads are claimed and the shelf
+at most 1 (E2-d night 1, read after the night: 14-24 an hour, 5
+distinct; the "2" first written here was the evening's count, see the
+correction above); bags under 400 at every line and the food frame
+within 200 of E2-d's. Falsified if the loads are claimed and the shelf
 arrivals stay under 10 (the errand is dropped on the way), or if field
 hauls fall to zero while the errands run (the lift starves the lane's
 own work).
