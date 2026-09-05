@@ -100,6 +100,26 @@ Not evidenced by this row: a wedge between two CLEAR nodes over ground
 that stands above the line (`lift_over_ground`'s row); a node that goes
 hollow under a dug mine.
 
+## Falsified at the commit (9e96efcd58, 01:15-01:21)
+
+Both plants turned their pin red: `trunk_node_z -> Some(z0)` at
+`bastion_jobs.rs:52887` (the "one up" case), `committed_glide_verdict
+-> Step` at `:52896`; the falsify tree restored to 0 dirty files after
+each. Committed 01:00 with a clean first check and both pins green;
+staged 01:15; shipped to lab-bin 01:15.
+
 ## Live evidence
 
-(pending: the W9 pair stages after W8-ii; b2's first day on it follows.)
+b2 restarted on the pair at 01:16 (the same flat world, the seventh
+boot of it tonight).
+
+| read | boot +4 min (01:20) |
+|---|---|
+| EMBED WATCH | 0 (W8-g boot: 379 by nine minutes) |
+| the two cells as a route head | 0 / 0 |
+| TRUNK nodes lifted / routes rejected (solid) / rejected (dz) | 1,037 / 512 / 15 |
+| COMMITTED GLIDE REFUSED (drops) | 64, at store-area nodes z=182 |
+| CHASER GLIDE REFUSED INTO ROCK (the override's gate) | 12 |
+| STALL BLAMED / ROUTE FAULT / STORE WOULD CLOSE | 0 / 0 / 0 |
+| ITEM 39 p95 / jobs | 507 us / 204 |
+| food_stock / food_locked / food_anywhere (F-i2) | 3,632 / 0 / 3,632 |

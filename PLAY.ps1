@@ -426,6 +426,24 @@ if ($Mode -eq 'flattown') {
     }
 }
 
+# ★ R2: A KEPT WORLD KEEPS THE COLONY'S WORK (2026-09-04). The server's
+# `experimental_terrain_persistence` defaults to false and nothing set it, so
+# every block the colonists placed, dug or sowed vanished at the next boot (the
+# sixth restart test: 23 placed cells, already_standing unchanged after a
+# graceful stop). On for fresh and kept worlds alike; BOM-free; refuse to boot
+# a world whose work would not survive it.
+$S = Join-Path $UD 'server\server_config\settings.ron'
+$txt = Get-Content $S -Raw
+$txt = $txt -replace 'experimental_terrain_persistence: false', 'experimental_terrain_persistence: true'
+if ($txt -notmatch 'experimental_terrain_persistence') {
+    $txt = $txt -replace '(\r?\n)(\s*)max_view_distance:', '$1$2experimental_terrain_persistence: true,$1$2max_view_distance:'
+}
+[System.IO.File]::WriteAllText($S, $txt, (New-Object System.Text.UTF8Encoding $false))
+if (-not (Select-String -Path $S -Pattern 'experimental_terrain_persistence: true' -Quiet)) {
+    Write-Host "terrain persistence splice FAILED in $S - a kept world would lose the colony's work"
+    return
+}
+
 Write-Host "booting a '$Mode' world... (worldgen takes a few minutes the first time)"
 
 # ★ ITS OWN WINDOW (never -NoNewWindow: server-cli is an interactive TUI and

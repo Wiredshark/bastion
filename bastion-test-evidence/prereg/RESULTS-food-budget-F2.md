@@ -361,3 +361,20 @@ The basket holds at nine harvests; the scale test is day 2, when the
 the ground there). The day-0 census line of this boot (food 1,132,
 store 2,928) was the mid-delivery snapshot described above and is not
 a stock.
+
+Day 2 (read from the saved log after the W9 restart, 01:20):
+
+| read | day 1 | day 2 |
+|---|---|---|
+| harvests (cell returns) / units basketed / ground drops | 9 / 36 / 0 | 161 / 644 / 0 |
+| harvested_today / matured_today | 36 / 938 | 608 / 1,373 |
+| food_stock / discriminator in_stockpile / on_ground_total | 4,118 / 4,117 / 4,124 | 4,563 / 4,563 / 4,577 |
+| store_units | 12,926 | 13,506 |
+| cooked / meals / targets_shunned / no_food_found | 85 / 49 / 11 / 0 | 107 / 110 / 20 / 0 |
+| starving (last census) / STORE WOULD CLOSE / panics | 1 / -- / 0 | 1 / 0 / 0 |
+
+Disposition: F3 PASSES. Every harvested unit rode in a basket (644 of
+644, zero fallbacks to the ground), the store rose 580 on the day, and
+the town's food outside its stores is 14 units against ~600 a day of
+litter before the row. The eaters' chase onto the terraces has nothing
+left to chase.

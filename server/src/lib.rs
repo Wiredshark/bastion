@@ -6404,6 +6404,36 @@ impl Server {
         let before_state_tick = Instant::now();
 
         fn on_block_update(ecs: &specs::World, changes: Vec<BlockDiff>) {
+            // ★ R2: THE COLONY'S BLOCKS ARE RECORDED FOR THE NEXT BOOT
+            // (2026-09-04). `TerrainPersistence` only ever heard from admin
+            // commands (cmd.rs); every block the colonists placed, dug or
+            // sowed went through `BlockChange` and was gone at the next boot
+            // (the sixth restart test: 23 placed cells, already_standing
+            // unchanged after a GRACEFUL stop). Recorded here, at the one
+            // apply site every writer shares; a no-op when the setting is
+            // off (no resource present).
+            #[cfg(feature = "persistent_world")]
+            {
+                let n = bastion_record_applied_changes(
+                    ecs.try_fetch_mut::<TerrainPersistence>().as_deref_mut(),
+                    changes.iter().map(|c| (c.wpos, c.new)),
+                );
+                if n > 0 {
+                    use core::sync::atomic::Ordering::Relaxed;
+                    let total =
+                        BASTION_TERRAIN_BLOCKS_RECORDED.fetch_add(n as u64, Relaxed) + n as u64;
+                    let calls = BASTION_TERRAIN_RECORD_CALLS.fetch_add(1, Relaxed) + 1;
+                    if calls.is_power_of_two() {
+                        tracing::info!(
+                            blocks_now = n,
+                            blocks_total = total,
+                            record_calls = calls,
+                            "bastion: TERRAIN PERSISTED — the colony's applied blocks are \
+                             recorded for the next boot"
+                        );
+                    }
+                }
+            }
             // When a resource block updates, inform rtsim. T1.12: the
             // resource-class-change test is the single authoritative
             // `BlockDiff::changes_rtsim_resource` predicate — every applied
@@ -9072,9 +9102,95 @@ pub(crate) fn bastion_founding_decision(colony_saved: bool, dtick: u64, blocked_
     }
 }
 
+/// ★ R2 (2026-09-04): blocks recorded into terrain persistence from the
+/// tick's apply site, and how many times the site recorded anything.
+#[cfg(feature = "persistent_world")]
+pub static BASTION_TERRAIN_BLOCKS_RECORDED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+#[cfg(feature = "persistent_world")]
+pub static BASTION_TERRAIN_RECORD_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// ★ R2: what the tick applied is what the next boot reads back. Every
+/// applied diff goes into the persistence store (which writes a chunk's
+/// edits on unload and at shutdown, and re-applies them when the chunk is
+/// generated again). No store (the setting off): nothing recorded, and the
+/// count says so.
+#[cfg(feature = "persistent_world")]
+pub(crate) fn bastion_record_applied_changes(
+    persist: Option<&mut TerrainPersistence>,
+    changes: impl IntoIterator<Item = (Vec3<i32>, common::terrain::Block)>,
+) -> usize {
+    let Some(p) = persist else { return 0 };
+    let mut n = 0;
+    for (pos, block) in changes {
+        p.set_block(pos, block);
+        n += 1;
+    }
+    n
+}
+
 #[cfg(test)]
 mod bastion_founding_tests {
     use super::bastion_founding_decision;
+
+    /// ★ R2 pinned: what the tick records, a fresh persistence instance on
+    /// the same directory reads back into a chunk; with no store nothing is
+    /// recorded. Planted defect: the record loop counts but never writes ->
+    /// the read-back goes red.
+    #[cfg(feature = "persistent_world")]
+    #[test]
+    fn the_applied_changes_are_recorded_for_the_next_boot() {
+        use common::{
+            terrain::{Block, BlockKind, TerrainChunk, TerrainChunkMeta},
+            vol::ReadVol,
+        };
+        use vek::*;
+        let dir = std::env::temp_dir().join(format!(
+            "bastion-r2-pin-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rock = Block::new(BlockKind::Rock, Rgb::new(90, 90, 90));
+        let wood = Block::new(BlockKind::Wood, Rgb::new(120, 80, 40));
+        // chunk (1, 2) at RECT_SIZE 32: cells (3, 6, 181) and (4, 6, 182)
+        let changes = [(Vec3::new(35, 70, 181), rock), (Vec3::new(36, 70, 182), wood)];
+        {
+            let mut p = crate::TerrainPersistence::new(dir.clone());
+            assert_eq!(
+                super::bastion_record_applied_changes(Some(&mut p), changes.iter().copied()),
+                2,
+                "two blocks recorded"
+            );
+            assert_eq!(
+                super::bastion_record_applied_changes(None, changes.iter().copied()),
+                0,
+                "no store: nothing recorded"
+            );
+            p.unload_all();
+        }
+        let mut again = crate::TerrainPersistence::new(dir.clone());
+        let mut chunk =
+            TerrainChunk::new(0, Block::empty(), Block::empty(), TerrainChunkMeta::void());
+        again.apply_changes(Vec2::new(1, 2), &mut chunk);
+        assert_eq!(
+            chunk.get(Vec3::new(3, 6, 181)).ok().copied(),
+            Some(rock),
+            "the rock came back at its chunk-relative cell"
+        );
+        assert_eq!(
+            chunk.get(Vec3::new(4, 6, 182)).ok().copied(),
+            Some(wood),
+            "the wood came back"
+        );
+        assert_eq!(
+            chunk.get(Vec3::new(3, 6, 182)).ok().copied(),
+            Some(Block::empty()),
+            "an untouched cell stays as generated"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// ★ R1c pinned: the restore path re-derives the maps, streams the town
     /// and makes a presence, and adopts nobody and re-places nothing (the
