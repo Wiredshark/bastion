@@ -19140,6 +19140,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // Whether colonists SHOULD be downed-and-revivable or die
                     // outright is a gameplay ruling and is banked for Ben.
                     let mut downed = 0u32;
+                    // ★ E1-i: WHO is starving (id:hunger:job:state), the first eight.
+                    let mut starving_who: Vec<String> = Vec::new();
                     for (colonist_c, entity, needs) in
                         (&colonists, &entities, (&needs_storage).maybe()).join()
                     {
@@ -19164,6 +19166,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             if n.hunger < 0.05 {
                                 starving += 1;
+                                if starving_who.len() < 8 {
+                                    let (job_kind, job_state) = match active_jobs.get(entity) {
+                                        Some(aj) => (
+                                            board
+                                                .jobs
+                                                .get(&aj.job)
+                                                .map(|j| format!("{:?}", j.kind))
+                                                .unwrap_or_else(|| "gone".to_string()),
+                                            format!("{:?}", aj.state),
+                                        ),
+                                        None => ("none".to_string(), "idle".to_string()),
+                                    };
+                                    starving_who.push(format!(
+                                        "{}:h{:.2}:{}:{}",
+                                        uids.get(entity).map(|u| u.0.get()).unwrap_or(0),
+                                        n.hunger,
+                                        job_kind,
+                                        job_state
+                                    ));
+                                }
                             }
                             if n.rest > 0.3 {
                                 rested += 1;
@@ -19344,6 +19366,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         running,
                         "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`;                          `stuck` = wedged >5s at speed~0, `slowed` = transient dip,                          also inside `moving`)"
                     );
+                    if !starving_who.is_empty() {
+                        info!(
+                            tick = tick.0,
+                            starving,
+                            who = %starving_who.join(" "),
+                            "bastion: STARVING COLONISTS — id:hunger:job:state, the first eight (E1-i)"
+                        );
+                    }
                     // ★ WHOSE BED IS OUTSIDE A HOUSE? (2026-09-01)
                     // ⚠ RETRACTED THE SAME DAY (see the doc on
                     // `housing_build_verdict`): the reading that first
