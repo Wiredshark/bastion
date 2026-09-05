@@ -365,3 +365,8 @@ with roster >= 40 and wanted = 6, SIZED naming a crew, Build arrivals
 above 10 and cells placed above 15 within ten minutes of the plan.
 Falsified if roster >= 40 and wanted 0 (plot_plan_open names it), or
 wanted 6 and nothing placed (a route row).
+
+Landed 2752edc4d6 at 07:08: check clean, pin green (1 passed), staged
+07:08, shipped to lab-bin 07:08. Falsified at the commit: names only
+turned the pin red (0 passed, 1 failed), tree restored clean at
+07:11. The live read waits for the E2 pair on b1.

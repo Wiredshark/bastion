@@ -581,6 +581,52 @@ failed), tree restored clean at 06:48. The b2 reader
 STITCHED, idx0 embeds, the profile, at +4, +10, days 1-2) run from
 the stage.
 
+### W10-a-b live (b2, 9488400a79, boot 06:46)
+
+| read | +4 min (hour 10) | +10 min (hour 13) | bar |
+|---|---|---|---|
+| FIRST LEG GATE | (not yet at 256) | routes=256 near=228 crossed=28 blocked_pending=12 searched=16 stitched=13 unreachable=0 tail_dropped=1 | crossed > 0; searched >= crossed - blocked |
+| FIRST LEG STITCHED lines / last | 3 / stitched=4 searched=4 | 4 / stitched=8 searched=10 | stitched > 0 |
+| idx0 embeds (prev == head) | 0 | 1 | at most 1 (W10-a: 7 at +10) |
+| EMBED WATCH | 0 | 2 | at most 3 (W10-a: 11; W9-c: 6) |
+| ITEM 39 p95 | 476 us | 503 us | under 600 |
+| STALL BLAMED / ROUTE FAULT / stall probes | 0 / 0 / 0 | 4 / 2 / 0 | -- |
+| profile detour / rejected_solid / rejected_dz | 2.02 / 375 / 533 | 2.24 / 999 / 843 | -- |
+| panics | 0 | 0 | 0 |
+
+**W10-a-b PASSED** its registered bars. The first leg is searched
+exactly where the straight line would cross a wall, the stitch fires
+(13 in the first 256 accepted routes), and the first-node embed class
+falls from seven in ten minutes to one. The searched count equals
+crossed minus blocked_pending to the unit, so the arms are exhaustive.
+The residual is the blocked_pending arm: 12 of 28 crossings met a
+search already pending for that colonist and glided raw -- the pump's
+one-search-per-colonist rule, named by W10-a-i's prediction as "a
+lane, not a distance". That is the next mover row (W10-a-c) if the
+day-1 and day-2 reads hold the share near 40%; tail_dropped 1 is the
+third arm and stays counted.
+
+## W10-a-c, registered 07:02 (keyed on the E2 stage, before the binary; T1 re-keyed behind it)
+
+The pump keeps one search per colonist in two lanes: Fill (a
+committed path into path_cache) and Detour (a wall detour with its
+own tier and counters). `first_leg_gate_lanes(needs_search, pending)`:
+a pending Fill is superseded by the approach (ReplacedFill: the
+approach search overwrites it, the tail too), a pending Detour still
+blocks (BlockedPending, as before), near still wins;
+`replaced_fill` joins the FIRST LEG GATE line. Pin
+`a_pending_fill_search_yields_to_the_approach`; planted defect: a
+pending Fill blocks, red.
+
+Prediction (b2 fresh, +10 min): blocked_pending at most 2 of the first
+256 routes (12 on W10-a-b) with replaced_fill taking the rest of that
+share; searched + replaced_fill >= crossed - blocked_pending; stitched
+at least 0.8 x (searched + replaced_fill); idx0 embeds 0-1; EMBED
+WATCH at most 2; STALL BLAMED and ROUTE FAULT no higher than 4 and 2;
+p95 under 600 us. Falsified if blocked_pending stays near 12 (the
+pending lane is Detour) or STALL BLAMED climbs (the replaced Fill was
+serving a walk this route did not own).
+
 ## W9-i2, registered 04:40 (queued at the end of the chain, before the binary)
 
 An instrument row. `height_class(feet_z, surface_z)`: 0 on the ground

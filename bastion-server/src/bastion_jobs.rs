@@ -7990,6 +7990,26 @@ pub const SLEEP_METABOLISM: f32 = 0.5;
 /// `BASTION_NO_SUPPER` restores the flat interrupt.
 pub const SUPPER_LINE: f32 = 0.6;
 
+/// ★ E2 THE SUPPER COMES HOME: food units every household shelf should
+/// hold at the supper hour, per head (a supper and a breakfast; the town
+/// eats ~3.2 a head a day). The round tops the shelf up to this, never past.
+pub const SUPPER_UNITS_PER_HEAD: u32 = 2;
+/// Loads one supper round may mint (the haul ceiling is 12 haulers; a
+/// round is one evening's errand, not a warehouse move).
+pub const SUPPER_ROUND_LOADS_MAX: u32 = 12;
+pub(crate) static SUPPER_LOADS_MINTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// ★ E2 pinned: the shelf's shortfall against its household -- zero when
+/// the shelf already holds enough, never negative.
+pub(crate) fn supper_shortfall(heads: u32, shelf_units: u32, per_head: u32) -> u32 {
+    heads.saturating_mul(per_head).saturating_sub(shelf_units)
+}
+
+/// ★ E2 pinned: the round runs once a day, in the supper hour only.
+pub(crate) fn supper_round_due(supper_now: bool, last_day: Option<i64>, today: i64) -> bool {
+    supper_now && last_day != Some(today)
+}
+
 /// True in the two hours before this colonist's Sleep block (and not in
 /// it): the town's 20-21 on the default schedule, a night watchman's own
 /// evening on his.
@@ -14170,6 +14190,8 @@ pub struct JobBoard {
     /// deferred-delivery queue), which lands it in the town's store when the
     /// chunks load.
     pub pending_store_restore: Vec<(Vec3<i32>, String, u32)>,
+    /// ★ E2: the day the supper round last ran (None: never).
+    pub supper_round_day: Option<i64>,
     /// bastion (G1d): the boot-time REPLAY CURSOR over [`growth_log`], or
     /// `None` when there is nothing left to replay.
     ///
@@ -27734,6 +27756,133 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 );
             }
         }
+        // ★ E2 THE SUPPER COMES HOME: once a day, in the supper hour, the
+        // haul lane tops up every occupied household shelf from the general
+        // stores, so the night lane (NIGHT HUNGER IS MET AT HOME) has
+        // something to find. Identity without a general store, a shelf, a
+        // shortfall, or when today's round already ran.
+        if tick.0 % 300 == 11
+            && !board.stockpiles.is_empty()
+            && generator_enabled(GeneratorKind::Haul)
+        {
+            let tod = rtsim.rt_state().data().time_of_day.0;
+            let hour = hour_of_day(tod);
+            let today = (tod / common::resources::DAY).floor() as i64;
+            if supper_round_due(supper_hour(&board.night_watch, None, hour), board.supper_round_day, today) {
+                board.supper_round_day = Some(today);
+                let houses: Vec<Region> = board
+                    .designated
+                    .iter()
+                    .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                    .map(|(r, _)| *r)
+                    .collect();
+                let general_exists =
+                    board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses.iter()));
+                if general_exists {
+                    let mut shelf_units: HashMap<common::bastion::ZoneId, u32> = HashMap::new();
+                    let mut general_food: Vec<(Uid, Vec3<i32>, &'static str, u32)> = Vec::new();
+                    for (pi, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
+                        let Some(def) = pi
+                            .item()
+                            .item_definition_id()
+                            .itemdef_id()
+                            .and_then(|d| FOOD_DEFS.iter().find(|f| **f == d).copied())
+                        else {
+                            continue;
+                        };
+                        let c = ipos.0.map(|e| e.floor() as i32);
+                        let Some((z, r)) = board
+                            .stockpiles
+                            .iter()
+                            .find(|(_, r)| r.contains_point_xy(c) && c.z >= r.min.z - 2 && c.z <= r.max.z + 3)
+                        else {
+                            continue;
+                        };
+                        if store_is_private(r, houses.iter()) {
+                            *shelf_units.entry(*z).or_insert(0) += pi.amount();
+                        } else if board.reserved_count(*iuid) == 0 {
+                            general_food.push((*iuid, c, def, pi.amount()));
+                        }
+                    }
+                    // smallest stacks first, ties on the stable item uid
+                    general_food.sort_by_key(|(u, _, _, n)| (*n, u.0.get()));
+                    let (mut houses_n, mut heads_n, mut shortfall_total, mut loads, mut no_shelf) =
+                        (0u32, 0u32, 0u32, 0u32, 0u32);
+                    for h in &houses {
+                        let heads = board
+                            .beds
+                            .iter()
+                            .filter(|(p, sl)| sl.owner.is_some() && h.contains_point_xy(**p))
+                            .count() as u32;
+                        if heads == 0 {
+                            continue;
+                        }
+                        houses_n += 1;
+                        heads_n += heads;
+                        let Some(z) = board
+                            .stockpiles
+                            .iter()
+                            .find(|(_, r)| store_is_private(r, houses.iter()) && h.contains_point_xy(r.min))
+                            .map(|(z, _)| *z)
+                        else {
+                            no_shelf += 1;
+                            continue;
+                        };
+                        let have = shelf_units.get(&z).copied().unwrap_or(0);
+                        let mut need = supper_shortfall(heads, have, SUPPER_UNITS_PER_HEAD);
+                        shortfall_total += need;
+                        while need > 0 && loads < SUPPER_ROUND_LOADS_MAX {
+                            // the smallest general stack that covers the need, else the largest
+                            let pick = general_food
+                                .iter()
+                                .position(|(_, _, _, n)| *n >= need)
+                                .or_else(|| general_food.len().checked_sub(1));
+                            let Some(i) = pick else { break };
+                            let (iuid, cell, def, n) = general_food.remove(i);
+                            let rid = board.reserve(iuid, u32::MAX);
+                            let id = board.next_id;
+                            board.next_id += 1;
+                            board.jobs.insert(id, Job {
+                                player_ordered: false,
+                                kind: common::bastion::JobKind::Haul { item: iuid, destination: z },
+                                work: common::bastion::WorkType::Haul,
+                                pos: cell,
+                                skill_floor: 0,
+                                claimed_by: None,
+                                suspended_for: None,
+                                unreachable: false,
+                                progress: 0.0,
+                                required_item: Some(def),
+                                needs_materials: false,
+                                carve_attempted: false,
+                                is_access: false,
+                                stuck_strikes: 0,
+                                benched_until_tick: None,
+                                depth: 0,
+                                reservation: Some(rid),
+                                affordance: AffordanceClass::Untargeted,
+                            });
+                            loads += 1;
+                            need = need.saturating_sub(n);
+                        }
+                    }
+                    SUPPER_LOADS_MINTED.fetch_add(loads as u64, std::sync::atomic::Ordering::Relaxed);
+                    info!(
+                        day = today,
+                        hour,
+                        houses = houses_n,
+                        heads = heads_n,
+                        shortfall = shortfall_total,
+                        loads,
+                        no_shelf,
+                        general_stacks_left = general_food.len(),
+                        loads_total = SUPPER_LOADS_MINTED.load(std::sync::atomic::Ordering::Relaxed),
+                        "bastion: SUPPER ROUND — the evening haul to every household shelf, so the \
+                         night meal at home has something to find"
+                    );
+                }
+            }
+        }
         if tick.0 % ARBITRATION_INTERVAL as u64 == 7
             && !board.stockpiles.is_empty()
             && generator_enabled(GeneratorKind::Haul)
@@ -31048,6 +31197,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // No food anywhere: not a dead-end target,
                             // there was never one to begin with — try the
                             // next candidate, no cooldown from this need.
+                            // ★ E2-i: the census counter for this reason was
+                            // never incremented here (the diag line fired 808
+                            // times on b3 where the census read 0).
+                            eat_skip_count("no_food_found");
                             if need_skip_diag {
                                 // LIVE-EMIT (#68, port-row): candidate count
                                 // -- distinguishes "the population is
@@ -53659,6 +53812,21 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2 pinned: a household of three with one unit on the shelf wants
+    /// five more; a full shelf wants nothing; the round runs once in the
+    /// supper hour and never outside it. Planted defect: the round runs
+    /// every pass -> red.
+    #[test]
+    fn the_supper_round_fills_the_shortfall_once_a_day() {
+        assert_eq!(supper_shortfall(3, 1, SUPPER_UNITS_PER_HEAD), 5, "three heads, one unit");
+        assert_eq!(supper_shortfall(2, 9, SUPPER_UNITS_PER_HEAD), 0, "a full shelf wants nothing");
+        assert_eq!(supper_shortfall(0, 0, SUPPER_UNITS_PER_HEAD), 0, "an empty house wants nothing");
+        assert!(supper_round_due(true, None, 4), "never ran: due");
+        assert!(supper_round_due(true, Some(3), 4), "ran yesterday: due");
+        assert!(!supper_round_due(true, Some(4), 4), "ran today: not again");
+        assert!(!supper_round_due(false, None, 4), "outside the supper hour: never");
     }
 
     /// ★ R3-b pinned: the larder is delivered only when it has entries and
