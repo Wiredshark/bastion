@@ -1926,17 +1926,17 @@ pub const CONNECTIVITY_REBUILD_TICKS: u64 = 900;
 /// Can a body stand in this cell? Solid support directly beneath, and two cells
 /// of air for feet and head — the same true-standable test the rescue selector
 /// uses, so connectivity and rescue cannot disagree about what a floor is.
-fn conn_standable(terrain: &TerrainGrid, c: Vec3<i32>) -> bool {
-    // Unloaded-read policy (deliberate): Err = not standable. A flood fill
-    // cannot honestly extend through terrain it cannot see; the CONSUMERS
-    // carry the fail-open duty (`connectivity_refuses` is trusted-guarded and
-    // default-off; the v2 labelled ladder admits on every unresolvable read).
-    let solid_below = terrain
-        .get(c - Vec3::unit_z())
-        .is_ok_and(|b| b.is_filled());
-    let feet_clear = terrain.get(c).is_ok_and(conn_passable);
-    let head_clear = terrain.get(c + Vec3::unit_z()).is_ok_and(conn_passable);
-    solid_below && feet_clear && head_clear
+fn conn_standable<V>(terrain: &V, c: Vec3<i32>) -> bool
+where
+    V: common::vol::BaseVol<Vox = common::terrain::Block> + common::vol::ReadVol,
+{
+    // ★ E1-f (2026-09-04): ONE PREDICATE. The index answers "can a body stand
+    // here" with the pathfinder's own `walkable` (sprite heights included), so
+    // a cell the index calls reachable is a cell A* can end at -- the split the
+    // ITEM-REACH A/B disposal named (farm rows: crop sprites are solid to A*
+    // and were air to the old flood). Unloaded support still reads not
+    // standable: `walkable` treats a missing support block as empty.
+    common::path::colonist_walkable(terrain, c)
 }
 
 /// Can a body move THROUGH this block?
@@ -2244,8 +2244,11 @@ pub fn labelled_refusal(
 /// cannot positively judge (same `labelled_refusal` ladder, same tests), and
 /// DEFAULT OFF behind its own flag so the A/B is one env var on one binary.
 pub fn item_reach_gate_enabled() -> bool {
+    // ★ E1-f: ON by default. `BASTION_NO_ITEM_REACH_GATE` restores the old
+    // off state (the A/B's control); `BASTION_ITEM_REACH_GATE` is accepted and
+    // inert.
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| std::env::var_os("BASTION_ITEM_REACH_GATE").is_some())
+    *V.get_or_init(|| std::env::var_os("BASTION_NO_ITEM_REACH_GATE").is_none())
 }
 
 /// Should this item be excluded from a pick because no colonist component
@@ -53065,6 +53068,68 @@ mod tests {
         assert_eq!(argmax_verdict(7, Some((true, 7))), V::Keep, "the same lane stays");
         assert_eq!(argmax_verdict(9, Some((false, 6))), V::Switch, "held half again as long: switch");
         assert_eq!(argmax_verdict(8, Some((false, 6))), V::Keep, "not yet half again: keep");
+    }
+
+    /// ★ E1-f pinned: the connectivity index and the pathfinder answer "can a
+    /// body stand here" with ONE predicate. Over a sculpted world -- rock at
+    /// z=0, a tomato (solid 1.65), a carrot (0.18), a fence, a one-block slot
+    /// under a ceiling -- `conn_standable` agrees with `colonist_walkable`
+    /// everywhere, and the tomato cell is refused. Planted defect: the old
+    /// three-line flood rule (feet and head passable, support filled) -> the
+    /// tomato cell reads standable -> red.
+    #[test]
+    fn the_index_and_the_pathfinder_share_one_standability() {
+        use common::terrain::{Block, BlockKind, SpriteKind};
+        use common::vol::{BaseVol, ReadVol};
+        struct World(HashMap<Vec3<i32>, Block>, Block);
+        impl BaseVol for World {
+            type Error = ();
+            type Vox = Block;
+        }
+        impl ReadVol for World {
+            fn get(&self, pos: Vec3<i32>) -> Result<&Block, ()> {
+                Ok(self.0.get(&pos).unwrap_or(&self.1))
+            }
+        }
+        let rock = Block::new(BlockKind::Rock, vek::Rgb::new(120, 120, 120));
+        let mut blocks = HashMap::new();
+        for x in -3..=3 {
+            for y in -3..=3 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        blocks.insert(Vec3::new(1, 0, 1), Block::air(SpriteKind::Tomato));
+        blocks.insert(Vec3::new(2, 0, 1), Block::air(SpriteKind::Carrot));
+        blocks.insert(Vec3::new(-1, 0, 1), Block::air(SpriteKind::FenceWoodWoodland));
+        blocks.insert(Vec3::new(0, 2, 2), rock);
+        let world = World(blocks, Block::air(SpriteKind::Empty));
+        for x in -3..=3 {
+            for y in -3..=3 {
+                for z in 1..=2 {
+                    let c = Vec3::new(x, y, z);
+                    assert_eq!(
+                        conn_standable(&world, c),
+                        common::path::colonist_walkable(&world, c),
+                        "index and pathfinder disagree at {c:?}"
+                    );
+                }
+            }
+        }
+        assert!(conn_standable(&world, Vec3::new(0, 0, 1)), "open ground stands");
+        assert!(!conn_standable(&world, Vec3::new(1, 0, 1)), "a tomato is solid to a body");
+        assert!(!conn_standable(&world, Vec3::new(-1, 0, 1)), "a fence is solid to a body");
+        assert!(!conn_standable(&world, Vec3::new(0, 2, 1)), "a one-block slot under a ceiling");
+        assert!(!conn_standable(&world, Vec3::new(1, 0, 2)), "the top of a tomato is not a floor");
+    }
+
+    /// ★ E1-f pinned: the item-reach gate is on unless `BASTION_NO_ITEM_REACH_GATE`
+    /// is set. Planted defect: the old default (off unless asked) -> red.
+    #[test]
+    fn the_item_reach_gate_is_on_by_default() {
+        assert!(
+            std::env::var_os("BASTION_NO_ITEM_REACH_GATE").is_some() || item_reach_gate_enabled(),
+            "the gate is on by default"
+        );
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.

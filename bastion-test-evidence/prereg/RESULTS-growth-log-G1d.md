@@ -275,6 +275,18 @@ world comes back with its people, fields, plan, orders and the work
 done on its house. What it still loses is its larder (the next
 section, R3).
 
+The restored boot's first day (read 02:22): HOUSEHOLDS houses=58
+occupied=50 vacant=8 (printed on a reassignment; the daily print is
+R3-i); TERRAIN PERSISTED 208 more blocks; EMBED WATCH 20 (12 in the
+first four minutes, every one a first-leg glide from indoors -- W10-a's
+row); food_stock 317 with the settler gate closed nine times for famine
+(R3's row); jobs 369 with Designated(Build) 102 (the re-grown plan's
+cells are minted) but `BUILD CELL PLACED` 0 all day: `BUILD DRAFT
+SIZED wanted=6 builders_now=0 named_build=3` fired at the day-1
+boundary, and the restored roster had no builders named through day 0.
+A kept world loses its first day of building to the morning argmax;
+whether the names should ride in the save is a small later row (R4).
+
 ## R3: a kept world keeps its larder (registered 00:31, before the binary)
 
 The sixth test's restored boot, read further: `FOOD-WIPE DISCRIMINATOR

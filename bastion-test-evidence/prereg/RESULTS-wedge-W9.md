@@ -196,6 +196,30 @@ intermediate nodes along the ground. Both W10 candidates spend the
 pump; W9-b's sidestep lands first and its day-1 rejection count says
 how much room there is.
 
+b2's whole W9 boot (1.6 days, read from the saved log at 02:36 after
+the W9-b restart): EMBED WATCH 23, rejected (solid) 8,192+, committed
+drops 4,096+, starving 1, panics 0 -- and 61 WEDGE PROBE stalls (the
+W8-g day: 12), every one `exhausted=false`, with `no_head` 14,
+`head_far` 18, `committed_walker` 17: walkers standing still while the
+pump works through the rejected routes, at scattered spots (six at
+(7637,6331,181), five at (7807,6341,183), five at (7755,6342,185)).
+That is the work drop in person, and W9-b's first read is the test of
+it.
+
+b1's day 2 on W9 (read 02:38) against its own W8-f day 2: works 308
+against 257, cooked 49 against 46, EMBED WATCH 21 by day 2 against
+3,190; the two cells 0 / 0; meals 111, no_food_found 0, starving
+(last) 1, panics 0. The day-1 work dip reversed by day 2 on the
+160-day arm. What rose: targets_shunned 38 (day 1: 13), STALL BLAMED
+6, STORE WOULD CLOSE 3, p95 1,043 us -- stalls on pump latency
+expiring into shuns, W9-b's target; rejected (solid) 8,192+ by then.
+
+W9-b landed as fb14467af7 (02:23; check clean, pin green; staged
+02:35). Falsified at the commit: the neighbours never tried turned
+`a_trunk_node_steps_aside_before_the_route_is_thrown_away` red (02:38);
+the tree restored clean. b2 restarted on it at 02:36; its reads follow
+under "W9-b live".
+
 ## W10-b and W10-a, registered 02:20 (queued behind R3, before the binaries)
 
 W10-b (`fix-w10b.py`): `TRUNK_REJECT_DZ` 6 -> 2 through
