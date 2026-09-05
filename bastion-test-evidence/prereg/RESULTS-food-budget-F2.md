@@ -237,6 +237,11 @@ fields' draw skews young). Falsified at the commit: plant resources
 made Foreign turned `a_worldgen_crop_the_colony_cannot_use_is_cleared_at_founding`
 red at `bastion_jobs.rs:52382`.
 
+Day 1 on this pair (b2): `food_stock=4105 days_of_food=26.2
+matured_today=888 cooked_today=74 field_planted=7083 meals=44
+targets_shunned=29` -- the stock rose 585 over the first day, the best
+first day of any pair (the F2c'-b pair rose 377 on b1 and 403 on b2).
+
 ### Day 1 on the F2c'-b pair
 
 b1: `food_stock=3745 days_of_food=23.9 cooked_today=90 meals=49
@@ -287,3 +292,10 @@ b1 day 3: `food_stock=3520 cooked_today=63 meals=113 targets_shunned=65`,
 starving 2 at the dawn census -- the kitchen recovers partly day to
 day and the trap keeps shunning at 65-110 a day. W8-f's bar on the next
 boot: shunned under 20 a day, cooked back at 80 or more.
+
+b1 day 4: `food_stock=3319 days_of_food=19.9 cooked_today=72 meals=121
+targets_shunned=47 matured_today=0`, roster 53. The 160-day arm drains
+about 200 a day and has matured nothing since the founding draw: a
+stage on this clock is 6.6 game days, so the draw's next ripening wave
+is due around day 7. That is the bridge Ben's ruling decides; the
+day-7 read on this pair is the evidence.

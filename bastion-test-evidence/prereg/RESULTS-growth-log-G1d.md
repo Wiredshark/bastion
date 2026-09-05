@@ -118,3 +118,20 @@ and the kept-loaded region the founding sets) without founding; the
 honest live test of a restore needs a client on the arm or that
 loading. Not evidenced: what Ben's client sees on a kept world (the
 player spawns at the world spawn, not the town, until R1c).
+
+## R1c: a restored colony is loaded, not founded (dc66b50ece)
+
+`bastion_autofound_restore()` runs from the restore arm: the founding
+arm's spawn-point derivation (mirrored), `bastion_adoption` (site pick,
+plot census, maps), the map ingestion (roads, wall margins, interiors,
+settlement bounds, tile graph, buildings, the plaza anchor),
+`bastion_adopt_stream_plot_chunks`, `bastion_found_colony_presence` and
+the spawn point; it does not adopt residents, spawn seeded colonists or
+re-place plots. Pin `the_restore_path_streams_the_town_and_adopts_nobody`
+scans the fn body for the three calls present and the three absent.
+
+Registered before the fourth test: COLONY RESTORED 1, ADOPT-A-TOWN site
+chosen 1 (the site pick runs, no residents), colony orders replayed > 0,
+PLOT RE-GROWN 1, the tick census `colonists` near the pre-stop roster,
+HOUSEHOLDS houses=58 (not 116). Falsified if colonists stay 0 or the
+houses read 116.

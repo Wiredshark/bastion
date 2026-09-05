@@ -8315,6 +8315,22 @@ pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
 /// stall's. An Exhausted search (a partial path) is not this: it may be
 /// the budget. A None with a head is not this either: something remains
 /// to walk.
+/// ★ W8-f (2026-09-04): A ROUTE FAULT IS NOT THE TARGET'S FAULT. A fetch
+/// whose route head sits far from the feet while the search is spent
+/// (`head_far` + Exhausted) is a walker holding a route the body cannot
+/// follow -- b2: 48 cook stalls a day at two spots between the kitchens and
+/// the store, and every expiry shunned the STORE cell a quarter day, so the
+/// kitchen starved (b1 day 2: cooked 90 -> 40, shunned 12 -> 110). Such a
+/// stall drops the route and searches again from the feet, once per job;
+/// the target is not shunned for it.
+pub fn route_fault_at_stall(assist_why: &str, search_exhausted: bool) -> bool {
+    assist_why == "head_far" && search_exhausted
+}
+/// Re-paths granted per job at a route-fault stall; the second stall expires
+/// as before, so a true trap still ends the fetch (30 s instead of 15).
+pub const ROUTE_FAULT_REPATHS_PER_JOB: u8 = 1;
+pub static ROUTE_FAULT_REPATHS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub fn search_says_unreachable(state: common::path::PathState, has_head: bool, has_target: bool) -> bool {
     matches!(state, common::path::PathState::None) && !has_head && has_target
 }
@@ -13342,6 +13358,8 @@ pub struct JobBoard {
     /// Fetch jobs whose stall has been logged once (the tolerated stall
     /// would otherwise warn every tick).
     pub fetch_stall_warned: HashSet<JobId>,
+    /// ★ W8-f: re-paths granted per job at a route-fault stall.
+    pub route_fault_repaths: HashMap<JobId, u8>,
     /// ★ RECENT DROPS: cells a deposit re-aim just chose (load, tick), counted
     /// as occupancy for RECENT_DROP_TICKS so simultaneous arrivals spread.
     pub recent_drops: HashMap<(i32, i32), (u32, u64)>,
@@ -31317,6 +31335,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             );
                                         }
                                         // ★ AN UNREACHABLE STORE IS WITHDRAWN ON THE SEARCH'S WORD
+                                        // ★ W8-f: A ROUTE FAULT IS NOT THE TARGET'S FAULT. The head is
+                                        // far and the search is spent: drop the route, search again
+                                        // from the feet, forgive this stall once (no expiry, no shun).
+                                        if !climb_taken
+                                            && std::env::var_os("BASTION_NO_ROUTE_FAULT_REPATH").is_none()
+                                            && let Some(sn) = snap.as_ref()
+                                            && route_fault_at_stall(
+                                                assist_why,
+                                                matches!(sn.path_state, common::path::PathState::Exhausted),
+                                            )
+                                            && board.route_fault_repaths.get(&active.job).copied().unwrap_or(0)
+                                                < ROUTE_FAULT_REPATHS_PER_JOB
+                                        {
+                                            let dropped = agent
+                                                .as_deref_mut()
+                                                .map(|a| {
+                                                    a.chaser.drop_route();
+                                                    true
+                                                })
+                                                .unwrap_or(false);
+                                            *board.route_fault_repaths.entry(active.job).or_insert(0) += 1;
+                                            board.fetch_stall_warned.remove(&active.job);
+                                            expires = false;
+                                            let n = ROUTE_FAULT_REPATHS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if n <= 4 || n.is_power_of_two() {
+                                                info!(
+                                                    job = active.job,
+                                                    kind = ?job.kind,
+                                                    feet = ?f,
+                                                    head = ?sn.route_head,
+                                                    dropped,
+                                                    repaths = n,
+                                                    "bastion: ROUTE FAULT AT THE STALL — the head is far and the search is spent; the route is dropped and searched again from the feet, the target is not shunned (W8-f)"
+                                                );
+                                            }
+                                        }
                                         // (W1): a search that found no path at all ends the fetch
                                         // now (no patience for an empty route) and strikes the
                                         // store; three strikes withdraw it from every chooser for
@@ -52385,6 +52439,18 @@ mod tests {
         assert_eq!(founding_cell_class(Some(S::BlueFlower), 15, Some(R::Flower)), FoundingCell::Clearable, "a flower");
         assert_eq!(founding_cell_class(Some(S::LongGrass), 15, Some(R::Grass)), FoundingCell::Clearable, "grass");
         assert_eq!(founding_cell_class(Some(S::Scarecrow), 15, None), FoundingCell::Foreign, "a scarecrow is not cleared");
+    }
+
+    /// ★ W8-f pinned: only a far head with a spent search is a route fault;
+    /// a committed walker, a missing head or a live search is not. Planted
+    /// defect: `||` for `&&` -> red.
+    #[test]
+    fn only_a_far_head_with_a_spent_search_is_a_route_fault() {
+        assert!(route_fault_at_stall("head_far", true), "far head, search spent: the route is at fault");
+        assert!(!route_fault_at_stall("head_far", false), "far head but the search is still working");
+        assert!(!route_fault_at_stall("committed_walker", true), "a cached trunk route is not this row");
+        assert!(!route_fault_at_stall("no_head", true), "no head: nothing to drop");
+        assert!(!route_fault_at_stall("eligible", true), "an eligible assist is the assist's row");
     }
 
     /// ★ W7b pinned: the landing is read exactly one tick after the write.
