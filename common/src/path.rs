@@ -658,6 +658,22 @@ pub fn destination_plot(
     plot
 }
 
+/// ★ W15-c-b pinned: THE START'S BUILDING IS NOT A DETOUR EITHER -- the
+/// columns priced free are the target's plot AND the start's plot (each a
+/// capped flood; empty for an endpoint outside every building). A walker
+/// leaving its house for the store paid the way out; W15-c's day on b2
+/// ended at 513 exhausted with the largest probe class starting indoors.
+pub fn endpoint_plots(
+    interior: &std::collections::HashSet<Vec2<i32>>,
+    start: Vec2<i32>,
+    target: Vec2<i32>,
+    cap: usize,
+) -> std::collections::HashSet<Vec2<i32>> {
+    let mut plot = destination_plot(interior, target, cap);
+    plot.extend(destination_plot(interior, start, cap));
+    plot
+}
+
 /// The surcharge a walk edge pays: nothing inside the destination's plot.
 pub fn priced_outside_destination(in_destination: bool, surcharge: f32) -> f32 {
     if in_destination { 0.0 } else { surcharge }
@@ -2376,8 +2392,9 @@ pub struct FullPathSearch {
     /// None until a step exhausts.
     pub last_closest: Option<Vec3<i32>>,
     /// ★ W15-c: the destination's plot (see `destination_plot`), computed
-    /// once per target column.
-    pub dest_plot: Option<(Vec2<i32>, std::collections::HashSet<Vec2<i32>>)>,
+    /// once per target column. ★ W15-c-b: keyed on (start, target) and
+    /// holding both endpoints' plots (`endpoint_plots`).
+    pub dest_plot: Option<((Vec2<i32>, Vec2<i32>), std::collections::HashSet<Vec2<i32>>)>,
 }
 
 impl FullPathSearch {
@@ -2402,11 +2419,13 @@ where
     V: BaseVol<Vox = Block> + ReadVol,
 {
     // ★ W15-c: the destination's plot, computed once per target column.
+    // ★ W15-c-b: and the start's, keyed on both endpoints.
     let target_xy = endf.xy().map(|e| e.floor() as i32);
-    if search.dest_plot.as_ref().is_none_or(|(t, _)| *t != target_xy) {
+    let start_xy = startf.xy().map(|e| e.floor() as i32);
+    if search.dest_plot.as_ref().is_none_or(|(k, _)| *k != (start_xy, target_xy)) {
         search.dest_plot = Some((
-            target_xy,
-            destination_plot(&traversal_cfg.interior_cells, target_xy, DEST_PLOT_CAP),
+            (start_xy, target_xy),
+            endpoint_plots(&traversal_cfg.interior_cells, start_xy, target_xy, DEST_PLOT_CAP),
         ));
     }
     match find_path_priced(
@@ -2459,8 +2478,10 @@ where
         PathLength::Longest => 102,
     };
     // ★ W15-c: the destination's plot, once for the whole search.
-    let plot = destination_plot(
+    // ★ W15-c-b: and the start's.
+    let plot = endpoint_plots(
         &traversal_cfg.interior_cells,
+        startf.xy().map(|e| e.floor() as i32),
         endf.xy().map(|e| e.floor() as i32),
         DEST_PLOT_CAP,
     );
@@ -2796,6 +2817,29 @@ mod bastion_vertical_tests {
         assert!(jumps_admitted(0, false, true, false), "vanilla in liquid but a climber: jumps");
         assert!(!jumps_admitted(0, false, false, false), "vanilla in liquid, no climb, no fly: none");
         assert!(jumps_admitted(2, true, true, false) && jumps_admitted(3, true, true, false), "reach 2 and 3: as before");
+    }
+
+    /// ★ W15-c-b pinned: a start in one plot and a target in another free
+    /// both plots' columns; a start outside every building frees only the
+    /// target's; both outside free nothing; a start and target in the same
+    /// plot free it once. Planted defect: the start's plot dropped -> red.
+    #[test]
+    fn the_starts_building_is_not_a_detour_either() {
+        let mut interior = std::collections::HashSet::new();
+        for x in 10..13 {
+            for y in 10..13 {
+                interior.insert(Vec2::new(x, y));
+            }
+        }
+        for x in 20..22 {
+            interior.insert(Vec2::new(x, 10));
+        }
+        let both = endpoint_plots(&interior, Vec2::new(20, 10), Vec2::new(11, 11), 4096);
+        assert_eq!(both.len(), 11, "the start's two columns and the target's nine");
+        assert!(both.contains(&Vec2::new(21, 10)), "the start's plot is free");
+        assert_eq!(endpoint_plots(&interior, Vec2::new(0, 0), Vec2::new(11, 11), 4096).len(), 9, "start outside: the target's only");
+        assert!(endpoint_plots(&interior, Vec2::new(0, 0), Vec2::new(1, 1), 4096).is_empty(), "both outside: nothing");
+        assert_eq!(endpoint_plots(&interior, Vec2::new(10, 10), Vec2::new(12, 12), 4096).len(), 9, "the same plot, once");
     }
 
     /// ★ W15-c pinned: a target outside every building has no plot; a

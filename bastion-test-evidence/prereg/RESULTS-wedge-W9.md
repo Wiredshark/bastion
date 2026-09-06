@@ -2422,6 +2422,23 @@ yet -- the sealed episodes on the earlier run came around the
 Sleep block (hours 22-4). Bans 0, stalls 0, sleepers 0, p95 542.
 The day-1 read (~08:45) carries the verdicts.
 
+### W17-i read: b2 day 1 (e7ad98977a; 08:25, hour 0 of day 1) -- the class did not occur
+
+Unreachable deliveries 0 for the whole day (39 on the W15-i4 run
+that named the class, 17 on W16-a's, 12 on W15-c's), UNREACHABLE
+APPROACH 0, no door probe fired: the sealed-walker episodes are
+run-to-run (which colonist sleeps where, which night job asks
+from indoors), and this run had none. The instrument is landed
+and unexercised; its arm was not reachable in this population on
+this day (every gate arm must be reachable -- it was on three
+earlier runs and reads when the class recurs; nothing to fix, and
+no verdict to dispose of). Elsewhere in the block: exhausted 663
+(513 on W15-c's day, 707 on W16-a's: the evening indoor-start
+class W15-c-b prices), `same` 36, `start_unlabelled` 21, arrivals
+840 (781, 742: +8%), CLIMB BANNED (fetch) 1, FETCH STALLED 4,
+starving sleepers 0, stuck 0, p95 481 us. The W16-i b2 reader
+took b2 at 08:26 on the W16-i2 pair.
+
 ## W15-c, registered 06:01 (keyed on the W16-a stage; the queue's end; common/)
 
 THE DESTINATION'S BUILDING IS NOT A DETOUR. Defect: above (34 of
@@ -2566,6 +2583,19 @@ the marker moved aside, the readers killed by their pid files and
 all three relaunched. Filed: a stale stage marker pre-satisfies a
 reused row id.
 
+### W2-b landed (e6ce19724f, staged 08:26)
+
+Check clean, the common pin green (1 of 713), committed 08:16,
+both halves staged 08:26:43 with the client compiled fresh
+against common; the scheduled search's config carries reach 1.
+The b2 reader restarts b2 after W16-i2's day-1 block, the b1
+reader after W16-i2's night-1 block. Falsifier at 08:30 (its
+own detached worktree): reach 1 admitting jumps, the pin RED (0
+passed, 1 failed of 713), restored clean. Shipped to lab-bin
+08:27. W15-c-b's chain fired at 08:31. The W16-i b2 reader,
+restarting b2 at 08:27, took this pair: b2's next reads carry
+W2-b.
+
 ## W15-c-b, registered 07:59 (keyed on the W2-b stage; the queue's end; common/)
 
 THE START'S BUILDING IS NOT A DETOUR EITHER. Defect: W15-c's day
@@ -2607,6 +2637,26 @@ b1 run: +22%), stuck census 1 (2-4), starving 0, p95 665 us
 TAKEN 1 -- the two-up-edge class W16-i named and W2-b removes.
 Reading: W15-c on b1 PASSED its route bar (the flood) and raised
 the arrivals a player would count; the bans are the next row's.
+
+### W15-c read: b1 night 1 (e7ad98977a; 08:19, hour 6 of day 1) -- and W16-i's b1 verdicts
+
+Arrivals 933 (788 and 838 on the two earlier b1 night reads: +12%
+to +18%); longest-tier steps 2,434 (66,001 and 10,802); stuck
+census 8 (8, 11); starving sleepers 2 (bar <= 2; the replicates 3,
+2, 3, 0, 0, 2, 0, 1, 0, 2); p95 687 us (710-764); pump pending 36,
+oldest wait 265. CLIMB BANNED (fetch) 24 (none new since hour 21),
+CLIMB BANNED (other) 3, FETCH STALLED 41, FETCH BUDGET EXPIRED 36,
+PROMISED CLIMB TAKEN 2. W15-c on b1: PASSED (the flood gone, the
+arrivals up, the sleepers at the bar). W16-i's verdicts on this
+pair for the whole day: credit on_prev 19, short_of_prev 5, the
+rest none; rise_next Some(2) 22, Some(1) 2; push_site chaser-
+settle 23. W16-i PASSED as registered: every ban carries a verdict
+and they partition -- on_prev with a two-up standable column ahead
+(19 of 24) is the router's jump edge into a ledge (W2-b, staged
+next); short_of_prev with chaser-settle (5 of 24) is the settle
+displacing a body off a credited stair step (a mover row, W16-b,
+after W2-b's read). The W16-i b1 reader took b1 at 08:20 for a
+second replicate on the W16-i2 pair.
 
 ### W15-c landed (be2258bba6, staged 06:52)
 
@@ -2837,6 +2887,25 @@ the line prints without the frame. Rejected: allowing the assist
 for trunk walkers (W6-C measured it worse); fixing the ban rule
 before the frames are counted. NOT evidenced: the fix the frame
 names. The dry tree at e7ad98977a (W16-i) validated the anchors.
+
+### The first W16-i2 frames: b1 (83e3666cb6, 08:29, hour 12 of day 0)
+
+Four bans, every one frame="trunk", credit on_prev, rise_next
+Some(2), and the trunk's next waypoint 74 to 86 blocks away in xy
+(trunk_idx 0 or 1 of 2 to 6 waypoints) and two above the feet
+(the road corridor's cells sit at z 182 over ground at 180). The
+trunk is the coarse road corridor; the walker executes each leg
+by the chaser's local route, and that local route is where the
+two-up jump edge sits (the chaser's head, credited on_prev). So
+the ban was judged in the frame that was actually moving the
+body at that step -- the chaser's leg -- and the "trunk" flag
+names only who owns the coarse plan; the assist's refusal to a
+trunk walker left the jump unexecuted, and W2-b (no jump edges
+for gliding bodies) removes the jump itself. Prediction disposed:
+the trunk frame with trunk_dz 2 was the "trunk router emitted a
+two-up waypoint" arm, but at 74-86 blocks the waypoint's height
+is not the step in question; the ban-rule row is not needed
+while W2-b holds. The night-1 tally on b1 completes the read.
 
 ### W16-i2 landed (83e3666cb6, staged 08:05)
 
