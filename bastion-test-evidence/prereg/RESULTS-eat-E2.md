@@ -1338,6 +1338,15 @@ village; the instrument's "none" reads "kitchen" for these, and
 the label is a refinement for the next instrument row, not a
 behaviour row. NOT evidenced: a night with stocked shelves.
 
+### E2-l-i landed (d6c5a6c2d8, staged 01:04)
+
+Check clean, the pin green, both halves staged 01:04; the binary
+verified by contents (THE SWEEP NAMES ITS EATERS present). Read on
+W14's pair by the printer after W14's night-1 block. Falsified: a
+never-opened door named by a verdict planted at d6c5a6c2d8, the
+pin RED at 01:08, the tree restored clean. Shipped to lab-bin
+01:05.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the

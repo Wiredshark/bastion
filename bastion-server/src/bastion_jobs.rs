@@ -293,6 +293,26 @@ pub fn tile_route(
 }
 
 /// One in-flight stepped full-path search (see JobBoard::path_searches).
+/// ★ W14: how long an exhausted fill search is remembered -- 900 ticks
+/// (30 s of sim, 0.4 of a game hour). A body that has not moved a cell and
+/// wants the same target is not searched again inside the window; the
+/// window expires so a loaded chunk or a moved obstacle is tried again.
+pub(crate) const EXHAUSTED_MEMO_TICKS: u64 = 900;
+
+/// ★ W14 pinned: THE SEARCH IS NOT ASKED TWICE -- an exhausted fill search
+/// is refused while the body stands in the same cell, wants the same target
+/// cell and the memo has not expired; a moved body, another target or an
+/// expired memo asks again (identity: no memo, no refusal).
+pub(crate) fn search_memo_refuses(
+    memo: Option<(Vec3<i32>, Vec3<i32>, u64)>,
+    feet: Vec3<i32>,
+    target: Vec3<i32>,
+    now: u64,
+) -> bool {
+    memo.is_some_and(|(s, t, until)| s == feet && t == target && now < until)
+}
+pub(crate) static SEARCHES_REFUSED_MEMO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub struct PendingSearch {
     pub search: common::path::FullPathSearch,
     pub startf: Vec3<f32>,
@@ -14218,6 +14238,9 @@ pub struct JobBoard {
     /// enqueue — find_path resets on a moved start, so a live position
     /// would restart the search every step, forever.
     path_searches: std::collections::BTreeMap<u64, PendingSearch>,
+    /// ★ W14: the last exhausted fill search per colonist -- (start cell,
+    /// target cell, until tick). Read by the fill before it enqueues.
+    search_memo: std::collections::BTreeMap<u64, (Vec3<i32>, Vec3<i32>, u64)>,
     /// ★ THE ECOLOGY FAUCET's cork (row 11): the settlement's XY bounding
     /// box, computed at adoption from the building-interior columns plus a
     /// street margin. Chunk-supplement spawns with hostile/wild alignment
@@ -35142,7 +35165,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .path_fill_at
                                 .get(&u)
                                 .is_none_or(|at| time.0 - at >= 2.0);
-                            if stale && fill_ok {
+                            // ★ W14: THE SEARCH IS NOT ASKED TWICE -- the pump
+                            // remembered this body's last exhausted search;
+                            // the same cell, the same target, inside the
+                            // window: no enqueue (the beeline stands, as
+                            // after any exhausted search).
+                            let memo_refused = stale
+                                && fill_ok
+                                && search_memo_refuses(
+                                    board.search_memo.get(&u.0.get()).copied(),
+                                    pos.0.map(|e| e.floor() as i32),
+                                    target.map(|e| e.floor() as i32),
+                                    tick.0,
+                                );
+                            if memo_refused {
+                                let n = SEARCHES_REFUSED_MEMO.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if n <= 8 || n.is_power_of_two() {
+                                    info!(
+                                        uid = u.0.get(),
+                                        feet = ?pos.0.map(|e| e.floor() as i32),
+                                        target = ?target.map(|e| e.floor() as i32),
+                                        refusals = n,
+                                        "bastion: THE SEARCH IS NOT ASKED TWICE — the same body asked the pump for the same exhausted search from the same cell; refused until the memo expires"
+                                    );
+                                }
+                            }
+                            if stale && fill_ok && !memo_refused {
                                 board.path_fill_at.insert(u, time.0);
                                 let cfg = common::path::TraversalConfig {
                                     node_tolerance: 1.5,
@@ -43347,6 +43395,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 "bastion: THE SEARCH EXHAUSTED — the exact fill search spent its budget; the body keeps the trunk's tail"
                                             );
                                         }
+                                        // ★ W14: remembered, so the fill does
+                                        // not ask it again from this cell.
+                                        board.search_memo.insert(
+                                            k,
+                                            (
+                                                ps.startf.map(|e| e.floor() as i32),
+                                                ps.target.map(|e| e.floor() as i32),
+                                                tick.0 + EXHAUSTED_MEMO_TICKS,
+                                            ),
+                                        );
                                     }
                                     board.path_cache.remove(&u);
                                 },
@@ -55721,6 +55779,22 @@ mod tests {
         assert_eq!(sweep_verdict(0, 3, Some("outranked")), "never_free", "no door: never free, whatever the passes say");
         assert_eq!(sweep_verdict(4, 0, None), "opened_not_scanned", "opened, no pass recorded");
         assert_eq!(sweep_verdict(4, 2, Some("walk_home_hour_false")), "walk_home_hour_false", "the last verdict");
+    }
+
+    /// ★ W14 pinned: the same cell, the same target, inside the window:
+    /// refused; a moved body, another target, an expired memo, no memo:
+    /// asked. Planted defect: the cell ignored (a moved body still refused)
+    /// -> red.
+    #[test]
+    fn the_search_is_not_asked_twice() {
+        let feet = Vec3::new(7714, 6344, 181);
+        let target = Vec3::new(7713, 6344, 187);
+        let memo = Some((feet, target, 1900u64));
+        assert!(search_memo_refuses(memo, feet, target, 1000), "the same cell and target inside the window: refused");
+        assert!(!search_memo_refuses(memo, feet + Vec3::unit_x(), target, 1000), "a moved body asks again");
+        assert!(!search_memo_refuses(memo, feet, target + Vec3::unit_z(), 1000), "another target asks again");
+        assert!(!search_memo_refuses(memo, feet, target, 1900), "an expired memo asks again");
+        assert!(!search_memo_refuses(None, feet, target, 1000), "no memo: asked (identity)");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable
