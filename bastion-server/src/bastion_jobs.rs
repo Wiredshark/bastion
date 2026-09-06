@@ -9507,6 +9507,15 @@ pub(crate) fn job_strike(strikes: u8) -> (u8, bool) {
     (next, next >= UNREACHABLE_STRIKES)
 }
 
+/// ★ W14-i6 pinned: THE PROOF WAS FALSE. A body that arrives at a job
+/// carrying three or more strikes arrived where the search said no way
+/// led (job 440: three "found no way" approach searches, benched 39 times,
+/// arrived 100 s later). The arrival witnesses it so the rate of false
+/// proofs is a number before the router is changed.
+pub(crate) fn proof_was_false(strikes: u8) -> bool {
+    strikes >= UNREACHABLE_STRIKES
+}
+
 /// ★ W14-w pinned: THE BENCH IS WITNESSED ONCE. `job_strike` saturates on
 /// purpose (the strikes keep counting after the third), so a verdict after
 /// the bench would re-bench and re-print: job 440 printed "three failed
@@ -35599,6 +35608,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // suppresses it) — print the fact so the
                             // impossible state is visible the tick it occurs.
                             held_reservation = job.reservation.is_some(),
+                            // ★ W14-i6: what the search had said of this job.
+                            strikes = job.stuck_strikes,
+                            benched = job.unreachable,
                             // ITEM 27 thief-window instrument: the required
                             // def's carried AMOUNT at the arrival instant.
                             // The mushroom is present here (carrying gated
@@ -35622,6 +35634,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }),
                             "bastion: colonist arrived at job site, working (B5)"
                         );
+                        // ★ W14-i6: the body stands where the search said no
+                        // way led.
+                        if proof_was_false(job.stuck_strikes) {
+                            info!(
+                                job = active.job,
+                                colonist = uids.get(entity).map(|uid| uid.0.get()),
+                                kind = ?job.kind,
+                                job_pos = ?job.pos,
+                                body = ?pos.0,
+                                strikes = job.stuck_strikes,
+                                benched = job.unreachable,
+                                "bastion: THE PROOF WAS FALSE — the body arrived at a job the search had struck three times (W14-i6)"
+                            );
+                        }
                         }
                     } else {
                         if is_emergency_access
@@ -56868,6 +56894,15 @@ mod tests {
         assert_eq!(chaser_terminal_strike(6, 2), Some((3, true)), "third episode: benched");
         assert_eq!(chaser_terminal_strike(5, 2), None, "below the streak: nothing");
         assert_eq!(chaser_terminal_strike(0, 0), None, "no streak: nothing");
+    }
+
+    /// ★ W14-i6 pinned: three strikes make an arrival a false proof; two do
+    /// not. Planted defect: the bound off by one -> red on the third.
+    #[test]
+    fn the_proof_was_false() {
+        assert!(!proof_was_false(0) && !proof_was_false(2), "under three strikes: the search never benched it");
+        assert!(proof_was_false(3), "three strikes and the body arrived: the proof was false");
+        assert!(proof_was_false(9), "and however many after");
     }
 
     /// ★ W14-w pinned: a bench is new only when the job is not already

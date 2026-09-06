@@ -2940,6 +2940,193 @@ is the next candidate -- THE BOB IS NOT PROGRESS (the stuck clock
 measured on xy, or a bob counted as no displacement, so the stall's
 consumers act) -- registered after W18-b's first read.
 
+### W18-b2 on b2: the day PASSED (reader's day-1 block at 16:01, hour 0)
+
+Starving sleepers 0 (bar 0; 3 under W18-b), FETCH STALLED 3 (bar <=
+6; 19), arrivals 736 (bar >= 720; 744 the day before), POS-WRITE
+drops at (7712,6306) 0 (bar 0), THE DROP INTO THE OPEN IS ALLOWED
+opened=256 (bar >= 1), THE DROP HAS NO WAY UP 0 (the rim not reached
+on b2 today; refused three times on b1 at a one-cell hole), bobs
+peak 2 (W18-c aboard; 256 the day before without it), climb bans
+0/0, W14-e2 benches 3, terminal 2, budgets expired 13, panics 0.
+Every registered bar held on its first b2 day. Not falsified: no
+body dropped into the pit, no sleeper starved with the Open witness
+at its ledge. One replicate; b1's day (booted 15:46) is the second
+world, its night at ~16:30. W18-b stands superseded.
+
+### W18-b2 on b2, the Sleep block by hand (15:57; 5c8285fb34 since 15:26, hour 21)
+
+STARVING lines 0 (3 farmers at 0.00 at this hour two days ago under
+W18-b), FETCH STALLED 3 (19; bar <= 6: PASSING), shuns 13, THE DROP
+INTO THE OPEN IS ALLOWED opened=256 (sampled lines at (7754,6343/
+6344,181) x9, (7775,6390,182), (7726,6362,185), (7718,6346,181)), THE
+DROP HAS NO WAY UP 0 (the pit's rim not reached today), POS-WRITE
+drops at (7712,6306) 0 (bar: PASSING), bobs peak 2 (W18-c aboard;
+256 on this arm yesterday without it), NIGHT SHELF EMPTY 0, arrivals
+678 at hour 21 (bar >= 720 by day's end). Yesterday's three starvers:
+17 ate at hour 18, 20 at hour 20, 49 not starving. At hour 23
+(16:00): STARVING lines still 0, arrivals 727 (bar >= 720: PASSED),
+stalls 3, Closed 0, pit drops 0, bobs 2 -- every W18-b2 bar on b2
+PASSED by hand; the reader's day-1 block (~16:15) closes the read.
+On b1 at hour 14 the pit's rim was reached and refused three times
+(THE DROP HAS NO WAY UP, Closed) -- the guard still guards the pit:
+uid 125 at landing (7648,6446,181), cells=1, a one-cell hole. b1's
+stalls at hour 14: 12 (23 at hour 12 yesterday), all Designated
+walks, clustered at (7636,6504) x4, (7664,6432) x3 and (7648,6388)
+x3 -- feet at (7665,6433,180) and (7637,6505,181) sit at the FOOT of
+a ledge, not its head: bodies wanting to go UP a two-block step the
+trunk plans as a jump (reach 2) and the gliding body cannot make --
+W2-b's original class and the open judgement item (climbing as a
+skill vs a mover that cannot jump), not W18-b2's. The down-direction
+holds are gone. Desktop probe at 16:00: 0x0 (the eighth; locked).
+
+### W18-c's replicate on b1 (W18-b2 + W18-c), the full day (16:20, read at day 1 hour 0): W18-c STANDS; the arrivals bar stays open
+
+Starving sleepers 0 (4 the night before under W18-c + W18-b; bar <=
+1: PASSED), STARVING lines 1 (colonist 22 at 0.05 once, awake).
+FETCH STALLED 14 (29 under W18-c + W18-b; 12-13 under W18-b alone;
+bar <= 2x: PASSED) -- the held-at-the-edge class is gone with the
+step down allowed; the 14 are the up-direction jump stalls. STUCK
+CENSUS 6 (15). Bobs peak 2 (bar <= 16: PASSED; 128 and 256 before
+W18-c). Other bans 1, W14-e2 benches 0 jobs, flood 594 (585; W14-g
+and the far class own it), Open 1,024, Closed 3, NIGHT SHELF EMPTY
+0. Arrivals 863 (828 under W18-c + W18-b; 991 under W18-b alone;
+bar >= 900: FAILED by 4%, and -13% against the W18-b-only day while
+b2's W18-b2 day read 736 against 744 -- flat). Reading (a) holds:
+the stalls and the starvation were W18-b's and the night classes';
+W18-c stands. The one open cost is b1's arrivals, two days below
+900 with W18-c aboard and one day above without it -- one arm, and
+COUNTS VARY 2-3x: the third replicate is b1's next day (the W14-i6
+pair); if it reads under 900 again with b2 flat, the x-y window is
+costing the ledge arm real walks and W18-c is reconsidered.
+
+### W14-i5 on b2, the second read (16:18; 262 exhaust lines in 13 minutes)
+
+b2's flood, invisible until today's diag, runs at b1's scale: 262
+whole-town exhausts by hour 14. Classes: FAR (the end never visited,
+end_g None) 192 = 73% -- 107 with the flee term, 85 without; TOUCHED
+(end visited, end_g Some 10-13, never popped) 70 = 27%, all without
+the flee term, three with a priced direct edge. The far ends sit at
+z 182 ((7686,6453,182) x26, (7615,6271,182) x23, (7679,6191,182)
+x18, (7673,6203,182) x14) and the search's closest node is 3 cells
+away (Manhattan) in 65 of 192: the end is one layer above the
+closest reach and no edge enters it -- an island cell, read next by
+its own neighbours' walkability. The touched ends sit at z 180-181
+((7629,6266,180) x16, (7679,6203,181) x10, (7610,6273,181) x9). So
+two mechanisms share the flood: W14-g's moved goal (the touched
+quarter) and, for the far three quarters, a goal no edge can enter
+-- proven unreachable the expensive way, 61k states per ask; A
+GUARD MUST REFUSE BEFORE IT SPENDS is the shape of its cure (an end
+with no walkable neighbour is refused before the search).
+
+### W14-g registered (16:17): THE SEARCH RESTARTS WHEN ITS END MOVES
+
+From W14-i5's live read (below): a state at f = 11 cannot sit
+unpopped through 61,000 pops in one correctly ordered search (the
+heap pops the smallest f by total_cmp; every visited insert is
+pushed; a popped end satisfies at once), so the cheap end's heap
+entry was consumed EARLIER, when that cell was not the goal: the
+retained astar (kept across polls and the tiers' budget
+escalations; reset only when the start moves more than two blocks,
+path.rs 2166) was built for another resolved end, and when the goal
+moved onto an already-popped cell `satisfied` could never fire.
+Within-search steps show one end (16:11), so the move happens
+between the lower tiers and the Longest tier, or between polls
+before the diag prints.
+
+MECHANISM: Astar.goal_tag (0 = untagged; tagged()/goal_tag());
+search_end_tag(end) a nonzero hash of the resolved end;
+search_end_moved(retained, current) true only for a tagged search
+whose tag differs; find_path_priced restarts such a search before
+the start-moved reset, counts it (END_MOVED) and prints "THE END
+MOVED UNDER THE SEARCH" (start, end, tier, iterations the abandoned
+search had spent, count) at the first eight and powers of two; the
+new search is created tagged. Untagged searches and unmoved goals:
+identity. Pin the_search_restarts_when_its_end_moves (the rule; the
+tag nonzero and distinct; on a 120x40 slab a Small poll toward a
+goal 110 blocks east stays Pending with >= 200 spent; the next poll
+toward the cell one block behind the start -- popped in the first
+poll -- returns a Path in under 50 expansions; two polls toward the
+same far goal continue one search, > 250 spent). Falsifier plants
+the tag test always false -> the moved goal continues the old heap
+-> no Path -> red.
+
+PREDICTION (both arms at their next restarts; b2 with the diag):
+the restart witness >= 1 in the first hour on each arm;
+LONGEST-EXHAUST under 60 a day on b1 (567, 585, 461-by-hour-19) and
+on b2, the touched class (closest_dist=0) at 0; arrivals not below
+900 / 720; starving unchanged. FALSIFIED if touched exhausts with
+end_g of a few units persist on a pair that shows the restart
+witness (the goal did not move; another cause), or if restarts run
+into the thousands a day with the flood unchanged (goals moving
+every tick: the producer first). Rejected: re-pushing a goal found
+in visited (the rest of the heap stays stale); a distance-based
+reset (a moved goal is a moved goal); fixing the producers first
+(unknown which). NOT evidenced: which producer moves the goal; the
+far class (end never visited); arrivals under frequent restarts.
+Chain behind W14-i6 (common/; both halves rebuild).
+
+### W18-c's replicate on b1 (5c8285fb34 = W18-b2 + W18-c, since 15:46) at hour 19 (16:12)
+
+FETCH STALLED 13 (27 at hour 19 on the W18-c-only day; 9 on the
+W18-b-only day), all Designated walks, at ledge FEET (bodies wanting
+to go up: the trunk's jump the glider cannot make), none held at a
+ledge head; STUCK CENSUS 3 (9); bobs peak 1 (bar <= 16: PASSED
+again); arrivals 688 at hour 19 (686 on the W18-c-only day, 752 on
+the W14-e day); STARVING lines 1 at hour 19 (read at the night
+block); other bans 1; Open 1,024; Closed 3 (the one-cell hole).
+Reading (a) is holding: with the step down allowed, the stalls
+halved and the held-at-the-edge class is gone; the night block
+(~16:32) reads starving and the day's arrivals.
+
+### W14-w landed (6e60a081ff, staged 16:10:43; shipped to lab-bin 16:11:02)
+
+Chain bh8jac50g: check ok, pin the_bench_is_witnessed_once green,
+committed 6e60a081ff, both halves from one commit ("compiled
+fresh"). No new string (a witness-gate row): verified by the fresh
+compile from HEAD and the falsifier: RED at 16:15 (the already-
+benched test dropped in its own worktree: 0 passed, 1 failed;
+restored, 0 dirty);
+the live read is the next b1/b2 day's bench-line count against
+distinct benched jobs. lab-bin is 6e60a081ff. W14-i6's chain fires
+at +300 s.
+
+Within-search check of the moved-end theory (16:11): for the 35
+touched exhausts on b2, every search's own steps carry ONE resolved
+end (e.g. 67 steps, one end; 12 steps, one end); the many one-step
+"searches" are a retained, already-exhausted astar answering
+Exhausted at once. So the end did not move within the flood. The
+cheap end still went unpopped inside a single, first, no-flee
+search: the defect is in the search's own bookkeeping -- reading the
+push condition and the heap entry's ordering next.
+
+### W14-i5 LIVE READ on b2 (c288d55479 with the diag, 16:05-16:09): the end is CHEAP and never popped
+
+61 exhaust lines in four minutes (b2 had never shown its floods:
+the diag was off). Classes: 23 touched / end_g Some / direct_edge
+None / no flee; 21 far / end_g None / flee; 16 far / end_g None /
+no flee; 1 touched / end_g Some / direct_edge Some(5.0). The touched
+ones: end (7611,6273,181) end_g=11.0, end_states=1, max_g=866,
+expanded 61,565; (7679,6203,181) end_g=10.01, max_g=616, 62,106;
+(7611,6266,181) end_g=13.01, max_g=844; (7629,6266,180) end_g=12.01,
+direct_edge Some(5.0) -- ALL WITH flee=None (first searches, not the
+re-ask), all with the end VISITED AT A COST OF 10-13 (three or four
+steps from the start) and NEVER POPPED while 61,000 states with g up
+to 866 were. A correct A* pops a state with f = 11 (g 11, h 0) before
+any state with f > 11; this one did not. So the end's heap entry did
+not carry f = 11: its priority was computed against ANOTHER end --
+the retained search (path.rs 2166 resets the astar only when the
+START moves more than two blocks, never when the resolved END
+changes) kept a heap built for a previous end while `satisfied` and
+the diag read the new one. THE END MOVED UNDER A RETAINED SEARCH is
+the mechanism candidate; the test below reads the search's own
+steps for more than one resolved end. NOT the flee term (flee=None),
+NOT a refused or dear edge (end_g 10-13), NOT a true island (the end
+is in the visited set). The instrument's own bar held: every line
+carries the fields; end_g is Some for the touched class (the
+prediction said "above max_g" -- it is far BELOW it, which is the
+finding).
+
 ### W14-i5 landed (c288d55479, staged 15:46:36; shipped to lab-bin 15:46:55)
 
 Chain bi37xumk0: check ok, pin the_exhaust_names_its_ends_cost green,
