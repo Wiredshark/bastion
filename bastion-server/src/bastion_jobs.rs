@@ -374,6 +374,38 @@ pub(crate) fn exhaust_probe_class(closest_xy: Option<f32>, target_walkable: bool
 }
 pub(crate) static EXHAUST_PROBES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// ★ W15-i4 pinned: THE EXHAUSTED SEARCH NAMES ITS COMPONENTS -- the
+/// start's label and the target's (the target tried at its cell, one
+/// below, one above: a job target is often the item, not the stance) from
+/// the shadow component index, and one word: no_index, untrusted (the
+/// index is streaming: `connectivity_is_trusted`), start_unlabelled,
+/// target_unlabelled, same, different. Same means the budget ran out
+/// inside one component; different means the target's component is not
+/// the walker's (a door the router does not admit, a sealed plot).
+pub(crate) fn exhaust_components(
+    idx: Option<&ComponentLabels>,
+    labels_prev_cells: usize,
+    start: Vec3<i32>,
+    target: Vec3<i32>,
+) -> (&'static str, Option<u16>, Option<u16>) {
+    let Some(idx) = idx else {
+        return ("no_index", None, None);
+    };
+    let sl = idx.labels.get(&start).copied();
+    let tl = [target, target - Vec3::unit_z(), target + Vec3::unit_z()]
+        .into_iter()
+        .find_map(|c| idx.labels.get(&c).copied());
+    if !connectivity_is_trusted(idx.labels.len(), labels_prev_cells) || idx.cap_hit {
+        return ("untrusted", sl, tl);
+    }
+    match (sl, tl) {
+        (None, _) => ("start_unlabelled", sl, tl),
+        (_, None) => ("target_unlabelled", sl, tl),
+        (Some(a), Some(b)) if a == b => ("same", sl, tl),
+        _ => ("different", sl, tl),
+    }
+}
+
 /// ★ W15-i3 pinned: THE FRONTIER NAMES WHAT STOPPED IT -- one glyph per
 /// ring cell: '#' solid, 'D' a door sprite (walkable or not), '.' walkable,
 /// '~' neither solid nor walkable nor a door (a rail, a post top, a sprite
@@ -43693,6 +43725,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     ring = %ring,
                                                     frontier_ring = %fring,
                                                     frontier_sprites = %fsprites,
+                                                    components = ?exhaust_components(
+                                                        board.component_labels.as_ref(),
+                                                        board.labels_prev_cells,
+                                                        sc,
+                                                        tc,
+                                                    ),
                                                     class = exhaust_probe_class(closest_xy, walk(tc)),
                                                     probes = m,
                                                     "bastion: THE EXHAUSTED SEARCH NAMES ITS TARGET — where the frontier stopped, and what the target's cell is (ring: # solid . walkable ~ neither, north row first)"
@@ -56160,6 +56198,42 @@ mod tests {
         assert!(!walker_shun_blocks(&m, u, WalkerShunKey::Store(9), 1_000), "at expiry: open");
         assert!(!walker_shun_blocks(&m, v, WalkerShunKey::Store(9), 999), "another walker: open");
         assert!(!walker_shun_blocks(&m, u, WalkerShunKey::Cell(c), 999), "another key: open");
+    }
+
+    /// ★ W15-i4 pinned: no index; untrusted (too few cells); the start
+    /// unlabelled; the target unlabelled at its cell and one below and
+    /// above; same; different; the target found one below. Planted defect:
+    /// same and different swapped -> red.
+    #[test]
+    fn the_exhausted_search_names_its_components() {
+        let s = Vec3::new(7662, 6360, 182);
+        let t = Vec3::new(7666, 6366, 183);
+        assert_eq!(exhaust_components(None, 0, s, t).0, "no_index");
+        let mut idx = ComponentLabels {
+            origin: s,
+            radius: 100,
+            labels: std::collections::HashMap::new(),
+            sizes: vec![],
+            cap_hit: false,
+        };
+        idx.labels.insert(s, 1);
+        idx.labels.insert(t, 2);
+        assert_eq!(exhaust_components(Some(&idx), 2, s, t).0, "untrusted", "two cells: not trusted");
+        let n = CONNECTIVITY_MIN_TRUSTED_CELLS + 10;
+        for i in 0..n as i32 {
+            idx.labels.insert(Vec3::new(1_000 + i, 0, 0), 1);
+        }
+        let prev = idx.labels.len();
+        assert_eq!(exhaust_components(Some(&idx), prev, s, t), ("different", Some(1), Some(2)), "two labels");
+        idx.labels.insert(t, 1);
+        assert_eq!(exhaust_components(Some(&idx), prev, s, t), ("same", Some(1), Some(1)), "one label");
+        idx.labels.remove(&t);
+        idx.labels.insert(t - Vec3::unit_z(), 1);
+        assert_eq!(exhaust_components(Some(&idx), prev, s, t), ("same", Some(1), Some(1)), "the target found one below");
+        idx.labels.remove(&(t - Vec3::unit_z()));
+        assert_eq!(exhaust_components(Some(&idx), prev, s, t).0, "target_unlabelled");
+        idx.labels.remove(&s);
+        assert_eq!(exhaust_components(Some(&idx), prev, s, t).0, "start_unlabelled");
     }
 
     /// ★ W15-i3 pinned: solid '#', door 'D', walkable '.', neither '~';

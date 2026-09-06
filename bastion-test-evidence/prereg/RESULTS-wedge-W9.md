@@ -2251,6 +2251,17 @@ NOT evidenced: the re-asked targets' own reachability (five up,
 one over: the stair the mover does not climb); b2. The dry tree
 at de3c397aa6 (E2-s) validated every anchor.
 
+### W14-b2 landed (c49a3e40b0, staged 05:11)
+
+Check clean, both pins green, committed 05:03, both halves staged
+05:11:57 (the server build's log shows ten Compiling lines; the
+row adds no string literal, so the binary is verified by the
+fresh compile and the falsifier, not by a grep). The b1 reader
+restarts b1 after E2-s's night-1 block and reads hour 19 and
+night 1. Falsifier at 05:16: a zero radius, the pin RED (0 passed,
+1 failed), restored to 0 dirty files. Shipped to lab-bin 05:12.
+W15-i4's chain fired at 05:17.
+
 ## W15-i4, registered 04:45 (keyed on the W14-b2 stage; the queue's end)
 
 THE EXHAUSTED SEARCH NAMES ITS COMPONENTS. An instrument row from
