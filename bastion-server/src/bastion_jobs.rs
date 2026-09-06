@@ -55805,7 +55805,16 @@ mod tests {
     fn the_search_aims_at_the_stand_not_the_stone() {
         let t = Vec3::new(10, 10, 5);
         assert_eq!(search_stand(t, |c| c == t), t, "a standable target stands");
-        assert_eq!(search_stand(t, |c| c == t - Vec3::unit_z()), t, "one below stands: the on-top target stands (W12-a-b)");
+        // ★ W12-a-b-p: the on-top case must offer a COMPETING ring cell, or the
+        // fallback (nothing found: the target) answers the same and the pin
+        // cannot tell the rule from its absence (the plant stayed green at
+        // b6b78b96d1). With one below AND one east standable, the rule
+        // answers the target; the ring alone answers the east cell.
+        assert_eq!(
+            search_stand(t, |c| c == t - Vec3::unit_z() || c == t + Vec3::new(1, 0, 0)),
+            t,
+            "one below and one east stand: the on-top target stands, not its east neighbour (W12-a-b)"
+        );
         assert_eq!(search_stand(t, |c| c == t + Vec3::new(1, 0, 0)), t + Vec3::new(1, 0, 0), "one east stands");
         assert_eq!(search_stand(t, |c| c == t + Vec3::new(0, -2, 1)), t + Vec3::new(0, -2, 1), "two south, one up, in the second ring");
         assert_eq!(search_stand(t, |_| false), t, "nothing within reach: the target as before");

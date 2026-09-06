@@ -1877,6 +1877,16 @@ re-states the pin so the plant goes red. The pair keeps running
 on b2 until the next b2 row: its day 2 and beyond are the free
 replicate of both counts.
 
+W12-a-b at day 2 on b2 (read 01:28, hour 0 of day 2): EMBED WATCH
+2 over two days (W13-b-r's 3); arrivals 1,270 (W13-b-r 1,450, the
+band); unreachable deliveries 1 over two days (W13-b-r's 48 --
+the stand rule is that class); exhausted deliveries 1,144 over two
+days (W13-b-r's 2,729: halved, the on-top targets no longer
+exhaust the searches that aimed beside them); SEARCH TARGET MOVED
+8,192 by day 2 (W12-a's 8,192 by day 1); stuck 0; pump mean wait
+55, pending 9. The two-day replicate confirms the day-1 read on
+both counts the day before flagged.
+
 ### W15-i1 landed (fc0d3a31b3, staged 00:40)
 
 Check clean, the pin green, both halves staged 00:40; the binary
@@ -1885,9 +1895,84 @@ restarts b1 at the stage (after E2-i2's night-1 block, already
 landed) and reads the boot shelves and night 1: the exhausted
 searches by direction (up, down, flat) through the night hours.
 Falsified: the band ignored planted at fc0d3a31b3, the pin RED at
-00:43, the tree restored clean. Shipped to lab-bin 00:41. W15 (the
-top step under the slab) stays HELD until the night read says
-whether exhausted_up dominates.
+00:43, the tree restored clean. Shipped to lab-bin 00:41.
+
+W15-i1 read (b1 fresh on fc0d3a31b3; boot, day 0 and night 1, read
+01:16): exhausted fill searches by day 1 181 -- up 38, down 9,
+FLAT 133 (74%); through the night hours 21-3: up 4, down 1, flat
+11. Up does not dominate; flat does, four to one. The first
+witnesses name the shape: from (7767,6399,181) to (7793,6365,183)
+dz 2, from (7647,6339,182) to (7659,6371,183) dz 1, from
+(7640,6344,182) to (7657,6367,183) dz 1, from (7690,6371,183) to
+(7657,6362,183) -- thirty to forty blocks across town to the
+STORE's lifted drop cells at z 183, the exact fill search spending
+its budget on the way. Classified after the block: eleven of the
+twelve printed witnesses target a STORE's standing cell at z 183
+(the main store's 7657-7673, 6362-6373; zones 61, 59 and 87's), from
+five to forty blocks away, dz 0-2; the twelfth a cell at z 186.
+The escalation runs Small, Medium, Long, Longest (500, 5,000,
+25,000, 75,000 expansions) before the pump delivers
+BudgetExhausted, so these are not budgets too small for a walk:
+seventy-five thousand expansions did not reach a store cell that
+deliveries reach six hundred times a day. The search's own
+verdict at exhaustion (`PathResult::Exhausted` carries the
+closest node; `Astar::closest_node` its distance) is the probe
+the next instrument (W15-i2) prints: the target's walkability at,
+below and above, its 3x3x3, the start's, and how close the
+frontier came -- sealed locally (a door, a step) or cut off. W15 (the top step under the
+slab) is WITHDRAWN: its premise was the upstairs bed and the
+staircase, and the night's exhausted searches are sixteen, four of
+them up. The class that IS there -- the flat store-bound search
+that exhausts -- is W14's territory first (the memo stops the
+re-asks) and then a budget or trunk question (why the trunk route
+did not carry a store trip), read on W14's pair. The night
+otherwise: 55 loads, 15 swept, 38 private arrivals; starving
+sleepers 2; in-bed starving at 0-3 7, 8, 7, 8; NIGHT SHELF 15
+Empty, no Refused (E2-i2's arm unexercised again); meals 75,
+no_food_found 158.
+
+### W14 landed (0b5c172d15, staged 01:27)
+
+Check clean, the pin green, both halves staged 01:27; the binary
+verified by contents (THE SEARCH IS NOT ASKED TWICE present). The
+b1 reader restarts b1 at the stage (after W15-i1's night-1 block)
+and reads hour 19 of day 0 and night 1 against the bars above; the
+E2-l-i printer reads the same pair's sweep after that block.
+Falsified: the cell ignored (a moved body still refused) planted
+at 0b5c172d15, the pin RED at 01:32, the tree restored clean.
+Shipped to lab-bin 01:28. W12-a-b-p's chain fires five minutes
+after this stage, W15-i2's five minutes after that one.
+
+## W15-i2, registered 01:32 (keyed on the W12-a-b-p stage; the queue's end)
+
+THE EXHAUSTED SEARCH NAMES ITS TARGET. An instrument row from
+W15-i1's read: a quarter of the fill searches exhaust the Longest
+tier (75,000 expansions) on STORE cells at z 183 that deliveries
+reach six hundred times a day, and the outcome carried nothing
+about where the frontier stopped (`PathResult::Exhausted(path)`
+holds the path to the closest node; the step matched it as `_`).
+Now `FullPathSearch` keeps `last_closest`, and the pump's
+exhausted arm prints THE EXHAUSTED SEARCH NAMES ITS TARGET for the
+first sixty-four exhaustions and the powers of two after: uid,
+target, start, closest node and its xy distance, the target's
+walkability at, below and above, the start's, the 3x3 ring of the
+target's row (# solid, . walkable, ~ neither), and
+`exhaust_probe_class`: target_unwalkable (the stand rule should
+have moved it), sealed (walkable, the frontier within 3 blocks),
+cut_off (walkable, the frontier never near), unknown (no closest
+node). No behaviour changes; common/ changes one struct and one
+match arm, so both halves rebuild. Pin
+`the_exhausted_search_names_its_target` (near: sealed; far:
+cut_off; unwalkable; none: unknown); planted: every frontier
+called sealed, red. Prediction (b1 fresh after W14's night-1
+block, `wait-w15i2-b1.sh`; hour 19 and night 1): unknown 0; the
+classes partition the sample and are counted, no bar; a
+target_unwalkable count above 0 is a W12-a-b finding. Falsified if
+unknown is common or every ring reads '~'. Rejected: a wider budget
+(75,000 did not reach it); carrying the node in FullPathOutcome
+(seven readers for one field the search keeps itself). NOT
+evidenced: the fix the classes name; b2. Dry tree from HEAD
+0b5c172d15 (W14) in the order W12-a-b-p, W15-i2.
 
 ## W14, registered 22:12 (keyed on the W15-i1 stage; the queue's end)
 
