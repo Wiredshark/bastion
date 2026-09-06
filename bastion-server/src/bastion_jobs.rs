@@ -345,6 +345,11 @@ pub struct PendingSearch {
     /// ★ W10-i1: the tick this search was enqueued (its wait is read at
     /// delivery).
     pub since: u64,
+    /// ★ W14-b1: the JOB's target cell this search serves -- the memo's
+    /// key. An approach search's `target` is the trunk's node 0, not the
+    /// job's target; the memo written with it never matched the fill's
+    /// check (5 refusals against a bar of 200 on W14's read).
+    pub job_target: Vec3<i32>,
 }
 
 /// ★ W10-i1: what the pump delivered.
@@ -35782,6 +35787,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 cfg,
                                                 lane: SearchLane::Fill,
                                                 since: tick.0,
+                                                job_target: target.map(|e| e.floor() as i32),
                                             },
                                         );
                                     } else {
@@ -35825,6 +35831,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             cfg,
                                             lane: SearchLane::Fill,
                                             since: tick.0,
+                                            job_target: target_cell,
                                         },
                                     );
                                 }
@@ -43463,7 +43470,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             k,
                                             (
                                                 ps.startf.map(|e| e.floor() as i32),
-                                                ps.target.map(|e| e.floor() as i32),
+                                                // ★ W14-b1: the JOB's target, the
+                                                // cell the fill's check compares.
+                                                ps.job_target,
                                                 tick.0 + EXHAUSTED_MEMO_TICKS,
                                             ),
                                         );
@@ -43551,6 +43560,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     cfg,
                     lane: SearchLane::Detour { tier, job },
                     since: tick.0,
+                    job_target: to.map(|e| e.floor() as i32),
                 });
             }
             continue;

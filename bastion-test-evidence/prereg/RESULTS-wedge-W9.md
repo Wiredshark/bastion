@@ -1943,6 +1943,87 @@ at 0b5c172d15, the pin RED at 01:32, the tree restored clean.
 Shipped to lab-bin 01:28. W12-a-b-p's chain fires five minutes
 after this stage, W15-i2's five minutes after that one.
 
+### W14 read at hour 19 (b1 fresh on 0b5c172d15, read 01:52): FAILED by its own clause, and the clause named the cause
+
+Against the bars at hour 19 of day 0: THE SEARCH IS NOT ASKED
+TWICE 5 refusals (bar 200 by day 1) -- one colonist, uid 127, five
+refusals inside fifteen seconds at hour 16, then none; the
+most-repeated longest-tier pair 3,791 steps (bar 1,500) -- from
+(7714,6344,182) to (7715,6344,186), the SAME raised-road spot that
+held colonist 112 on the E2-l pair, four blocks up; longest-tier
+steps 53,693 by hour 19 (the E2-l pair 46,545 by hour 21: the same
+order); the day's pump mean wait 77 (72-173 in the E2-l pair's hot
+window); arrivals 758; stuck 0; STUCK CENSUS 6 colonists. The
+pre-registered falsification named it: "refusals under 20 while
+the top pair stays high: the memo never matches". The code says
+why: the memo is WRITTEN at the exhausted delivery with
+`ps.target` -- which for the trunk's APPROACH search is node 0's
+centre, not the job's target -- and READ before the enqueue
+against the job's target cell; the two never agree for the lane
+that re-asks, so the approach search under the raised road is
+asked again every two seconds as before. Generator and consumer
+disagree, by my own hand. Disposition: FAILED as built; the rule
+and its pin stand, the key is wrong for one lane. W14-b1 (the
+pending search carries the job's target cell; the memo stores
+that) is written next and queued after W15-i2; its read is the
+same reader, the same bars.
+
+W14 at night 1 (read 02:14, hour 6 of day 1): THE SEARCH IS NOT
+ASKED TWICE 32,768 by night 1 (bar 200: PASSED) -- five refusals
+through the day, then from hour 23 the exact-search lane's re-asks
+(the same job target from the same cell, which the key does match)
+were refused by the tens of thousands, four walkers named (127
+arrived after, 110 arrived twice, 123 and 130 not); the top
+longest-tier pair 14,791 steps by day 1 (bar 1,500: FAILED) -- the
+raised-road approach search, whose key the memo never matched;
+longest-tier steps 77,947 by day 1 (bar 30,000: FAILED); the day's
+pump mean wait 59 (bar 60: PASSED, just); pending at midnight 24
+(bar 20: FAILED); arrivals 963; stuck 0; STUCK CENSUS 19 colonists
+across the day. Disposition: PARTIAL -- the memo works on the
+lane whose key matches and is blind to the lane that re-asks
+most; W14-b1 carries the job's target into the key, and its read
+on the same bars decides the row. NOT evidenced: whether thirty
+thousand refusals starve a walker the memo protects (the beeline
+stands; the named walkers' fate is mixed and small).
+
+### W15-i2 landed (a6fa8fe2ee, staged 02:04)
+
+Check clean, the pin green, both halves rebuilt (common/ changed)
+and staged 02:04; the server verified by contents (THE EXHAUSTED
+SEARCH NAMES ITS TARGET present), the client from the same commit.
+The b1 reader restarts b1 after W14's night-1 block and reads the
+probe by class at hour 19 and night 1. Falsified: every frontier
+called sealed planted at a6fa8fe2ee, the pin RED at 02:09 on "the
+frontier never came near", the tree restored clean. Shipped to
+lab-bin 02:05.
+
+## W14-b1, registered 02:00 (keyed on the W15-i2 stage; the queue's end)
+
+THE MEMO KEYS ON THE JOB'S TARGET. From W14's hour-19 read: the
+memo was written at the exhausted delivery with `ps.target`, which
+for the trunk's approach search is node 0's centre, and read
+against the job's target cell; the approach lane -- the one the
+stranded walker re-asks -- was never refused (5 refusals, bar
+200). Now `PendingSearch` carries `job_target`, set at all three
+constructors (the approach: the job's target, not node 0; the
+exact search: the stand rule's starting cell; the detour: its own
+target), and the memo stores it. The rule, its pin and the check
+stand. PIN: none new -- no pure function changed, and a plant of
+the old key leaves the rule's pin green by construction, so no
+falsifier is run and the live read is the falsifier. Prediction
+(b1 fresh after W15-i2's night-1 block, `wait-w14b1-b1.sh`, W14's
+reader and bars): refusals at least 200 by day 1 (5); the top
+longest-tier pair at most 1,500 steps (3,791 by hour 19);
+longest-tier steps by day 1 at most 30,000 (53,693 by hour 19);
+the day's pump mean wait under 60 (77); the named walkers' fate
+recorded. Falsified if refusals stay under 20 with the top pair
+high (the key still does not match), or refusals rise past 200
+with the top pair above 3,000 (the re-ask is not the fill's), or
+the pump's wait does not fall. Rejected: a memo matching either
+key (two keys for one search); a memo on the start cell alone.
+NOT evidenced: the rescue (W14-b); b2. Dry tree from HEAD
+a6fa8fe2ee (W15-i2).
+
 ### W12-a-b-p landed (9a2925e522, staged 01:41)
 
 Check clean, the re-stated pin green (the on-top assert now offers
