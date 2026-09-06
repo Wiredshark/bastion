@@ -3128,6 +3128,91 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### E2-i3 registered (19:25): THE EMPTY SHELF NAMES ITS LOADS -- an instrument, no behaviour change
+
+(First named E2-i2; the stale-marker check found e2i2-staged.txt
+from Sep 5 AFTER the Write tool had overwritten that landed row's
+fix/msg/chain scripts -- harmless, the row is in git; renamed E2-i3;
+the memory sharpened: check ids before the first Write.)
+
+Mechanism: JobBoard.supper_ledger: house min -> (need at the round,
+the loads minted), cleared and written by the SUPPER ROUND;
+supper_load_fate(on_board, claimed) -> Gone | InFlight | Unclaimed;
+the NIGHT SHELF EMPTY line looks the sleeper's home up and adds
+round_need, round_loads, unclaimed, in_flight, gone and bed_z; the
+message gains "(E2-i3: the loads named)" as the exe marker. Pin
+the_empty_shelf_names_its_loads (the three fates); falsifier plants
+`claimed || true`. Chain (holds on w17c-staged) and falsifier
+launched 19:26; dry tree HEAD 5f7089fbfa + W6-E + H1-i + W17-c +
+E2-i3 (6 uses of the fn, 5 of the ledger).
+
+Bars (each arm's first night): every NIGHT SHELF EMPTY line carries
+the six fields; the night's starver reads as one of: round_loads 0
+with round_need > 0 (the cap), unclaimed > 0 (nobody hauled it),
+gone > 0 with present 0 (claimed and lost); bed_z names the
+upstairs class. Falsified if the fields disagree with the sweep's
+count for the same house, or if the starver's home is absent from
+the ledger (a heads/shelf mismatch -- itself the finding). Readers
+wait-e2i3-b1/b2 (from the W17-c readers) print a SHELF line.
+
+### Every night's starver sleeps upstairs over an empty shelf (19:21): four for four
+
+b2 tonight (W14-g2 pair, hour 1): colonist 67, hunger 0.00, RestAt
+to the bed at (7832,6272,186), NIGHT SHELF EMPTY x14, ate 0. With
+37 (b2, bed (7724,6369,186)), 135 (b1, bed (7769,6401,186)) and 961
+(b1, bed (7590,6502,186)): every starving-at-night sleeper read
+today has a z-186 bed AND an empty home shelf. One house class --
+the two-storey house with the bed upstairs -- carries both the
+unreachable bed and the unstocked shelf; the SUPPER ROUND mints ~50
+loads for 49 houses and SUPPER CARRIED HOME is sampled, so whether
+those houses' loads are minted, claimed, delivered or swept is not
+in the log. Candidate instrument E2-i2 THE SUPPER ROUND NAMES ITS
+SHORTFALL (per house with an empty shelf at the sweep: the shelf
+cell and its z, the load's fate, the sleepers), queued after W17-c.
+BED CENSUS on b2 tonight so far: h22 9, h23 12, h0 13, h1 13.
+
+### W14-g2 on b2 at 25 minutes (19:20, hour 1 of day 1): the touched class is 0; 20 exhausts, all far
+
+The waiter's read of the 1d8588199c log at hour 1 (eighteen game
+hours): W14-i5 exhaust lines 20 -- 18 far/no-flee, 2 far/flee,
+TOUCHED 0 (27-36% before); END MOVED 5; FINISHED DROPPED 21 lines
+with the count at 65,536 (every re-poll after a Path drops the
+finished search: the route follower's normal cadence, free);
+REPEATED LIFT 9 lines (W18-d fires); silent benches named 47;
+arrivals 758 by hour 1 (bar 720, passed early); FETCH STALLED 4;
+bobs peak 1; STARVING lines 11 (the night's starver read below);
+p95 532 us. FLOOD NAMES: uid 29 Haul, uid 28 RestAt to a bed at
+(7628,6381,186) -- z 186 again -- exhausts 2. b2's residual flood is
+the far class at about one an hour; the day read at hour 6 closes
+the W14-g2 b2 bar (LONGEST-EXHAUST under 60 a day: 20 so far).
+
+### W18-e LANDED (19:15): 5f7089fbfa, both halves, marker 'THE BOB IS A STALL' 1 in the exe
+
+Pin the_bob_is_a_stall green on the fresh compile; committed 19:01,
+staged 19:15:31, pushed, shipped to lab-bin 19:16:27 (playable).
+Falsifier bhyhvbmfh planted the count at a
+million at 19:17: the pin went RED (0 passed, 1 failed), 0 dirty
+files restored at 19:21. W18-e is red on its plant. The W6-E chain
+fires at +300 s (~19:20). Both arms board it at their next reader
+restarts (the W18-e readers, after the W14-g2 days complete: b2's at
+hour 6 of day 1 on the live clock, ~19:45; b1's after the W14-g2
+night block, ~19:55).
+
+### Both arms on W14-g2 (19:03): b2 since 18:55, b1 since 19:02 -- the first minutes
+
+b2 at hour 14: FINISHED_DROPPED 20 (the witness fires), END MOVED
+4, LONGEST-EXHAUST 10 (15 at the same hour on the W14-g day), FLOOD
+NAMES 1, arrivals 420, p95 433 us. b1 at hour 9: FINISHED_DROPPED
+17, END MOVED 1, LONGEST-EXHAUST 1 (the W14-w2 day reached 807; the
+W14-g day 295 by hour 13), arrivals 82. The flood-cost tally at
+19:05: b1 hour 10, 2 exhausts, both FAR (end_g None), touched 0; b2
+hour 15, 10 exhausts, all far, touched 0. THE TOUCHED CLASS IS GONE
+on both arms in the first hours (27-36% of 500-800 a day before);
+what remains is the far class at a handful an hour. The 25-minute waiters print
+at ~19:20 (b2) and ~19:28 (b1); the day reads follow. Both arms'
+W14-g2 readers are the ones that restarted them; the next readers
+in each cascade (W18-e's) wait for their own stage.
+
 ### b1's W14-w2 day (18:57, pair d4523dc9f2, night 1 -> hour 6): arrivals 1,033, the best day yet; the flood's worst
 
 The W18-b reader's night block: arrivals 1,033 (875 on the W14-g

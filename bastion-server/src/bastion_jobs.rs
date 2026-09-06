@@ -9571,6 +9571,26 @@ pub(crate) fn banned_climb_strike(climbing: bool, strikes: u8) -> Option<(u8, bo
     climbing.then(|| job_strike(strikes))
 }
 
+/// ★ W6-E pinned: A BANNED CLIMB STRIKES THE HELD JOB TOO. The staged-at-
+/// anchor timeout SUSPENDS a labor-hold self job (RestAt/EatFrom/Despond)
+/// instead of releasing it, and the need preempt reclaims the suspended
+/// job only while it has not struck out past PERSIST_ESCALATE_STRIKES --
+/// a cap that had no producer on this path: colonist 961 was banned on
+/// the same window column 134 times in a night and reclaimed 129 times,
+/// its bed 225 blocks away. The held job strikes by W6-D's rule; the
+/// third strikes it out; the reclaim refuses and the picker chooses again.
+pub(crate) fn held_job_strike(climbing: bool, strikes: u8) -> Option<(u8, bool)> {
+    banned_climb_strike(climbing, strikes)
+}
+
+/// ★ W6-E: the reclaim's side of the same cap (the consumer of the strikes).
+pub(crate) fn held_job_reclaim_allowed(strikes: u8) -> bool {
+    strikes < PERSIST_ESCALATE_STRIKES
+}
+
+/// ★ W6-E: the witness count.
+pub(crate) static HELD_STRIKES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W14-d pinned: THE TERMINAL CHASER SEARCH STRIKES THE JOB. The chaser
 /// climbs its tiers to Longest and, exhausted there with its last target at
 /// the job, asks again from a flee point -- the whole-town floods (60,696
@@ -33082,7 +33102,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             && let Some(job) = board.jobs.get(&pending_id)
                             && matches!(job.kind, common::bastion::JobKind::RestAt { .. })
                         {
-                            if job.stuck_strikes < PERSIST_ESCALATE_STRIKES {
+                            if held_job_reclaim_allowed(job.stuck_strikes) {
                                 if active_jobs.contains(entity) {
                                     to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                 }
@@ -33098,6 +33118,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // bed reservation, same as a normal drop) and
                             // try the next candidate — same deferred-
                             // cooldown treatment as the eat arm above.
+                            // ★ W6-E: the discard is witnessed (it was silent).
+                            info!(colonist = %uid, job = pending_id, strikes = job.stuck_strikes, "bastion: THE HELD JOB STRUCK OUT — the suspended RestAt is discarded past the reclaim cap; the picker chooses again (W6-E)");
                             board.remove_job(pending_id);
                             if let Some(arb) = arbiters.get_mut(entity) {
                                 arb.pending_self_job = None;
@@ -38875,6 +38897,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // Haul/DepositRun) are unaffected —
                                     // full release, unchanged.
                                     if is_labor_hold_self_job(&job.kind) {
+                                        // ★ W6-E: A BANNED CLIMB STRIKES THE HELD
+                                        // JOB TOO -- the reclaim cap's producer.
+                                        if let Some((next, bench)) = held_job_strike(climbing, job.stuck_strikes) {
+                                            job.stuck_strikes = next;
+                                            let k = HELD_STRIKES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if k <= 8 || k.is_power_of_two() {
+                                                info!(
+                                                    job = active.job,
+                                                    colonist = uids.get(entity).map(|u| u.0.get()),
+                                                    kind = ?job.kind,
+                                                    job_pos = ?job.pos,
+                                                    ?feet,
+                                                    strikes = next,
+                                                    struck_out = bench,
+                                                    held_strikes = k,
+                                                    "bastion: THE HELD JOB STRIKES — a banned climb on a suspended self job counts toward its reclaim cap (W6-E)"
+                                                );
+                                            }
+                                        }
                                         to_suspend.push((entity, active.job));
                                     } else {
                                         // ★ FAILURE MEMORY here too. This arm
@@ -57123,6 +57164,26 @@ mod tests {
         assert!(bench_is_new(true, false), "the third strike on a claimable job: a bench");
         assert!(!bench_is_new(true, true), "the fourth strike on a benched job: the same bench, not a new one");
         assert!(!bench_is_new(false, false) && !bench_is_new(false, true), "no bench is never new");
+    }
+
+    /// ★ W6-E pinned: a banned climb strikes the held job; the first two
+    /// leave it reclaimable, the third strikes it out and the reclaim
+    /// refuses (generator and consumer agree on the cap); a stall that was
+    /// not a climb strikes nothing. Planted defect: the old no-strike arm
+    /// (climbing && false) -> red on the first strike.
+    #[test]
+    fn the_held_job_strikes_and_strikes_out() {
+        let mut strikes = 0u8;
+        for _ in 0..2 {
+            let (next, out) = held_job_strike(true, strikes).expect("a banned climb strikes the held job");
+            assert!(!out, "the first two strikes do not strike out");
+            strikes = next;
+            assert!(held_job_reclaim_allowed(strikes), "under the cap the suspended bed is reclaimed");
+        }
+        let (next, out) = held_job_strike(true, strikes).expect("the third banned climb strikes too");
+        assert!(out, "the third strikes out");
+        assert!(!held_job_reclaim_allowed(next), "and the reclaim refuses: the cap has its producer");
+        assert_eq!(held_job_strike(false, 0), None, "a stall that was not a climb is queueing: no strike");
     }
 
     /// ★ W6-D pinned: a banned climb strikes (the first two do not bench,
