@@ -1537,6 +1537,17 @@ window (a TTL, never amnesty). NOT evidenced: the mover that climbs
 the stair (the W class); E2-r behind this row. The dry tree at
 23195dc174 validated every anchor.
 
+### E2-s landed (de3c397aa6, staged 04:49)
+
+Check clean, the pin green (eight asserts), committed 04:35, both
+halves staged 04:49:47; the binary verified by contents (THE
+WALKER SHUNS ITS STALL and THE PICK WENT ELSEWHERE present). The
+b1 and b2 readers restart their arms at this stage and read the
+E2 night set with the shun bars at night 1. Falsifier at 04:54: a
+store cell keyed on the cell, the pin RED (0 passed, 1 failed),
+restored to 0 dirty files. Shipped to lab-bin 04:50. The W14-b2
+chain fired at 04:55 behind it.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the

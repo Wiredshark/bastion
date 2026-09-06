@@ -309,7 +309,21 @@ pub(crate) fn search_memo_refuses(
     target: Vec3<i32>,
     now: u64,
 ) -> bool {
-    memo.is_some_and(|(s, t, until)| s == feet && t == target && now < until)
+    memo.is_some_and(|(s, t, until)| memo_start_matches(s, feet) && t == target && now < until)
+}
+
+/// ★ W14-b2 pinned: THE MEMO MATCHES A BODY THAT SLID -- the pre-path glide
+/// moves the feet a block or two while the search is pending, so an
+/// exact-cell start never matched again (W14-i: 4,096 misses, all
+/// "start", 0 refusals). The start matches within MEMO_START_XY blocks
+/// (Chebyshev) and MEMO_START_Z of the stored cell; one predicate for the
+/// refusal and the near miss, so the writer and the reader agree.
+pub(crate) const MEMO_START_XY: i32 = 3;
+pub(crate) const MEMO_START_Z: i32 = 2;
+pub(crate) fn memo_start_matches(stored: Vec3<i32>, feet: Vec3<i32>) -> bool {
+    (stored.x - feet.x).abs() <= MEMO_START_XY
+        && (stored.y - feet.y).abs() <= MEMO_START_XY
+        && (stored.z - feet.z).abs() <= MEMO_START_Z
 }
 pub(crate) static SEARCHES_REFUSED_MEMO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -324,7 +338,7 @@ pub(crate) fn memo_near_miss(
     now: u64,
 ) -> Option<&'static str> {
     let (s, t, until) = memo?;
-    if s != feet {
+    if !memo_start_matches(s, feet) {
         Some("start")
     } else if t != target {
         Some("target")
@@ -56086,7 +56100,11 @@ mod tests {
         let target = Vec3::new(7713, 6344, 187);
         let memo = Some((feet, target, 1900u64));
         assert!(search_memo_refuses(memo, feet, target, 1000), "the same cell and target inside the window: refused");
-        assert!(!search_memo_refuses(memo, feet + Vec3::unit_x(), target, 1000), "a moved body asks again");
+        // ★ W14-b2: a body that slid a block or two is the same asker.
+        assert!(search_memo_refuses(memo, feet + Vec3::unit_x(), target, 1000), "slid one block: refused");
+        assert!(search_memo_refuses(memo, feet + Vec3::new(3, -3, 2), target, 1000), "slid to the radius: refused");
+        assert!(!search_memo_refuses(memo, feet + Vec3::new(4, 0, 0), target, 1000), "moved four blocks: asks again");
+        assert!(!search_memo_refuses(memo, feet + Vec3::new(0, 0, 3), target, 1000), "moved three up: asks again");
         assert!(!search_memo_refuses(memo, feet, target + Vec3::unit_z(), 1000), "another target asks again");
         assert!(!search_memo_refuses(memo, feet, target, 1900), "an expired memo asks again");
         assert!(!search_memo_refuses(None, feet, target, 1000), "no memo: asked (identity)");
@@ -56115,7 +56133,8 @@ mod tests {
         let memo = Some((feet, target, 1900u64));
         assert_eq!(memo_near_miss(None, feet, target, 1000), None, "no memo");
         assert_eq!(memo_near_miss(memo, feet, target, 1000), None, "all three hold: the memo refuses");
-        assert_eq!(memo_near_miss(memo, feet + Vec3::unit_y(), target, 1000), Some("start"), "the start off");
+        assert_eq!(memo_near_miss(memo, feet + Vec3::unit_y(), target, 1000), None, "slid one block: no miss (W14-b2)");
+        assert_eq!(memo_near_miss(memo, feet + Vec3::new(0, 4, 0), target, 1000), Some("start"), "the start off by four");
         assert_eq!(memo_near_miss(memo, feet, target + Vec3::unit_x(), 1000), Some("target"), "the target off");
         assert_eq!(memo_near_miss(memo, feet, target, 1900), Some("expired"), "the window past");
     }

@@ -2170,6 +2170,119 @@ day-1 read decides W15-i4 (print the refused transition's
 verdict at the frontier: which neighbour the router declined and
 why).
 
+### W15-i3 read: b2 day 1 (23195dc174, 04:35, hour 0 of day 1)
+
+Exhausted searches for the day 366 (W12-a-c's day 1 was 135 on
+another run; colony counts vary 2-3x). Probes 66 (the head sample
+caps the frontier evidence at the day's first 64: the rings are
+the MORNING's), 47 cut_off, 18 sealed, 1 target_unwalkable, 65
+with a walkable target. Rings: 20 `.........`, 10 `###...###`, 9
+`...#.....`, 7 `......#..`, 4 `......###`, 2 `#~~#..###`; sprites
+11 Empty; no door glyph in any ring. Arrivals 603, stuck 0, pump
+pending 0 at the read, unreachable 0. PASSED on what it
+registered: every cut_off and sealed probe prints a ring and the
+`~` cells carry a kind. FALSIFIED on the sprite hypothesis for 20
+of 66: the ring is all walkable and the router still did not step
+toward the target -- the transition rule, not the cell. The
+corridor rings (`###...###`, a wall row north and south) say the
+frontier sits in a one-wide passage beside the store's wall with
+the target beyond it, and the search spent its 75,000 expansions
+without finding the way in. Next: W15-i4 -- one transition
+predicate shared by the router and the probe (generator and
+consumer agree), and the probe prints, for the frontier's
+neighbour toward the target, which sub-check refused it.
+Queued behind E2-s and W14-b2.
+
+### W14-i read: b1 hour 19 (the 23195dc174 pair, 04:29)
+
+THE SEARCH IS NOT ASKED TWICE 0 refusals (4 at hour 19 on W14-b1's
+read); memo writes 93; near-miss lines 39, the miss counter past
+4,096; every named miss why="start" (39 of 39), the top missers
+uid 58 (8), 8 (7), 16 (5). Longest-tier steps 8,950 by hour 19;
+top pairs (7712,6342,181)->(7712,6341,186) 4,051 (five up, one
+block over), the flat re-asker (7725,6404)->(7742,6404) 2,479,
+(7712,6342,181)->(7712,6342,198) 678, (7712,6342,182)->(7712,6341,
+186) 469. Arrivals 601, stuck census 2 distinct, exhausted lines
+11. PASSED as registered: the field is named, and it is the start
+cell -- the walker's feet have moved a block or two from the cell
+the memo stored (the glide moves the body while the search is
+pending), so the exact-cell key never matches and the memo refuses
+nothing. W14-b2: the start matches within a radius (3 blocks xy,
+2 z), one predicate for the refusal and the near miss.
+
+### W14-i read: b1 night 1 (04:46, hour 6 of day 1)
+
+Refusals 32,768 by the night (0 at hour 19: the memo refuses only
+a body whose feet cell has not moved, which at night is a sleeper
+or a wedged walker; uid 58 refused 13 times seen, arrived after 0,
+stuck census 3 lines, last refused at hour 1); misses 8,192, every
+named one "start" (40 of 40); writes 150; longest-tier steps
+10,802, the top pair (7712,6342,181)->(7712,6341,186) at 4,380,
+the flat re-asker 2,479 (unchanged since hour 19: it re-asks by
+day). Arrivals 838, stuck census 8 distinct, exhausted lines 14,
+pump mean wait 56. PASSED as registered; the field is the start,
+by day and by night, and W14-b2's radius is the answer it names.
+
+## W14-b2, registered 04:40 (keyed on the E2-s stage; the queue's end)
+
+THE MEMO MATCHES A BODY THAT SLID. Defect: above (0 refusals,
+4,096 misses, every one "start"). Mechanism:
+`memo_start_matches(stored, feet)` -- Chebyshev within
+MEMO_START_XY (3) in xy and MEMO_START_Z (2) in z -- used by
+`search_memo_refuses` and `memo_near_miss` (generator and consumer
+agree); target and window unchanged. No new log line. Pins
+re-stated: `the_search_is_not_asked_twice` (same cell: refused;
+slid one block: refused; slid to the radius (3,-3,2): refused;
+moved four: asks again; moved three up: asks again; another
+target, expired, no memo: asks again) and
+`the_memo_names_its_near_misses` (slid one block: no miss; off by
+four: "start"). Planted: MEMO_START_XY = 0, red on "slid one
+block: refused". Prediction (b1 fresh after E2-s's night-1 block,
+`wait-w14b2-b1.sh`; hour 19 and night 1): refusals >= 100 by hour
+19 (0 and 4 before); "start" under half of the named misses; the
+top repeated longest-tier pair under 1,000 steps by hour 19
+(4,051 and 2,479); arrivals within 20% of 601; stuck census <= 2.
+Falsified if refusals stay under 10 (the memo is written for a
+different target than the fill asks) or the top pair stays above
+2,000 (the re-ask is another lane's). Rejected: keying on (uid,
+target) alone (a walker that walked away and back could be refused
+from a place the search would now succeed from); a larger radius.
+NOT evidenced: the re-asked targets' own reachability (five up,
+one over: the stair the mover does not climb); b2. The dry tree
+at de3c397aa6 (E2-s) validated every anchor.
+
+## W15-i4, registered 04:45 (keyed on the W14-b2 stage; the queue's end)
+
+THE EXHAUSTED SEARCH NAMES ITS COMPONENTS. An instrument row from
+W15-i3's two reads: 20 of 64-66 frontiers have a fully walkable
+ring and the router did not advance; the move set is
+four-connected with one-block rises and drops, so a walkable
+neighbour that was never popped means the open set flooded -- the
+target in another walking component (a door the router does not
+admit) or the 75,000-expansion budget spent inside one. The shadow
+component index (`board.component_labels`, rebuilt daily from
+every colonist as a seed; readers gated, writer not) can tell
+them apart. Mechanism: `exhaust_components(idx, prev_cells, start,
+target)` -> (no_index | untrusted | start_unlabelled |
+target_unlabelled | same | different, start label, target label),
+the target tried at its cell, one below and one above; the probe
+line gains `components`. No behaviour changes. Pin
+`the_exhausted_search_names_its_components` (no index; two cells:
+untrusted; two labels: different; one label: same; found one
+below: same; target unlabelled; start unlabelled); planted: same
+and different swapped, red. Prediction (b2 fresh after E2-s's
+night-1 block on b2, `wait-w15i4-b2.sh`; +10 and day 1): at +10
+mostly no_index or untrusted (the index is rebuilt on the day's
+clock); by day 1 the perimeter class (sealed and cut_off with a
+walkable target) says `different` for at least 80% -- the store's
+interior is not the walker's component. Falsified if `same`
+carries the majority: the budget or the surcharge, and the next
+row prices the route, not the door. Rejected: a shared step
+predicate refactor in common (the move set is not what stopped a
+walkable ring); printing the open set's size. NOT evidenced: the
+door the verdict points at; b1. The dry tree at de3c397aa6 with
+W14-b2 applied first validated every anchor.
+
 ## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
 
 THE MEMO NAMES ITS NEAR MISSES. SEARCH_MEMO_WRITES counts the
