@@ -8308,10 +8308,15 @@ pub(crate) static SHELVES_ADDED: std::sync::atomic::AtomicU64 = std::sync::atomi
 /// first standable cell beside the bed, orthogonal neighbours first, then
 /// diagonals, all inside the house's footprint; None when nothing beside
 /// the bed can be stood on.
+/// ★ E2-k pinned: THE SHELF IS NEVER A BED -- a candidate is never one of
+/// the house's beds (worldgen lays beds side by side, and a bed sprite on
+/// an air block over a floor is standable; five of nineteen shelves on b2
+/// sat on the second bed, and the sleeper there was the night's lockout).
 pub(crate) fn shelf_cell_beside(
     bed: Vec3<i32>,
     min_xy: Vec2<i32>,
     max_xy: Vec2<i32>,
+    beds: &[Vec3<i32>],
     standable: &impl Fn(Vec3<i32>) -> bool,
 ) -> Option<Vec3<i32>> {
     const AROUND: [(i32, i32); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)];
@@ -8319,7 +8324,7 @@ pub(crate) fn shelf_cell_beside(
         .iter()
         .map(|(dx, dy)| Vec3::new(bed.x + dx, bed.y + dy, bed.z))
         .find(|c| {
-            c.x >= min_xy.x && c.x <= max_xy.x && c.y >= min_xy.y && c.y <= max_xy.y && standable(*c)
+            c.x >= min_xy.x && c.x <= max_xy.x && c.y >= min_xy.y && c.y <= max_xy.y && !beds.contains(c) && standable(*c)
         })
 }
 
@@ -15614,7 +15619,7 @@ impl JobBoard {
                     terrain.get(c).is_ok_and(|b| !b.is_filled())
                         && terrain.get(c - Vec3::unit_z()).is_ok_and(|b| b.is_filled())
                 };
-                if let Some(cell) = shelf_cell_beside(bed, min_xy, max_xy, &standable) {
+                if let Some(cell) = shelf_cell_beside(bed, min_xy, max_xy, &beds_here, &standable) {
                     let one = Region { min: cell, max: cell };
                     if !self.stockpiles.iter().any(|(_, r)| *r == one) {
                         let sid = self.next_zone;
@@ -15627,6 +15632,7 @@ impl JobBoard {
                             ?cell,
                             ?min_xy,
                             ?max_xy,
+                            beds_in_house = beds_here.len(),
                             shelves_added = n,
                             "bastion: SHELF ADDED — a house with beds and no container gets a one-cell \
                              shelf beside its first bed"
@@ -55728,6 +55734,19 @@ mod tests {
         assert_eq!(supper_stack_pick(&[], 2), None, "nothing to take");
     }
 
+    /// ★ E2-k pinned: a candidate cell is never one of the house's beds --
+    /// a bed east: west; beds east and west: north; no beds: E2-c's rule
+    /// unchanged. Planted defect: the beds ignored -> red.
+    #[test]
+    fn the_shelf_is_never_a_bed() {
+        let lo = Vec2::new(8, 8);
+        let hi = Vec2::new(12, 12);
+        let bed = Vec3::new(10, 10, 5);
+        assert_eq!(shelf_cell_beside(bed, lo, hi, &[Vec3::new(11, 10, 5)], &|_| true), Some(Vec3::new(9, 10, 5)), "a bed east: west");
+        assert_eq!(shelf_cell_beside(bed, lo, hi, &[Vec3::new(11, 10, 5), Vec3::new(9, 10, 5)], &|_| true), Some(Vec3::new(10, 11, 5)), "beds east and west: north");
+        assert_eq!(shelf_cell_beside(bed, lo, hi, &[], &|_| true), Some(Vec3::new(11, 10, 5)), "no beds: east as before");
+    }
+
     /// ★ E2-c pinned: the shelf goes beside the bed, orthogonal first, inside
     /// the footprint; a bed at the footprint's edge takes the inside
     /// neighbour; nothing standable beside the bed means no shelf. Planted
@@ -55738,9 +55757,9 @@ mod tests {
         let lo = Vec2::new(8, 8);
         let hi = Vec2::new(12, 12);
         let wall = |c: Vec3<i32>| !(c.x == 11 && c.y == 10);
-        assert_eq!(shelf_cell_beside(Vec3::new(10, 10, 5), lo, hi, &wall), Some(Vec3::new(9, 10, 5)), "a wall east: west");
-        assert_eq!(shelf_cell_beside(Vec3::new(12, 10, 5), lo, hi, &|_| true), Some(Vec3::new(11, 10, 5)), "an edge bed: inside");
-        assert_eq!(shelf_cell_beside(Vec3::new(10, 10, 5), lo, hi, &|_| false), None, "nothing standable");
+        assert_eq!(shelf_cell_beside(Vec3::new(10, 10, 5), lo, hi, &[], &wall), Some(Vec3::new(9, 10, 5)), "a wall east: west");
+        assert_eq!(shelf_cell_beside(Vec3::new(12, 10, 5), lo, hi, &[], &|_| true), Some(Vec3::new(11, 10, 5)), "an edge bed: inside");
+        assert_eq!(shelf_cell_beside(Vec3::new(10, 10, 5), lo, hi, &[], &|_| false), None, "nothing standable");
     }
 
     /// ★ E2-b pinned: on the default schedule the round's window is 14

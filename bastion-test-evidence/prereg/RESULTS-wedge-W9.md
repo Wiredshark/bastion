@@ -1774,6 +1774,18 @@ E2-k, E2-i2, W12-a-b, W15-i1); the E2-k chain and the W12-a-b b2
 reader were re-keyed by their pid files; the dry tree was rebuilt
 in the new order.
 
+### W13-b-r landed (cb11a71b0d, staged 22:49)
+
+Check clean, the pin green, both halves staged 22:49; the binary
+verified by contents (THE GLIDE FOLLOWS THE SURFACE back, E2-o's
+string present). The b2 reader restarts b2 at the stage (the W13-w
+pair's log, with its day-2 count of 21 embeds at hour 8, rolls to
+/tmp/arm-b2) and reads +4, +10 and day 1 against the bars above;
+Falsified: the snap lowering again (z = floor) planted at
+cb11a71b0d, the pin RED at 22:54 on "a floor below the line: the
+line keeps its z (W13-b)", the tree restored clean. Shipped to
+lab-bin 22:50.
+
 ## W14, registered 22:12 (keyed on the W15-i1 stage; the queue's end)
 
 THE SEARCH IS NOT ASKED TWICE. Found while E2-m built, by mining

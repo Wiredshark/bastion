@@ -1154,6 +1154,33 @@ not answered by this read: the shelves that were stocked (35 of
 54) fed 7 night meals, and which shelves those were is E2-i2's
 read.
 
+### E2-m read (b1 fresh on bc45399a42; day 0 and night 1, read 22:43): its own bars pass, the night's co-measures worsen
+
+Against its bars: RestAt/Waiting starving samples at hours 22-3 --
+none at all (5-8 an hour on the E2-g-c night; bar at most 1):
+PASSED; THE QUEUE IGNORES A STRANGER 32,768 by night 1 (bar 20):
+PASSED, and the twenty printed lines anchor at z 186 (17), 183 (2)
+and 189 (1) -- upper-floor beds, the housemate case the row was
+written for, none in the store box at z 182; RestAt/Traveling
+starving at 0-3: 0, 0, 0, 6 (bar at most 4 an hour; hour 3 over by
+two, the sleepers leaving for the store). The co-measures, one
+replicate, all worse than the E2-l pair the day before: distinct
+starving sleepers 9 (3); in-bed starving samples at 0-3 14, 25, 28,
+43 (7, 15, 21, 24); NIGHT MEAL AT HOME 13 (7); EAT CENSUS day 1
+no_food_found 1,040 (452), eat_stalls_tolerated 20 (9),
+targets_shunned 25 (15), meals 46 (48); EatFrom arrivals 54 (52);
+evening hungry walkers (EatFrom/Traveling) at 18-20 19, 31, 15 (3,
+11, 0); in_bags at hour 21 59 (118). The round: 55 loads, 19 swept
+(19), 41 private arrivals (43). Works 416 on the day-1 lines (353,
+394, 446 before). Disposition: PASSED on its own bars; the night's
+worsening is one replicate against a colony that varies 2-3x, and
+the E2-o pair (restarted 22:44, carrying E2-m) is its second
+replicate -- if the starving sleepers and no_food_found stay at
+this order there, E2-m's rule is re-read for a cost at the store
+(eaters bound for neighbouring items no longer queue). NOT
+evidenced: why the packs ran down faster on this day (in_bags 84
+at hour 16 against 119).
+
 ### E2-o landed (ead39f481d, staged 22:25)
 
 Check clean on the first try, the pin green (four asserts on the
