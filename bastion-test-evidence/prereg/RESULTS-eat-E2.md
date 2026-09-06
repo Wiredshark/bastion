@@ -1199,6 +1199,52 @@ two-argument one planted `no_need_pending || own_supper_pending`
 and the pin went RED at 22:30 (the "own supper load unclaimed"
 assert), the tree restored clean. Shipped to lab-bin 22:26.
 
+### E2-o read (b1 fresh on ead39f481d; day 0 and night 1, read 23:17): the supper line works, the walk home still stalls after the door
+
+Against its bars. The supper hour (a): hunger preempts at 20-21 18
+and 8, 26 (bar 20; 12 on the W13-b day): PASSED; meals at 20-21 18
+and 9, 27 (bar 18; 11): PASSED; the cohort (last meal by 17, no
+supper) 12 of 48, 6 of them on the visit (bar 5; 17 and 15):
+FAILED as written, halved; distinct starving sleepers 3 (bar 2; 5
+on the W13-b night, 9 on the E2-m pair, 3 on E2-l): FAILED by one;
+in-bed starving samples at 0-3 0, 0, 7, 8 (bar 8 an hour; 0, 5,
+15, 24 before; 14, 25, 28, 43 on the E2-m pair): PASSED; NIGHT MEAL
+AT HOME 7 (13 on the pair before): PASSED; THE LOUNGE YIELDS 1,024
+by night 1 (bar 20): PASSED. EAT CENSUS day 1: meals 69 (46-48),
+no_food_found 125 (452 on E2-l, 1,040 on E2-m). Evening hungry
+walkers at 18-20 7, 11, 7 (19, 31, 15 on E2-m). The E2-m
+co-measures on this second replicate: RestAt/Waiting starving 0
+again; RestAt/Traveling starving at 0-3 7, 8, 7, 14 (E2-m's bar 4;
+its own pair read 0, 0, 0, 6) -- the late walkers to bed, mixed
+across replicates; starving sleepers back to 3. The walk home (b):
+own-supper claims 32 by the Sleep block (bar 40; 32 the day
+before), SWEPT 18 of 56 (bar 10; 19): FAILED, both -- with the
+door now opened 1,024 times (32 the day before; the lounge no
+longer holds the eater) and leisure-hour claims of any kind 32
+(13). The door opens and the claim still does not follow: the
+first nine colonists the door named at 16-18 all claimed within
+seconds, the ones named at 20-21 (30, 71) did not; the claim
+refusal census through 19-21 reads considered 1,676-2,250 a
+window, eligible 0-1, refused all but one, priority_zero
+1,504-2,030 (E2-l's own rule on the other jobs), already_claimed
+168-215, affordance 4-5. The own load's refusal is not named by
+the census -- the next instrument (E2-l-i: the walk home's verdict
+per colonist) reads it; the haul gate (non-hauler haul claims,
+open at shift end) is the suspect, since the door-named colonists
+at hours 16-18 claimed and those at 20-21 did not. Disposition:
+PARTIAL -- the supper line and the lounge yield hold (the night's
+starvation halved against the pair before and a fifth of the E2-m
+pair's), the walk home is still shut one gate further in.
+
+### E2-k landed (eda115908a, staged 23:11)
+
+Check clean, the pin green, both halves staged 23:11 (the row's
+string present in the binary). The b1 reader restarts b1 after
+E2-o's night-1 block and reads the shelves. Falsified: the bed
+admitted as a shelf cell planted at eda115908a, the pin RED at
+23:14, the tree restored clean. Shipped to lab-bin 23:11. E2-n-i's
+chain fires five minutes after this stage.
+
 ## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
 
 THE QUEUE IS FOR THE SAME ANCHOR. The anchor queue (the eat queue's

@@ -1786,6 +1786,32 @@ cb11a71b0d, the pin RED at 22:54 on "a floor below the line: the
 line keeps its z (W13-b)", the tree restored clean. Shipped to
 lab-bin 22:50.
 
+W13-b-r at +10 on b2 (read 23:01, hour 14 of day 0): arrivals 372
+(bar at least 300; W13-w 355, W13-b 387): PASSED; EMBED WATCH 1
+(one pure-glide writer, entry z 181.88 -> 181.98, a tenth of a
+block up; the day-1 bar is at most 1); GLIDE SNAPS 2,048 (the
+raises firing, W13-b's order); pump mean wait 18, max 29, pending
+37 (bar under 60 at midnight); stuck 0; unreachable 0 of 373;
+panics 0. Day 1 decides the embed bar and the arrivals band.
+
+W13-b-r at day 1 on b2 (read 23:18, hour 0 of day 1): arrivals 591
+(bar at least 480; W13-w 535, W13-b 586): PASSED; EMBED WATCH 2
+(bar at most 1; W13-b 0, W13-w 5): FAILED by one -- the +10 riser
+(181.88 -> 181.98) and one DIP at a step-down edge (184.99 ->
+183.81, a block and a fifth), the signature W13-c was written for;
+GLIDE SNAPS 4,096; pump at midnight pending 3, mean wait 14 (bar
+under 60): PASSED; stuck 0: PASSED; unreachable 11 of 645
+(unreachable_open, from_in_house, first_leg false; W13-w 0 of 372,
+W13-b 0 of 421; bar 0): FAILED, one replicate, a class this row
+does not touch (the W12-a stand rule's territory: eight DOOR PROBE
+NoDoor verdicts on the same day, the known false verdict). Neither
+falsification clause fired (embeds under 4; arrivals over 430).
+Disposition: PARTIAL, the raise stands -- the arrivals band holds
+with it (591 against 535 without), the residual is one riser and
+one dip a day against 5-18 without it; the dip is W13-c's case,
+one a day, and stays in the ledger; the 11 unreachable are read
+again on the next b2 pair before they are a row.
+
 ## W14, registered 22:12 (keyed on the W15-i1 stage; the queue's end)
 
 THE SEARCH IS NOT ASKED TWICE. Found while E2-m built, by mining

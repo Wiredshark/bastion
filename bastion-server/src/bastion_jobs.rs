@@ -10006,6 +10006,17 @@ pub(crate) fn store_is_private<'a>(
     houses.into_iter().any(|h| h.contains_point_xy(r.min))
 }
 
+/// ★ E2-n-i pinned: A MEAL NAMES ITS SOURCE -- the store kind under the
+/// pile it came from: private (a household shelf), general (a store), none
+/// (no store under the pile: a founding pile, the ground).
+pub(crate) fn meal_source(under_store_private: Option<bool>) -> &'static str {
+    match under_store_private {
+        Some(true) => "private",
+        Some(false) => "general",
+        None => "none",
+    }
+}
+
 /// The house a colonist belongs to: the Bed region containing their own bed.
 pub(crate) fn household_house<'a>(
     bed: Option<Vec3<i32>>,
@@ -17358,12 +17369,18 @@ impl JobBoard {
     /// tolerant z-band (items REST ON the painted surface; the paint's
     /// z-band needn't contain the resting z exactly).
     pub fn stockpile_at(&self, cell: Vec3<i32>) -> Option<common::bastion::ZoneId> {
+        self.stockpile_region_at(cell).map(|(id, _)| id)
+    }
+
+    /// ★ E2-n-i: the same rule, returning the region too (the meal's source
+    /// kind needs the region's corner, not its id).
+    pub fn stockpile_region_at(&self, cell: Vec3<i32>) -> Option<(common::bastion::ZoneId, &Region)> {
         self.stockpiles
             .iter()
             .find(|(_, r)| {
                 r.contains_point_xy(cell) && cell.z >= r.min.z - 2 && cell.z <= r.max.z + 3
             })
-            .map(|(id, _)| *id)
+            .map(|(id, r)| (*id, r))
     }
 
     /// Every assignable zone's region: farms, stockpiles, and the work
@@ -38874,10 +38891,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             if let Some(u) = eater_uid {
                                 board.b5_eat_completions_distinct.insert(u);
                             }
+                            // ★ E2-n-i: A MEAL NAMES ITS SOURCE -- the pile,
+                            // the store kind under it, the hour.
+                            let pile = board.jobs.get(&active.job).map(|j| j.pos);
+                            let source = meal_source(pile.and_then(|c| {
+                                board.stockpile_region_at(c).map(|(_, r)| {
+                                    store_is_private(
+                                        r,
+                                        board
+                                            .designated
+                                            .iter()
+                                            .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                                            .map(|(h, _)| h),
+                                    )
+                                })
+                            }));
                             info!(
                                 uid = eater_uid.map(|u| u.0.get()),
                                 job = active.job,
-                                "bastion: ate — hunger restored"
+                                pile = ?pile,
+                                source,
+                                hour = hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                                "bastion: ate — hunger restored; the meal names its source"
                             );
                             // The meal belongs in the EATER's story. It was
                             // being recorded only against the ITEM's ring with
@@ -55401,6 +55436,16 @@ mod tests {
         assert_eq!(glide_snap_z(line, Some(182.0)), Vec3::new(10.5, 10.5, 182.0), "a floor above the line: the body rises to it");
         assert_eq!(glide_snap_z(line, Some(181.0)), line, "a floor below the line: the line keeps its z (W13-b)");
         assert_eq!(glide_snap_z(line, None), line, "no floor known: the line as before");
+    }
+
+    /// ★ E2-n-i pinned: a pile under a private store is a shelf meal, under
+    /// a general store a store meal, under no store none. Planted defect:
+    /// the shelf named as the store -> red.
+    #[test]
+    fn a_meal_names_its_source() {
+        assert_eq!(meal_source(Some(true)), "private", "under a household shelf");
+        assert_eq!(meal_source(Some(false)), "general", "under a store");
+        assert_eq!(meal_source(None), "none", "under no store");
     }
 
     /// ★ W12-b-b pinned: a filter that admits no cell is void -- the spread
