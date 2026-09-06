@@ -8867,6 +8867,21 @@ pub(crate) fn claims_admit(block: ScheduleBlock, own_supper_pending: bool) -> bo
 }
 pub(crate) static LEISURE_SUPPER_DOORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// ★ E2-l-i pinned: THE SWEEP NAMES ITS EATERS -- a swept load's story from
+/// its eater's day: the door never opened (the eater was never free in its
+/// leisure hours: never_free), the door opened but no pass recorded a
+/// verdict on the load (opened_not_scanned), or the last verdict the scan
+/// gave the load (its own name).
+pub(crate) fn sweep_verdict(opens: u32, passes: u32, last: Option<&'static str>) -> &'static str {
+    if opens == 0 {
+        "never_free"
+    } else if passes == 0 {
+        "opened_not_scanned"
+    } else {
+        last.unwrap_or("opened_not_scanned")
+    }
+}
+
 pub fn farm_season(time_of_day: f64) -> common::time::Season {
     use common::time::Season as S;
     static PIN: std::sync::OnceLock<Option<S>> = std::sync::OnceLock::new();
@@ -14881,6 +14896,11 @@ pub struct JobBoard {
     /// ★ E2-g: each supper load's eaters (the bed owners of its house);
     /// an eater claims its own load at 6. Cleaned on remove_job.
     pub supper_eaters: HashMap<JobId, Vec<Uid>>,
+    /// ★ E2-l-i: how often the leisure door opened for each colonist today,
+    /// and (passes, last verdict) the scan gave the colonist's own load.
+    /// Cleared at the Sleep-block sweep.
+    pub walk_home_opens: HashMap<Uid, u32>,
+    pub walk_home_verdicts: HashMap<Uid, (u32, &'static str)>,
     /// ★ W10-i1: the pump's deliveries and steps since the last census.
     pub pump_census: PumpCensus,
     /// ★ W11: the glide override's anchor per body -- (node, feet, tick)
@@ -28871,9 +28891,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .map(|(id, _)| *id)
                     .collect();
                 stale.sort_unstable();
+                // ★ E2-l-i: THE SWEEP NAMES ITS EATERS -- captured before
+                // the removal drops the eater lists.
+                let named: Vec<(JobId, Option<Uid>)> = stale
+                    .iter()
+                    .map(|id| (*id, board.supper_eaters.get(id).and_then(|v| v.first().copied())))
+                    .collect();
                 for id in &stale {
                     board.remove_job(*id);
                 }
+                for (id, eater) in &named {
+                    let opens = eater.and_then(|u| board.walk_home_opens.get(&u).copied()).unwrap_or(0);
+                    let (passes, last) = eater
+                        .and_then(|u| board.walk_home_verdicts.get(&u).copied())
+                        .map_or((0, None), |(n, v)| (n, Some(v)));
+                    info!(
+                        day = today,
+                        job = %id,
+                        eater = eater.map(|u| u.0.get()),
+                        profession = ?eater.and_then(|u| board.professions.get(&u).copied()),
+                        night_watch = eater.is_some_and(|u| board.night_watch.contains(&u)),
+                        door_opens = opens,
+                        passes,
+                        verdict = sweep_verdict(opens, passes, last),
+                        "bastion: THE SWEEP NAMES ITS EATERS — a supper load swept unclaimed, and what its eater's day did with it"
+                    );
+                }
+                board.walk_home_opens.clear();
+                board.walk_home_verdicts.clear();
                 if !stale.is_empty() {
                     let n = SUPPER_STALE_REMOVED
                         .fetch_add(stale.len() as u64, std::sync::atomic::Ordering::Relaxed)
@@ -47694,6 +47739,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 continue;
             }
             if off_hours && own_supper_pending {
+                *board.walk_home_opens.entry(*uid).or_insert(0) += 1;
                 let n = LEISURE_SUPPER_DOORS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                 if n <= 8 || n.is_power_of_two() {
                     info!(
@@ -47747,9 +47793,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 )
             };
             let mut best: Option<(JobId, u8, f32)> = None;
+            // ★ E2-l-i: what this pass did with the colonist's own load.
+            let mut own_load_id: Option<JobId> = None;
+            let mut own_load_verdict: Option<&'static str> = None;
             for id in board.decision_job_ids() {
                 census.considered += 1;
                 let job = &board.jobs[&id];
+                let own_load = board.supper_eaters.get(&id).is_some_and(|v| v.contains(uid));
+                if own_load {
+                    own_load_id = Some(id);
+                }
                 // ROW 27: ON WATCH, THE GUARD GUARDS. A night watchman's
                 // door is open while the town sleeps, but he claims only
                 // his own lane — without this he'd haul crates at 3am,
@@ -47783,6 +47836,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     )
                     && job.work != common::bastion::WorkType::Guard
                 {
+                    if own_load {
+                        own_load_verdict = Some("lane_hold_night_watch");
+                    }
                     census.lane_hold += 1;
                     continue;
                 }
@@ -47810,8 +47866,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the two new counters are additive and sum to it.
                     census.not_candidate += 1;
                     if job.claimed_by.is_some() {
+                        if own_load {
+                            own_load_verdict = Some("already_claimed");
+                        }
                         census.already_claimed += 1;
                     } else {
+                        if own_load {
+                            own_load_verdict = Some("unreachable_job");
+                        }
                         // Not claimed, yet not a candidate -> `unreachable` is the
                         // only remaining disjunct. ★ THIS is the one worth
                         // alerting on.
@@ -47930,6 +47992,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: CONNECTIVITY REFUSED a job — where the index says nobody can go"
                         );
                     }
+                    if own_load {
+                        own_load_verdict = Some("connectivity_refused");
+                    }
                     census.not_candidate += 1;
                     census.unreachable_job += 1;
                     continue;
@@ -47997,6 +48062,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if job.affordance != AffordanceClass::Untargeted
                     && !standable.contains_key(&id)
                 {
+                    if own_load {
+                        own_load_verdict = Some("affordance");
+                    }
                     { census.affordance += 1; continue; }
                 }
                 // B5.8-E: held until return-access leads the descent.
@@ -48213,16 +48281,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     priority
                 };
                 if priority == 0 {
+                    if own_load {
+                        own_load_verdict = Some(if own_supper {
+                            "priority_zero_despite_own"
+                        } else {
+                            "walk_home_hour_false"
+                        });
+                    }
                     { census.priority_zero += 1; continue; }
                 }
                 if let Some(r) = scope
                     && !r.contains_point_xy(job.pos)
                 {
+                    if own_load {
+                        own_load_verdict = Some("out_of_zone");
+                    }
                     { census.out_of_zone += 1; continue; }
                 }
                 // ★ CONDEMNED CELL: the town proved nobody can reach this
                 // cell — no walker is sent to strand there again.
                 if board.condemned_cells.contains(&job.pos) {
+                    if own_load {
+                        own_load_verdict = Some("condemned");
+                    }
                     { census.condemned += 1; continue; }
                 }
                 let dist = pos.0.distance(job.pos.map(|e| e as f32));
@@ -48238,6 +48319,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // dig (>16 from all workers) → nobody-eligible → F3 prune →
                 // re-emit churn, the leg-C 108/432 stall.
                 if job.is_access && emergency_owner.is_some() && dist > 16.0 {
+                    if own_load {
+                        own_load_verdict = Some("access_dist");
+                    }
                     { census.access_dist += 1; continue; }
                 }
                 // …and vertical-access construction outranks ordinary work
@@ -48414,6 +48498,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if better {
                     best = Some((id, priority, score));
                 }
+            }
+            // ★ E2-l-i: record the pass's verdict on the own load.
+            if off_hours && own_supper_pending {
+                let verdict = match (own_load_verdict, own_load_id) {
+                    (Some(v), _) => v,
+                    (None, None) => "not_in_scan",
+                    (None, Some(own)) => {
+                        if best.is_some_and(|(b, _, _)| b == own) {
+                            "claimed"
+                        } else {
+                            "outranked"
+                        }
+                    },
+                };
+                let e = board.walk_home_verdicts.entry(*uid).or_insert((0, verdict));
+                e.0 += 1;
+                e.1 = verdict;
             }
             if let Some((job_id, _, _)) = best {
                 // B6: commit the FETCH reservation with the claim (scoring
@@ -55609,6 +55710,17 @@ mod tests {
         }
         assert_eq!((c.exhausted_up, c.exhausted_down, c.exhausted_flat), (1, 1, 3), "up, down, flat");
         assert_eq!(c.exhausted_up + c.exhausted_down + c.exhausted_flat, 5, "the three sum to the count");
+    }
+
+    /// ★ E2-l-i pinned: no door opened: never_free; opened, no pass:
+    /// opened_not_scanned; opened and passed: the last verdict. Planted
+    /// defect: a load whose door never opened named by a verdict -> red.
+    #[test]
+    fn the_sweep_names_its_eaters() {
+        assert_eq!(sweep_verdict(0, 0, None), "never_free", "the door never opened");
+        assert_eq!(sweep_verdict(0, 3, Some("outranked")), "never_free", "no door: never free, whatever the passes say");
+        assert_eq!(sweep_verdict(4, 0, None), "opened_not_scanned", "opened, no pass recorded");
+        assert_eq!(sweep_verdict(4, 2, Some("walk_home_hour_false")), "walk_home_hour_false", "the last verdict");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable

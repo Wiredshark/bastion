@@ -1290,6 +1290,54 @@ after that block. Falsified: the holders unnamed planted at
 9bdf57c361, the pin RED at 23:59, the tree restored clean. Shipped
 to lab-bin 23:56.
 
+### E2-i2 read (b1 fresh on 9bdf57c361; boot, day 0 and night 1, read 00:35): the holders' arm had nothing to name
+
+Boot: 19 shelves, 0 on a bed cell (E2-k's bar holds). The night:
+54 loads, 43 private arrivals, SWEPT 16 (11 on the E2-k pair, 18
+and 19 before); NIGHT SHELF verdicts 16, all Empty (present 0) --
+no Refused verdict this night, so the holders field (E2-i2's own
+arm) fired on nothing: NOT EXERCISED, the read stays open for a
+night with a Refused verdict (the E2-k pair had 4 of 16); NIGHT
+MEAL AT HOME 0 (7 on the pair before); distinct starving sleepers
+3; in-bed starving samples at 0-3 7, 11, 14, 16 (none on the E2-k
+pair, 0, 0, 7, 8 on E2-o's); EAT CENSUS day 1 meals 70,
+no_food_found 452 (57 on E2-k's, 125 on E2-o's); afternoon hungry
+walkers at 15-18 16, 21, 24, 21. Three replicates now carry E2-m,
+E2-o and E2-k together: starving sleepers 3, 2, 3 (5 and 9 before
+E2-o), in-bed starving at 0-3 from none to sixteen an hour, the
+swept loads 18, 11, 16, no_food_found 125, 57, 452 -- the sleeper
+count moved and held; the rest swings 2-3x between boots, as the
+law says. The E2-n-i printer reads this pair's meals by source
+after this block.
+
+### E2-n-i read (b1, the E2-i2 pair 9bdf57c361, after its night-1 block, read 00:36): the supper is a store meal; a fifth of the meals are eaten off no store
+
+Against its bars: 54 meal lines, 54 with a source (every line
+carries one: PASSED); "none" (a pile under no store) 10 of 54, 18%
+(bar under 10%: FAILED as written -- one meal in five is eaten off
+a pile that no stockpile region contains; which piles is the next
+question, below); the private night meals (hours 22-5) 2 of 5
+against NIGHT MEAL AT HOME 0 (bar: within 2: PASSED -- a shelf
+meal in another house is private but not "at home"). The evening
+(20-21): 20 meals, 5 private, 12 general, 3 none -- the supper
+that E2-o pulled to 20-21 comes off the STORE three times in five
+and off a shelf once in four: the shelves were empty (16 NIGHT
+SHELF Empty, 16 loads swept), so the eaters walk to the store at
+supper and the night meal at home has nothing to find. E2-o's
+open question is answered on this pair: the shelf feeds the
+evening only when the walk home stocks it (E2-l-i's read names
+why it does not). Disposition: the instrument PASSED (it names
+every meal and agrees with the at-home count); the "none" share
+is the finding to chase. Read before b1 restarted: the ten "none"
+piles (7638,6481; 7706,6310; 7652,6466; 7705,6346; 7664,6337;
+7763,6362; ...) each sit where a "cook station registered" line
+names a kitchen -- the meals are eaten off the KITCHEN's output
+pile (cooked food at the cook station, which is no stockpile
+region). Not a defect: a colonist eating at the kitchen is a
+village; the instrument's "none" reads "kitchen" for these, and
+the label is a refinement for the next instrument row, not a
+behaviour row. NOT evidenced: a night with stocked shelves.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the

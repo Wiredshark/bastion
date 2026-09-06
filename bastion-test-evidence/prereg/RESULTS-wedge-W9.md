@@ -1852,6 +1852,43 @@ read on b2 (below) stands as W12-a-b's evidence regardless; the
 pattern to check on every "one condition widened" row is an
 assert that coincides with the fallback.
 
+W12-a-b at +10 on b2 (read 00:29, hour 15 of day 0): SEARCH TARGET
+MOVED 512 (W12-a's pairs 4,096-8,192 by +10: the on-top targets no
+longer move -- the first four moved targets are (7714,6342,185)
+and one at z 182, cells with nothing standable below either);
+arrivals 435 (372, 355, 387 on the three pairs before); EMBED
+WATCH 2 (chaser-pure-glide; the raise aboard); unreachable 1 of
+372 (0 at +10 before); pump mean wait 78, pending 30, max 187
+(18 on W13-b-r's +10 -- the pump's load swings between boots);
+stuck 0; panics 0. Day 1 reads the unreachable class that reached
+48 by day 2 on the pair before.
+
+W12-a-b at day 1 on b2 (read 00:42, hour 0 of day 1): arrivals 641
+(591 on W13-b-r, 535 on W13-w, 586 on W13-b -- the best day 1 of
+the run); unreachable deliveries 1 of 501 (11 of 645 on W13-b-r's
+day 1; UNREACHABLE APPROACH lines 0 against 16): the on-top stand
+rule is where that class lived; SEARCH TARGET MOVED 2,048 by day
+1 (8,192 on W12-a's pairs); EMBED WATCH 2 (the raise's residual:
+W13-b-r 2); pump at midnight pending 13, mean wait 50; stuck 0;
+panics 0. Disposition: PASSED on the live read -- the moved
+searches down four times, the unreachable deliveries down eleven
+times, arrivals up -- on a pin that stayed green; W12-a-b-p
+re-states the pin so the plant goes red. The pair keeps running
+on b2 until the next b2 row: its day 2 and beyond are the free
+replicate of both counts.
+
+### W15-i1 landed (fc0d3a31b3, staged 00:40)
+
+Check clean, the pin green, both halves staged 00:40; the binary
+verified by contents (THE SEARCH EXHAUSTED present). The b1 reader
+restarts b1 at the stage (after E2-i2's night-1 block, already
+landed) and reads the boot shelves and night 1: the exhausted
+searches by direction (up, down, flat) through the night hours.
+Falsified: the band ignored planted at fc0d3a31b3, the pin RED at
+00:43, the tree restored clean. Shipped to lab-bin 00:41. W15 (the
+top step under the slab) stays HELD until the night read says
+whether exhausted_up dominates.
+
 ## W14, registered 22:12 (keyed on the W15-i1 stage; the queue's end)
 
 THE SEARCH IS NOT ASKED TWICE. Found while E2-m built, by mining
