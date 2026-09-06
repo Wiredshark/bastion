@@ -1943,6 +1943,16 @@ at 0b5c172d15, the pin RED at 01:32, the tree restored clean.
 Shipped to lab-bin 01:28. W12-a-b-p's chain fires five minutes
 after this stage, W15-i2's five minutes after that one.
 
+### W12-a-b-p landed (9a2925e522, staged 01:41)
+
+Check clean, the re-stated pin green (the on-top assert now offers
+a competing east cell), both halves staged 01:41. Nothing to read
+live (a pin fix). Falsified: the same plant (`if standable(target)
+{`, the on-top rule removed) at 9a2925e522, the pin RED at 01:45 on
+"one below and one east stand: the on-top target stands, not its
+east neighbour", the tree restored clean. The green of 00:20 is
+closed: the pin now guards the line. Shipped to lab-bin 01:42.
+
 ## W15-i2, registered 01:32 (keyed on the W12-a-b-p stage; the queue's end)
 
 THE EXHAUSTED SEARCH NAMES ITS TARGET. An instrument row from

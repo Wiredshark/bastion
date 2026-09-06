@@ -313,6 +313,29 @@ pub(crate) fn search_memo_refuses(
 }
 pub(crate) static SEARCHES_REFUSED_MEMO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// ★ W15-i2: how near the frontier must come, in xy blocks, for an
+/// exhausted search to count as sealed at its target rather than cut off.
+pub(crate) const EXHAUST_SEALED_XY: f32 = 3.0;
+
+/// ★ W15-i2 pinned: THE EXHAUSTED SEARCH NAMES ITS TARGET -- an unwalkable
+/// target is target_unwalkable (the stand rule should have moved it); a
+/// walkable target the frontier came within EXHAUST_SEALED_XY of is sealed
+/// (no admissible step onto it from where the search got); a walkable
+/// target the frontier never came near is cut_off (the search space ends
+/// before it). No closest node known: unknown.
+pub(crate) fn exhaust_probe_class(closest_xy: Option<f32>, target_walkable: bool) -> &'static str {
+    if !target_walkable {
+        "target_unwalkable"
+    } else {
+        match closest_xy {
+            None => "unknown",
+            Some(d) if d <= EXHAUST_SEALED_XY => "sealed",
+            Some(_) => "cut_off",
+        }
+    }
+}
+pub(crate) static EXHAUST_PROBES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub struct PendingSearch {
     pub search: common::path::FullPathSearch,
     pub startf: Vec3<f32>,
@@ -43395,6 +43418,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 "bastion: THE SEARCH EXHAUSTED — the exact fill search spent its budget; the body keeps the trunk's tail"
                                             );
                                         }
+                                        // ★ W15-i2: THE EXHAUSTED SEARCH NAMES ITS
+                                        // TARGET -- the probe, for the first
+                                        // sixty-four exhaustions and the powers
+                                        // of two after.
+                                        {
+                                            let m = EXHAUST_PROBES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if m <= 64 || m.is_power_of_two() {
+                                                let walk = |c: Vec3<i32>| common::path::colonist_walkable(&*terrain, c);
+                                                let tc = ps.target.map(|e| e.floor() as i32);
+                                                let sc = ps.startf.map(|e| e.floor() as i32);
+                                                let closest = ps.search.last_closest;
+                                                let closest_xy = closest.map(|c| {
+                                                    c.xy().map(|e| e as f32).distance(tc.xy().map(|e| e as f32))
+                                                });
+                                                let solid = |q: Vec3<i32>| {
+                                                    terrain.get(q).is_ok_and(|b| b.is_solid())
+                                                };
+                                                let mut ring = String::with_capacity(9);
+                                                for dy in [1i32, 0, -1] {
+                                                    for dx in [-1i32, 0, 1] {
+                                                        let q = tc + Vec3::new(dx, dy, 0);
+                                                        ring.push(if solid(q) { '#' } else if walk(q) { '.' } else { '~' });
+                                                    }
+                                                }
+                                                info!(
+                                                    uid = k,
+                                                    target = ?tc,
+                                                    start = ?sc,
+                                                    closest = ?closest,
+                                                    closest_xy = ?closest_xy,
+                                                    target_walk = ?(walk(tc), walk(tc - Vec3::unit_z()), walk(tc + Vec3::unit_z())),
+                                                    start_walk = walk(sc),
+                                                    ring = %ring,
+                                                    class = exhaust_probe_class(closest_xy, walk(tc)),
+                                                    probes = m,
+                                                    "bastion: THE EXHAUSTED SEARCH NAMES ITS TARGET — where the frontier stopped, and what the target's cell is (ring: # solid . walkable ~ neither, north row first)"
+                                                );
+                                            }
+                                        }
                                         // ★ W14: remembered, so the fill does
                                         // not ask it again from this cell.
                                         board.search_memo.insert(
@@ -55795,6 +55857,18 @@ mod tests {
         assert!(!search_memo_refuses(memo, feet, target + Vec3::unit_z(), 1000), "another target asks again");
         assert!(!search_memo_refuses(memo, feet, target, 1900), "an expired memo asks again");
         assert!(!search_memo_refuses(None, feet, target, 1000), "no memo: asked (identity)");
+    }
+
+    /// ★ W15-i2 pinned: an unwalkable target: target_unwalkable; walkable and
+    /// the frontier within three blocks: sealed; walkable and far: cut_off;
+    /// no closest node: unknown. Planted defect: every near-or-far frontier
+    /// called sealed -> red.
+    #[test]
+    fn the_exhausted_search_names_its_target() {
+        assert_eq!(exhaust_probe_class(Some(1.5), true), "sealed", "the frontier reached the target's ring");
+        assert_eq!(exhaust_probe_class(Some(18.0), true), "cut_off", "the frontier never came near");
+        assert_eq!(exhaust_probe_class(Some(1.5), false), "target_unwalkable", "the target itself is not a stand");
+        assert_eq!(exhaust_probe_class(None, true), "unknown", "no closest node known");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable

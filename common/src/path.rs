@@ -2269,11 +2269,15 @@ pub enum FullPathOutcome {
 pub struct FullPathSearch {
     astar: Option<(Astar<Node, FxBuildHasher>, Vec3<f32>)>,
     pub length: PathLength,
+    /// ★ W15-i2: the closest node the last exhausted step reached (the
+    /// path `PathResult::Exhausted` carries, which the step used to drop).
+    /// None until a step exhausts.
+    pub last_closest: Option<Vec3<i32>>,
 }
 
 impl FullPathSearch {
     pub fn new(length: PathLength) -> Self {
-        Self { astar: None, length }
+        Self { astar: None, length, last_closest: None }
     }
 }
 
@@ -2308,7 +2312,9 @@ where
             path.nodes.into_iter().collect(),
         )),
         PathResult::None(_) => FullPathStep::Done(FullPathOutcome::Unreachable),
-        PathResult::Exhausted(_) => {
+        PathResult::Exhausted(p) => {
+            // ★ W15-i2: keep the closest node for the pump's probe.
+            search.last_closest = p.nodes.last().copied();
             FullPathStep::Done(FullPathOutcome::BudgetExhausted)
         },
     }
