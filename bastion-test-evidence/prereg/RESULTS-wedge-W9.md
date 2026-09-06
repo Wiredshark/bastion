@@ -1696,6 +1696,34 @@ the snap pairs); pump mean wait under 60 (79-105); EMBED WATCH by
 returns). The chain's green pin is `the_drop_cell_stands_on_the_
 floor` (the row removes its own).
 
+### W13-w landed (d84a137678, staged 21:23)
+
+Check clean, the neighbouring pin green (the row removes its own),
+both halves staged 21:23 and shipped to lab-bin 21:24; the binary
+verified by contents: "THE GLIDE FOLLOWS THE SURFACE" absent (0),
+W12-c's string present (1). The b2 reader restarts b2 after W13-b's
+day-1 block and reads +4, +10 and day 1 -- the arrivals and the
+embeds with the snap gone.
+
+### W13-w read at +10 (b2, 21:35): the arrivals clause was two frames
+
+ARRIVED AT JOB SITE 355 at +10 with the snap gone; EMBED WATCH 1
+(one pure-glide writer, entry z 181.5 -> 181.7); GLIDE SNAPS 0
+(the string is out); pump mean wait 99, max 453, pending 34;
+stuck 0; panics 0. The pre-registered decider (arrivals at least
+450 -> the embed class stays open; under 400 -> W13-b returns)
+compared W12-a's 502 with the snap pairs' 301-387, and W12-a's
++10 was read on the OLD store geometry, before W12-b-b/W12-c lifted
+the drop cells onto the plank floor; every pair since (with the
+snap 301, 333, 387; without it 355) sits in one band. The snap
+never cost the arrivals -- the store lift changed what a delivery
+is -- and the clause is VOID, not fired: W13-b does not return on
+it. Two frames compared as one, caught by the read the clause was
+written for. The embed count is the only decider left: the day-1
+block (hour 6 of day 1) reads it; at most 3 pure-glide embeds
+means the embed class was the plank store (W12-c) and W13-w
+stands with W13-c held; ten or more means W13-c launches.
+
 ## W13-c, written 21:07 and HELD (launches only if W13-w's read shows the embeds returning with the arrivals)
 
 THE GLIDE NEVER SINKS BELOW THE FLOOR IT STANDS ON. The narrowest

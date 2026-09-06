@@ -988,6 +988,146 @@ RED at 21:03, the tree restored clean. The b1 reader restarted the
 biggest cell 96 at boot) and reads the walk home's claims by hour,
 the door, the shelves and night 1 (about 21:35).
 
+### The W13-b pair's night 1 on b2 (b9d05905ca: the store fixed, E2-j-b aboard; read 21:12 at hour 6 of day 1; one-off)
+
+The E2-j-b night re-read on a pair with W12-c: SUPPER ROUND
+shortfall 66 (98 on every earlier pair: the shelves already held
+32 units at noon), loads 36, arrivals to private shelves 32 and to
+the general store 22, SWEPT 9; NIGHT MEAL AT HOME 13 (E2-j 33, E2-i1
+pair 14, the W13 pair on b1 3, E2-g-c 4); in-bed starving at hours
+0-3: 0, 5, 15, 24 (E2-j-b's plank pair 7, 17, 35, 46; E2-i1 pair 7,
+8, 7, 16); distinct starving sleepers 5 (7); hour 4 sends 10 out;
+no_food_found 389 (821); RestAt/Traveling 7-8 an hour all night
+(one body walking to bed hungry). So with the larder reachable the
+night improves but E2-j-b's NIGHT MEAL AT HOME bar (25) still fails
+at 13, and across every pair the number sits at 3-14 except E2-j's
+33. The reading that fits: the evening's eaters eat the supper off
+their own shelf before bed (the hunger preempt at 18-21 picks the
+nearest stack, which at home is the shelf), and the night meal is
+what is left; E2-j's unbounded spread sent the evening's eaters to
+unreserved stacks across town and by accident left the shelves for
+the night. Measured below (the evening's eats inside a house) before
+it is named: the shelf is for the night (E2-n).
+
+The measure (the same b2 log, 58 houses): EatFrom arrivals in the
+evening (16-21) 25, of which 13 inside a house (52%); at night
+(22-5) 17, 12 inside a house. And the meal's span, from an eat
+arrival to the same colonist's next hunger interrupt: n 21, median
+12.4 game hours, p25 10.3, p75 15.4, min 6.3, max 17.8 -- a meal is
+half a day, two meals a day, human. So a colonist who ate supper at
+19 does not starve at 2; the starving sleepers are the ones who did
+NOT eat in the evening (25 evening eats for a town of 50: half the
+town ate its last meal at midday and hits the interrupt asleep,
+when the pick is home-only and the shelf is what the evening's
+eaters left). The row this names is not the shelf's ownership but
+the supper's TIME -- and the supper hour already exists
+(`supper_hour`: the two hours before the colonist's own Sleep block,
+`SUPPER_LINE` 0.6 raising the interrupt there, `SUPPER_SEVERITY`
+0.5 giving it weight). Traced on the same log: colonist 24 ate at
+hour 15 (a raw meal: FOOD_RESTORE 0.5, so 0.23 -> 0.73), was posted
+to the evening visit at 16 and again at 19 (RECREATE, "schedule, not
+need"), had no hunger preempt at 20-21 though its hunger stood near
+0.37 (under the 0.6 line), took the rest preempt at 21, was in bed
+at 22 and starving by hour 1. The EAT CENSUS's skips on day 1:
+drive_not_personal 6,648, preempt_cooldown_active 7,392 -- the need
+scan does not run while the arbitration's drive is Leisure, and in
+supper hours the supper's severity (0.5) does not outrank the
+scheduled evening visit. The supper line's own construction (0.6 -
+0.27 for an eight-hour night at half burn = 0.33 > 0.2) assumed a
+sleeper entering bed at 0.6; a colonist fed raw at midday enters
+bed at about 0.3 and crosses 0.05 by hour 1. E2-o is therefore
+SUPPER OUTRANKS THE VISIT: in supper hours a hunger under the line
+wins the arbitration over the scheduled leisure, after E2-l's and
+E2-m's reads. The cohort (the same log, day 0): 46 colonists ate;
+17 of them ate last at or before hour 17 and not at 20-21; 15 of
+the 17 were posted to the evening visit (RECREATE at 16-21); 4 of
+the night's 5 starving sleepers are among them (24, 30 and 36 ate
+at 15 and were posted to the visit at 16 and 19 with no preempt
+after 15; 64 ate at 16, visit at 17); the fifth, 41, was preempted
+at 20 and 21 and found no meal. A third of the town skips supper
+for the visit and a quarter of those starve in bed.
+
+## E2-o, registered 21:25 (keyed on the E2-m stage; ahead of E2-k and E2-i2)
+
+SUPPER IS EATEN AT SUPPER TIME. Two defects in one: (1) the supper
+hour's raised line (`supper_interrupt`, 0.6 in the two hours before
+the colonist's own Sleep block) is applied to the ARBITRATION's
+interrupt and never to the NEED LOOP's `hunger_th`, which stays the
+stagger interrupt (0.2) -- the arbiter says Personal at 0.37 and
+the loop finds no candidate (no_need_below_interrupt 79,129 on day
+1); (2) the leisure lounge branch posts the visit and continues
+before the candidates are consulted whenever a colonist is in
+Leisure, idle and off cooldown, under the false comment "needs
+still outrank". Now `hunger_th` carries the supper line in supper
+hours, and `lounge_may_post(candidates.is_empty(), own_supper_pending)`
+gates the visit, with THE LOUNGE YIELDS TO A NEED (colonist, hunger,
+rest, own_supper, yields). AMENDED 21:45, before the chain fired, on
+E2-l's early read (b1, E2-l pair, day 0, hour 21): the door works
+when the eater is free (all eight colonists named by THE WALK HOME
+OPENS at 16-18 claimed their own load next) but the visit is an
+active job and the claim scan admits only the job-free: 152 visits
+posted at 16-21 (16: 32, 17: 12, 18: 12, 19: 34, 20: 48, 21: 14)
+against 13 own-supper claims (16: 3, 17: 2, 18: 4, 19: 3, 20: 1),
+and 19 of the round's 54 loads SWEPT unclaimed at the Sleep block;
+the two colonists named at hour 20 took the visit instead of the
+load. The lounge now yields to an own unclaimed supper load as well
+(E2-l's own predicate on `supper_eaters`). Pin
+`the_lounge_yields_to_a_need` (posted only with no need pending and
+no own load unclaimed; the supper line in supper hours, the base
+otherwise); planted: the lounge posting over an own unclaimed load
+(`no_need_pending || own_supper_pending`), red. Added bars: own-supper
+claims at the Sleep block at least 40 of the round's loads (32 of 54
+by hour 20 on the E2-l day 0); SWEPT at most 10 (19); falsified if
+the swept stay above 15 with the yields up. Prediction
+(b1 fresh, `wait-e2o-b1.sh`, after E2-m's night-1 block; day 0 and
+night 1): hunger preempts at 20-21 at least 20 (12 on the W13-b day
+0); meals at 20-21 at least 18 (11); the cohort (last meal by 17, no
+supper) at most 5 (17); distinct starving sleepers at most 2 (5);
+in-bed starving at 0-3 at most 8 an hour (0, 5, 15, 24); NIGHT MEAL
+AT HOME not above the pair before; lounge yields at least 20.
+Falsified if the supper preempts stay under 15, or the cohort
+stays above 10 with the preempts up, or the visits fall to zero.
+Rejected: a higher supper severity; a supper self-job for all; a
+lower supper line. NOT evidenced: night 2; the night watch's supper
+hour; whether the meals come off the shelf or the store (E2-n's
+question, read on this pair). The E2-k chain and reader were
+re-keyed behind this row; the dry tree was rebuilt in the order
+E2-m, E2-o, E2-k, E2-i2, W12-a-b, W15-i1 on HEAD = W13-w.
+
+### E2-l read (b1 fresh on bbcbc5944e; day 0 and night 1, read 21:41): the door works, the visit holds the eater
+
+The bars: THE WALK HOME OPENS 32 by hour 20 (bar 20, PASSED);
+private haul arrivals before the sweep 43 of 46 (bar 40, PASSED);
+distinct starving sleepers 3 (bar 4, PASSED); leisure-hour
+own-supper claims 13 (16: 3, 17: 2, 18: 4, 19: 3, 20: 1; bar 15,
+FAILED by two); works on the day-1 lane lines about 353 (Craft 108,
+Build 111, Farm 46, Haul 31, Cook 29, Mine 22, Guard 3; bar 420,
+FAILED as written -- but the bar was set above the arm's own
+previous replicates: the two b1 logs before this one summed 446
+(the 20:16 pair) and 394 (the W12-c pair), so 353 sits within the
+colony's replicate band, the lanes were reshuffled by the haul
+ceiling's demotions (Craft 108 against 19-22, Mine 22 against
+91-92), and the door cannot have cost it: 13 claims of any kind in
+the leisure hours; no works cost is evidenced). The round minted 54 loads at hour 12 and SWEPT 19
+unclaimed at the Sleep block. What held the loads: the door opens
+onto the job-free only, and the evening visit is an active job --
+all eight colonists named by the door at hours 16-18 claimed their
+own load next, the two named at hour 20 (26, 19) took the visit
+instead, and the visit was posted 152 times at 16-21 against the 13
+claims. The night then reads as before: NIGHT MEAL AT HOME 7
+(12-13 on the pair before); NIGHT SHELF EMPTY 7 in the night
+(present 0, nothing refused -- the shelf never got its load;
+colonist 19 among them); in-bed starving samples 7, 15, 21, 24 at
+hours 0-3 from 3 sleepers, who leave for the store at hour 3-4
+(EatFrom/Traveling 30 at hour 4); EAT CENSUS day 1 meals 48,
+no_food_found 452. Disposition: PARTIAL. E2-l's mechanism holds
+(the door is not what fails); the walk home fails at the lounge,
+and E2-o was amended (21:45) to yield the visit to an own unclaimed
+load before its chain fired. E2-n (the shelf is for the night) is
+not answered by this read: the shelves that were stocked (35 of
+54) fed 7 night meals, and which shelves those were is E2-i2's
+read.
+
 ## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
 
 THE QUEUE IS FOR THE SAME ANCHOR. The anchor queue (the eat queue's

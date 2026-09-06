@@ -8762,6 +8762,25 @@ pub(crate) fn work_claims_open(block: ScheduleBlock) -> bool {
     matches!(block, ScheduleBlock::Work)
 }
 
+/// ★ E2-m pinned: THE QUEUE IS FOR THE SAME ANCHOR -- a body ahead of me
+/// counts only when its job aims at my anchor and it stands nearer my
+/// steer (by half a block) within four blocks of my height. A sleeper in
+/// the next bed, a stranger on the pile's far side, are not my queue; a
+/// body with no anchor of mine has no queue at all.
+pub(crate) fn queue_ahead(
+    my_d: f32,
+    my_z: f32,
+    my_anchor: Option<Vec3<i32>>,
+    steer: Vec3<f32>,
+    others: &[(Vec3<f32>, Option<Vec3<i32>>)],
+) -> bool {
+    let Some(mine) = my_anchor else { return false };
+    others.iter().any(|(q, t)| {
+        *t == Some(mine) && (q.z - my_z).abs() <= 4.0 && q.xy().distance(steer.xy()) + 0.5 < my_d
+    })
+}
+pub(crate) static QUEUE_STRANGERS_IGNORED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// ★ E2-l pinned: THE WALK HOME IS NOT WORK -- the claim door opens in
 /// Work; in Leisure only for a colonist with a supper load bound for their
 /// own shelf still unclaimed (the E2-g windows' Leisure hours produced no
@@ -23772,6 +23791,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // re-join positions mid-iteration.
         let queue_snapshot: Vec<Vec3<f32>> =
             (&colonists, &positions).join().map(|(_, p)| p.0).collect();
+        // ★ E2-m: a second snapshot carries each colonist's job anchor, so
+        // the queue at an anchor counts only those bound for it (the plain
+        // snapshot keeps its three other readers: the stall, the build
+        // cell, the plot sweep).
+        let queue_anchors: Vec<(Vec3<f32>, Option<Vec3<i32>>)> =
+            (&colonists, &positions, (&active_jobs).maybe())
+                .join()
+                .map(|(_, p, aj)| (p.0, aj.and_then(|aj| board.jobs.get(&aj.job).map(|j| j.pos))))
+                .collect();
 
         // ── TASK #57 (phantom jobs, 2026-07-30): retire designated jobs
         // whose target cell went empty (or otherwise stopped matching
@@ -35854,12 +35882,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // me in the climb queue — W1 over-yielded to
                             // exactly those phantoms and parked the whole
                             // chamber).
+                            // ★ E2-m: THE QUEUE IS FOR THE SAME ANCHOR -- the
+                            // housemate in the next bed held this sleeper
+                            // beside the beds all night.
+                            let my_anchor = Some(job.pos); // `job` is this active job, borrowed mutably above
+                            let ahead = queue_ahead(my_d, pos.0.z, my_anchor, steer, &queue_anchors);
                             if my_d > 1.2
+                                && !ahead
                                 && queue_snapshot.iter().any(|q| {
                                     (q.z - pos.0.z).abs() <= 4.0
                                         && q.xy().distance(steer.xy()) + 0.5 < my_d
                                 })
                             {
+                                let n = QUEUE_STRANGERS_IGNORED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if n <= 8 || n.is_power_of_two() {
+                                    info!(
+                                        uid = uids.get(entity).map(|u| u.0.get()),
+                                        anchor = ?my_anchor,
+                                        my_d,
+                                        strangers = n,
+                                        "bastion: THE QUEUE IGNORES A STRANGER — a nearer body bound elsewhere no longer holds this one at its anchor"
+                                    );
+                                }
+                            }
+                            if my_d > 1.2 && ahead {
                                 active.state = ActiveJobState::Waiting;
                                 if let Some(agent) = agent.as_deref_mut() {
                                     agent.rtsim_controller.activity = None;
@@ -55297,6 +55343,25 @@ mod tests {
         assert!(claims_admit(ScheduleBlock::Leisure, true), "leisure with the own supper load: open");
         assert!(!claims_admit(ScheduleBlock::Sleep, true), "sleep: shut whatever the load");
         assert!(!claims_admit(ScheduleBlock::Sleep, false), "sleep: shut");
+    }
+
+    /// ★ E2-m pinned: a nearer body bound for another anchor (the next
+    /// bed) does not queue me; a nearer body bound for my anchor does; no
+    /// anchor of mine, no queue; nobody, no queue. Planted defect: every
+    /// nearer body queues me (the stranger counted) -> red.
+    #[test]
+    fn the_queue_is_for_the_same_anchor() {
+        let steer = Vec3::new(10.5, 10.5, 181.0);
+        let my_bed = Vec3::new(10, 10, 181);
+        let next_bed = Vec3::new(11, 10, 181);
+        let neighbour = vec![(Vec3::new(11.5, 10.5, 181.0), Some(next_bed))];
+        assert!(!queue_ahead(2.0, 181.0, Some(my_bed), steer, &neighbour), "the sleeper in the next bed is not my queue");
+        let eater = vec![(Vec3::new(10.9, 10.5, 181.0), Some(my_bed))];
+        assert!(queue_ahead(2.0, 181.0, Some(my_bed), steer, &eater), "a nearer body bound for my anchor is");
+        assert!(!queue_ahead(2.0, 181.0, None, steer, &eater), "no anchor of mine: no queue");
+        assert!(!queue_ahead(2.0, 181.0, Some(my_bed), steer, &[]), "nobody: no queue");
+        let far = vec![(Vec3::new(13.5, 10.5, 181.0), Some(my_bed))];
+        assert!(!queue_ahead(2.0, 181.0, Some(my_bed), steer, &far), "a body bound for my anchor but farther than me is behind me");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable
