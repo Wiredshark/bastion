@@ -2906,6 +2906,84 @@ loops 7 with arrivals 1,013. Both consumers (W6-D for the loops,
 W14-d for the floods) are aboard from the W14-d pair on; the
 decision rule's day is the first full b1 day on that pair.
 
+### W14-e replicate 2: b1 night 1 (203321df48 under the W14-c reader; 14:04)
+
+LONGEST-EXHAUST 729 for the day (whole-town 729), LONGEST-TIER
+lines 63,087, top ends 64x(7734,6411,181), 56x(7752,6393,180),
+41x(7632,6281,182), benches by Longest exhausts 0 (the reset
+defect; W14-e2 boards b1 now), route-proof benches 5; CLIMB BANNED
+(fetch) 3, other 2, PROMISED CLIMB TAKEN 3, FETCH STALLED 27 (the
+day's high), budgets expired 29, STALL BLAMED 4, stuck 19; arrivals
+943; starving sleepers 2 (colonists 70 and 105: E2-t's case, the
+posted haul's reservation on the sleeper's supper); p95 668. b1
+restarts onto dfa366b6db (W18-b + W14-e2 + W18-i) under the W6-D
+reader: the flood fix's and the pit fix's first ledge-arm day, its
+first-hour witness read by hand at hour ~12 (~14:40).
+
+### W18-i read: b2 day 1 (0d603edbae under the W14-d reader; 14:03) -- PASSED, and the clock is blind
+
+THE BODY BOBS: 19 lines; colonist 75 named with bobs=128 at cell
+(7632,6317) (eight of the lines at that cell), colonists 118 and
+58 at 2 and 1; at bobs 64 and 128 the active job's stuck_time read
+0.033 s -- the stuck clock sees a bob as progress (the drop shortens
+the distance to a target below or beyond the edge, the climb back
+adds under the epsilon) and never fires; the same body bobbed 242
+times at another cell two pairs ago. The instrument's bar (a
+100-plus-drop colonist named with bobs >= 64 and its stuck_time;
+lines < 200) PASSED. The day: arrivals 868, exhausted 1,064, CLIMB
+BANNED (fetch) 1, other 1, FETCH STALLED 1, budgets expired 4,
+starving sleepers 0, W14-d's benches 5 (jobs 516, 564 and three
+more: the stuck-branch consumer fires on b2), p95 524. Colonist
+75's cell is a terrace edge with a way up (it climbs back each
+time), so W18-b's refusal will not touch it: the bob's own consumer
+is the next candidate -- THE BOB IS NOT PROGRESS (the stuck clock
+measured on xy, or a bob counted as no displacement, so the stall's
+consumers act) -- registered after W18-b's first read.
+
+### E2-t registered (14:03): THE SUPPER OUTRANKS THE POSTED HAUL
+
+b1's replicate-2 night (203321df48): starving sleepers 2. Colonist
+70's night pick at its own shelf read NIGHT SHELF EMPTY fourteen
+times: present=1, units=1, reserved=1, refused_cap=1, holders
+["988:haul:None"], verdict Refused, night_no_food reaching 1,024;
+then RestAt Arrived at hunger 0.00. The pick admits a home item
+only when has_capacity (reserved_count < amount), and the shelf's
+one unit carried one reservation held by job 988, a Haul with
+claimed_by None: posted, unclaimed, holding the sleeper's supper
+through the Sleep block -- a guard starving what it protects.
+Colonist 105 (SUPPER CARRIED HOME at 17:28, then RestAt Traveling
+at 0.01) is a different shape, not evidenced here. Mechanism:
+`reservation_yields_to_owner(claimed, class)` (an unclaimed haul
+yields; a claimed job or another class stands);
+`JobBoard::yield_unclaimed_hauls_on(item)` clears and releases such
+reservations; at the sleeper's night pick, before pick_food, every
+food item in its home yields; witnessed at the first eight and
+powers of two as "THE SUPPER OUTRANKS THE POSTED HAUL" (colonist,
+yielded, home_min). Pin `the_supper_outranks_the_posted_haul`;
+falsifier plants the class test to a name no job has. Bars: b1
+starving sleepers after night 1 <= 1 (2 tonight), NIGHT SHELF EMPTY
+with unclaimed-haul holders 0 (14), the yield witness >= 1 on any
+night such a reservation exists, haul releases <= 1.5x, arrivals >=
+900; b2 starving sleepers 0, arrivals >= 720. Falsified if a sleeper
+still starves with the yield witness at its home, or haul releases
+rise by more than half. Rejected: never reserving from private
+shelves (the shift's-end hauls are the design; only the unclaimed
+case starves); yielding claimed hauls; cancelling the haul job.
+Chain behind W18-b (stage ~14:30); readers behind the W18-b readers.
+
+### W18-b landed (dfa366b6db, staged 14:03)
+
+Check and pin green on the chain (1 test passed; the bridge
+closure's scope held), both halves built fresh, the binary verified
+by its contents ("THE DROP HAS NO WAY UP" present once in
+stage-bin); shipped to lab-bin at 14:04. The falsifier planted the
+radius zeroed at 14:05 and the pin went RED at 14:08, the tree
+restored clean (0 dirty); E2-t's chain fired at 14:08. Both arms
+booted this pair within the minute (b2 14:06, b1 14:08; witness
+reach=2): its first day carries the pit fix, the flood fix and the
+bob witness together; the first-hour reads are at ~14:40. Ten rows
+landed today with red falsifiers.
+
 ### W14-e replicate 2: b1 hour 19 (203321df48 under the W14-c reader; 13:41) -- the flood at full scale, unconsumed
 
 LONGEST-EXHAUST 629 by hour 19 (90 on replicate 1 for the whole

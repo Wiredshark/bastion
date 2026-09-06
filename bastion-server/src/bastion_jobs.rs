@@ -9535,6 +9535,17 @@ pub(crate) fn fresh_exhausts(count: u8, struck: u8) -> u8 {
 /// such drop and within `BOB_WINDOW_TICKS` of it, is a bob: the surface
 /// probe's -2 step at a terrace edge, walked back up one and one, and
 /// taken again (one body: 242 drops in fourteen minutes at one cell).
+/// ★ E2-t pinned: THE SUPPER OUTRANKS THE POSTED HAUL. A reservation on a
+/// food item in a sleeper's own home yields to its night pick when the
+/// holder is a haul-class job nobody has claimed (colonist 70: present=1,
+/// reserved=1 by "988:haul:None", fourteen refusals, bed at hunger 0.00).
+/// A claimed job's reservation, or any other class, stands.
+pub(crate) fn reservation_yields_to_owner(claimed: bool, class: &str) -> bool {
+    !claimed && class == "haul"
+}
+
+pub(crate) static SUPPER_YIELDS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
 
 /// ★ W18-b pinned: THE BODY DOES NOT DROP INTO A CELL IT CANNOT LEAVE. A
@@ -17362,6 +17373,30 @@ impl JobBoard {
                 e.remove();
             }
         }
+    }
+
+    /// ★ E2-t: release every reservation on `item` held by an unclaimed
+    /// haul-class job, clearing the job's reservation; returns how many.
+    pub fn yield_unclaimed_hauls_on(&mut self, item: Uid) -> u32 {
+        let ids: Vec<common::bastion::ReservationId> =
+            self.reservations_by_item.get(&item).cloned().unwrap_or_default();
+        let mut yielded = 0u32;
+        for id in ids {
+            let mut cleared = false;
+            for (_, job) in self.jobs.iter_mut() {
+                if job.reservation == Some(id)
+                    && reservation_yields_to_owner(job.claimed_by.is_some(), job_release_class(&job.kind))
+                {
+                    job.reservation = None;
+                    cleared = true;
+                }
+            }
+            if cleared {
+                self.release_reservation(id);
+                yielded += 1;
+            }
+        }
+        yielded
     }
 
     pub fn release_reservation(&mut self, id: common::bastion::ReservationId) {
@@ -32559,6 +32594,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let night_ok = |c: Vec3<i32>| {
                                 !night_now || night_home.is_some_and(|h| h.contains_point_xy(c))
                             };
+                            // ★ E2-t: THE SUPPER OUTRANKS THE POSTED HAUL -- before the
+                            // sleeper's pick, unclaimed hauls' reservations on the food in
+                            // its own home yield.
+                            if let Some(h) = night_home {
+                                let mut yielded = 0u32;
+                                let home_food: Vec<Uid> = (&pickup_items, &positions, &uids)
+                                    .join()
+                                    .filter(|(pi, ipos, _)| {
+                                        h.contains_point_xy(ipos.0.map(|e| e.floor() as i32))
+                                            && pi
+                                                .item()
+                                                .item_definition_id()
+                                                .itemdef_id()
+                                                .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                    })
+                                    .map(|(_, _, iuid)| *iuid)
+                                    .collect();
+                                for iuid in home_food {
+                                    yielded += board.yield_unclaimed_hauls_on(iuid);
+                                }
+                                if yielded > 0 {
+                                    let n = SUPPER_YIELDS.fetch_add(u64::from(yielded), core::sync::atomic::Ordering::Relaxed) + u64::from(yielded);
+                                    if n <= 8 || n.is_power_of_two() {
+                                        info!(
+                                            colonist = %uid,
+                                            yielded,
+                                            home_min = ?h.min,
+                                            supper_yields = n,
+                                            "bastion: THE SUPPER OUTRANKS THE POSTED HAUL — an unclaimed haul's reservation on the sleeper's own shelf yielded to its night pick (E2-t)"
+                                        );
+                                    }
+                                }
+                            }
                             let pick_food = |respect_verdicts: bool| pick_within_store(
                                 (&pickup_items, &positions, &uids)
                                 .join()
@@ -56654,6 +56722,17 @@ mod tests {
         assert!(drop_has_way_up(ramp, o, 181), "a ramp cell one up beside the floor: a way up");
         let step = |c: Vec3<i32>| c.z == 179 || c == Vec3::new(11, 10, 180);
         assert!(drop_has_way_up(step, o, 180), "a one-block edge with a cell one up beside it: a way up");
+    }
+
+    /// ★ E2-t pinned: an unclaimed haul's reservation yields; a claimed
+    /// haul's stands; an unclaimed job of another class stands. Planted
+    /// defect: the class test set to a name no job has -> red.
+    #[test]
+    fn the_supper_outranks_the_posted_haul() {
+        assert!(reservation_yields_to_owner(false, "haul"), "an unclaimed haul yields");
+        assert!(!reservation_yields_to_owner(true, "haul"), "a claimed haul stands");
+        assert!(!reservation_yields_to_owner(false, "eat"), "an unclaimed eat stands");
+        assert!(!reservation_yields_to_owner(false, "deposit"), "an unclaimed deposit stands");
     }
 
     /// ★ W18-i pinned: a second drop at the same cell within the window is
