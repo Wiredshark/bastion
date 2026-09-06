@@ -2906,6 +2906,187 @@ loops 7 with arrivals 1,013. Both consumers (W6-D for the loops,
 W14-d for the floods) are aboard from the W14-d pair on; the
 decision rule's day is the first full b1 day on that pair.
 
+### W14-e read: b1 hour 19 (203321df48 under the relaunched W2-b-r reader; 12:56) -- FAILED by its own defect
+
+LONGEST-EXHAUST 78 by hour 19 (bar <= 60 for the day: FAILED),
+LONGEST-TIER lines 6,473, top ends 58x(7712,6345,186) (bar <= 6:
+FAILED), 18x(7742,6404,181), benches "three exhausted Longest
+searches" 0 with an end asked fifty-eight times (bar >= 1: FAILED)
+-- the falsifying condition ("an end repeats ten or more times with
+zero benches") met, for the reason read at hour 17 and fixed by
+W14-e2 (the partial-route reset), which is chained. The rest of the
+day: arrivals 752 (882 on the decision day at hour 19; 728-790 on
+the reach-2 days before), CLIMB BANNED (fetch) 1, other 2, FETCH
+STALLED 11, budgets expired 16, STALL BLAMED 3, stuck 3, starving
+0, route-proof benches 17, W14-d's bench 1 (job 666, colonist 808),
+p95 624. Disposed: W14-e FAILED as landed; its pin held a rule the
+Chaser undid; W14-e2 carries its bars.
+
+### W14-e read early, and its defect (b1, 203321df48, hour 17; 12:53) -> W14-e2 registered (12:56)
+
+LONGEST-EXHAUST 31 by hour 17 (a quieter flood day: 158 by hour 12
+on the decision day), LONGEST-TIER lines 3,295, top ends
+18x(7712,6345,186) and 12x(7742,6404,181) (colonist 55's wall
+again) -- and "three exhausted Longest searches" benches 0 with an
+end asked eighteen times. Read in the Chaser: all three route-set
+arms of search_step_inner reset longest_exhausts, and two of them
+are the exhausted search's own result (PathResult::None and
+PathResult::Exhausted return the partial path to the closest node
+and the chaser walks it), so every exhausted search zeroed the
+count it had just earned; the count never passed one. W14-e's pin
+covered fresh_exhausts, not the count's life in the Chaser: a
+mechanism that could not show itself failing until read live.
+W14-e2: `exhaust_count_after(complete, count)` -- the count on a
+partial route, zero on a complete one (PathResult::Path); all three
+sites ask it. Pin `the_partial_route_does_not_forgive_the_exhaustion`
+(veloren-common); falsifier plants the partial arm zeroed. Bars:
+W14-e's own, re-registered (LONGEST-EXHAUST <= 60/day, top end <=
+6, benches >= 1 when an end repeats 3x and <= 15/day, arrivals >=
+900, starving <= 1; b2 benches <= 15, arrivals >= 720). Falsified
+if an end repeats >= 10 with zero benches, or benches > 15. Chain
+behind W18-i (stage ~13:50; common/ rebuilds both); readers behind
+the W18-i readers. Other numbers at hour 17: other bans 2, fetch 1,
+stalls 10, route-proof benches 11, W14-d's bench 1 (job 666,
+colonist 808), arrivals 678, starving 0.
+
+### W18-i registered (12:53): THE BODY NAMES ITS BOB (instrument)
+
+Found by the mover-drop tally across three b2 days: colonist 75
+dropped two blocks 242 times in fourteen minutes at one cell
+(7791,6242,184) on the 5f785e2a5a day; colonist 149 221 times in
+twenty-three minutes on the 5fb1fc4aee day; colonists 30 and 139
+86 and 47; 25-30 colonists a day drop two or more blocks three or
+more times. Every drop is the mover's own write (POS-WRITE
+site="mover", dz -2) and no other writer signed a lift: the probe
+(dz 0, 1, -1, -2) takes the -2 step at a terrace edge and the
+next steps take +1 and +1 below the diag's 1.5 threshold. Colonist
+75's lines in the span: the pump's memo refusing, the exhausted
+search naming its target, GLIDE INTO A WALL (whose sampled counter
+reads 262,144 or more ticks a day on each of the three days) --
+and no stuck-clock line in fourteen minutes. A body bouncing two
+blocks every few seconds is what a player sees first. Instrument
+before hypothesis: `bob_repeats(prev, cell, now)` (a two-block drop
+within one block of the body's previous drop and within 900 ticks)
+at the mover's write; a bob increments the body's count and logs
+"THE BODY BOBS" at powers of two with uid, cell, z_from, z_to, the
+push site and the active job's stuck_time; a drop elsewhere resets
+the count. No behaviour change. Pin `the_body_names_its_bob`;
+falsifier plants the cell test at 100 blocks. Bars: on any b2 day
+whose drop tally shows a colonist at 100+ drops, the line names it
+with bobs >= 64 and its stuck_time; lines < 200/day. Falsified if
+the tally shows such a colonist and the line never names it (the
+drops are not at one cell within the window: another shape).
+`bob-tally.sh` reads it. Chain behind W14-e (stage ~13:25);
+readers behind the W14-e readers.
+
+### W14-d read: b2 day 1 (89bc78af1d under the W14-c reader; 12:46)
+
+Arrivals 740 (907, 835, 641, 807-846 on the days before), exhausted
+(pump census) 1,072, probes 68 (42 cut_off, 26 sealed), CLIMB
+BANNED (fetch) 0, other 1, FETCH STALLED 4, budgets expired 8,
+unreachable 0 all day, starving 0 at day's end (colonist 50 read
+starving at 12:47 after seven mover drops and stood at z 184 by the
+census: out again), p95 469. W14-d's bench count stays at the one
+from +10 (job 536, colonist 59): its arm is rare on b2 as on b1.
+b2 restarts onto 203321df48 (W14-e) under the W6-D reader.
+
+### Observation, not a row (12:43): the night's route-proof burst is W17-b's three-above case
+
+The W2-b-r b1 day's 83 "three failed route proofs" benches were a
+night burst: 78 between 10:50 and 10:59, 22 distinct jobs, 18 of
+them benched more than once, 24 UNREACHABLE RETRY latch clears --
+the jobs of colonists 61 and 52, both from_in_house=true with the
+door probe reading door_below and the column '#~~~~~~~~~' (solid at
+feet-3): sleepers on beds THREE above their floor, the case W17-b
+named as not evidenced (its start looks one and two below and
+returns the feet, still an island). The approach lane proves
+Unreachable (the frontier empties at once: a cheap proof), the job
+is benched, the arbitration latch clears it, the proof repeats.
+Cost: churn in the bench counter; outcome: none (starving sleepers
+0 that night; the decision day read 5 such benches all day).
+Candidate W17-c (the start looks three below, or to the house's
+floor) with its magnitude recorded; built only if the class costs
+a meal.
+
+### THE DECISION: the reach-2 trunk STANDS (b1, 89bc78af1d, hour 5 of day 1; 12:33)
+
+The registered rule's three numbers on the first full ledge-arm day
+with W6-D aboard: CLIMB BANNED (other) 1 (rule <= 20), benches by
+banned climbs and terminal searches 0 with route-proof benches 5
+(rule <= 15), arrivals 1,058 for the day (rule >= 950; the highest
+day the ledge arm has had: 945-1,013 before). Starving 1 at hour 5
+(colonist 134, hunger 0.02, EatFrom Traveling: walking to eat; the
+night's bar <= 1), CLIMB BANNED (fetch) 2 for the day, FETCH
+STALLED 8, stuck 10, p95 682. The formal night block at 12:35
+closed the day at arrivals 1,090, other bans 5 (the night's), fetch
+bans 2, stalls 8, starving sleepers 0, stuck 19, p95 670: the three
+numbers hold. Verdict by the rule as registered:
+the reach-2 trunk stands, and W2-b's reach 1 is not re-applied.
+Honest caveats, recorded with the verdict: the wall-climb loop
+class did not occur today (one ban, one colonist) against 154 and
+42 on the two reach-2 days before, so the "other bans" number
+passes partly on the day's mix, and W6-D's cap is aboard but
+untested on both arms (no colonist reached three banned climbs);
+the whole-town flood ran unconsumed all day (LONGEST-EXHAUST 654,
+LONGEST-TIER lines 58,654, top ends 73x/60x/50x) because W14-d's
+arm is bypassed by the glide, and W14-e -- counting at the source
+-- boards b1 at the restart that follows this block. The trunk's
+reach is next judged only if W14-e fails its own bars.
+
+### W6-D read: b2 day 1 (5fb1fc4aee under the relaunched W2-b-r reader; 12:15)
+
+Arrivals 907 (835, 641, 807-846 on the days before), CLIMB BANNED
+(fetch) 2, other 2 (two colonists, one each: nothing for W6-D to
+cap, benches 0 -- untested on b2 as on b1), FETCH STALLED 5,
+budgets expired 6, unreachable 0 all day, starving 0 at day's end
+(colonist 134 read starving at 12:07 in a drop cell at (7698,6304)
+after two mover drops, 185.9 -> 183 -> 181, and was fed by the
+day's end: the pit class again, left again), p95 555. Exhausted
+(pump census) 1,111 -- the series with W16-b aboard runs 1,043,
+758, 844, 748, 1,111 against 513-598 before it, components same
+30 / start_unlabelled 27 / untrusted 9. It is a response counter
+(Medium-tier fill searches spent), not an outcome: arrivals, bans,
+stalls and starving all read better than before W16-b, so it is
+recorded as W16-b's cost, not a row. The b2 flood tally reads 0 by
+construction (no LONGEST-TIER diag env on b2).
+
+### THE DECISION DAY, hour 19 and hour 21 (b1, 89bc78af1d: reach 2 + W16-b + W6-D, W14-d dead; 12:12 / 12:15)
+
+The registered rule's numbers: CLIMB BANNED (other) 1 by hour 21
+(rule <= 20; 154 and 42 on the two reach-2 days before: the loop
+class did not occur today -- one colonist, one ban -- so W6-D's arm
+had nothing to cap and reads untested, benches by banned climbs 0);
+benches by the new kinds 0 and by route proofs 5 (rule <= 15);
+arrivals 882 at hour 19 and 949 at hour 21 (rule >= 950 by night:
+the night block decides, and the trend passes it); starving 1 at
+hour 21 (the evening's hunger); CLIMB BANNED (fetch) 0 for the day
+so far -- the ledge arm's best number yet, at reach 2 with W16-b
+(1 on the reach-1 day, 3-4 on the reach-2 days before); FETCH
+STALLED 6, budgets expired 7, stuck 10, p95 682. The flood is at
+full scale and unconsumed: LONGEST-EXHAUST 561, LONGEST-TIER lines
+49,855, top ends 60x(7631,6280,182), 50x(7632,6281,182),
+42x(7688,6459,182) -- W14-d's benches 0 as diagnosed; W14-e is its
+consumer and ships ~12:40. By the rule as registered (other bans,
+benches, arrivals) the reach-2 trunk STANDS, provisionally on the
+night's arrivals; the flood was never in the rule because its
+consumer was thought aboard, and it is now judged by W14-e's own
+bars on the day after.
+
+### W14-e landed (203321df48, staged 12:26:49; both halves rebuilt, common/ changed)
+
+Check green across both crates and the pin green on the chain (1
+test passed), the client rebuilt with the server, the binary
+verified by its contents ("three exhausted Longest searches" present
+once in stage-bin); shipped to lab-bin at 12:27. The falsifier
+planted the difference zeroed at 12:28 and the pin went RED at
+12:32, the tree restored clean (0 dirty). b1 boards this pair at
+the W2-b-r reader's restart after the decision day's night block
+(~12:38): its hour 19 (~13:05) and night (~13:25) are the first
+read of the flood with a live consumer. Seven rows landed today
+with red falsifiers (W16-b, W17-b, W2-b-r, W14-c, W6-D, W14-d,
+W14-e); two of them (W14-c, W14-d) hold rules the live population
+rarely or never calls, and say so.
+
 ### W14-e registered (12:05): THE THIRD LONGEST EXHAUSTION STRIKES THE JOB
 
 The flood's consumer, placed where the re-ask lives. The Chaser
@@ -2930,6 +3111,17 @@ Chaser or the scheduler (common/ knows no jobs; the scheduler's
 board is read-only); a per-tick strike without the struck mark.
 common/ changed: both halves rebuild. Chain behind W14-d (fires at
 once, stage ~12:35); readers behind the W14-d readers.
+
+### W14-d, a correction (12:31): its arm is rare, not dead
+
+b2's +10 block on the W14-d pair (89bc78af1d, hour 14): "three
+terminal chaser searches" benched job 536 for colonist 59 -- the
+stuck-branch consumer does fire where a body stands still at its
+terminal state. It is rare (one bench on b2 by hour 14; one
+observation a day on b1 against 158-561 whole-town exhausts), so
+the disposal stands in substance -- the flood's consumer had to
+count at the source (W14-e) -- but "unreachable" was too strong:
+the arm is reachable and nearly always bypassed by the glide.
 
 ### W14-d DISPOSED: FAILED AS A MECHANISM (12:00) -- its arm is unreachable too
 

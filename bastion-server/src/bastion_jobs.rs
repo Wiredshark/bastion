@@ -9530,6 +9530,19 @@ pub(crate) fn fresh_exhausts(count: u8, struck: u8) -> u8 {
     count.saturating_sub(struck)
 }
 
+/// ★ W18-i pinned: THE BODY NAMES ITS BOB. A drop of two blocks or more by
+/// the mover, at the same cell (within one block) as this body's previous
+/// such drop and within `BOB_WINDOW_TICKS` of it, is a bob: the surface
+/// probe's -2 step at a terrace edge, walked back up one and one, and
+/// taken again (one body: 242 drops in fourteen minutes at one cell).
+pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
+
+pub(crate) fn bob_repeats(prev: Option<(Vec2<i32>, u64)>, cell: Vec2<i32>, now: u64) -> bool {
+    prev.is_some_and(|(c, t)| {
+        (c - cell).map(|e| e.abs()).reduce_max() <= 1 && now.saturating_sub(t) <= BOB_WINDOW_TICKS
+    })
+}
+
 pub(crate) fn chaser_terminal_strike(streak: u8, strikes: u8) -> Option<(u8, bool)> {
     (streak >= TERMINAL_STREAK_STRIKE).then(|| job_strike(strikes))
 }
@@ -14398,6 +14411,10 @@ pub struct JobBoard {
     /// ★ W14-e: how many of the chaser's Longest exhaustions this walker's
     /// held job has already been struck for (cleared with the streak).
     pub exhausts_struck: HashMap<Uid, u8>,
+    /// ★ W18-i: each body's last two-block-or-more mover drop (cell, tick)
+    /// and how many bobs it has made at that cell since.
+    pub bob_last: HashMap<Uid, (Vec2<i32>, u64)>,
+    pub bob_count: HashMap<Uid, u32>,
     /// (refusals, admits-by-reason x5, same-component) shadow counters since
     /// the last census emit, so the fail-open ladder is provable from a log.
     pub shadow_conn: [u32; 7],
@@ -42253,6 +42270,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         p.0,
                         1.5,
                     );
+                    // ★ W18-i: THE BODY NAMES ITS BOB -- a two-block drop at the
+                    // same cell as this body's previous drop, within thirty
+                    // seconds, counted per body and logged at powers of two.
+                    if new_pos.z - prev.z <= -1.5
+                        && let Some(u) = uids.get(entity).copied()
+                    {
+                        let cell = prev.xy().map(|e| e.floor() as i32);
+                        let last = board.bob_last.get(&u).copied();
+                        if bob_repeats(last, cell, tick.0) {
+                            let n = board.bob_count.entry(u).or_insert(0);
+                            *n += 1;
+                            if n.is_power_of_two() {
+                                info!(
+                                    uid = u.0.get(),
+                                    ?cell,
+                                    z_from = prev.z,
+                                    z_to = new_pos.z,
+                                    bobs = *n,
+                                    site,
+                                    stuck_time = ?active_jobs.get(entity).map(|a| a.stuck_time),
+                                    "bastion: THE BODY BOBS — the mover dropped this body two blocks at the same cell again within thirty seconds (W18-i)"
+                                );
+                            }
+                        } else {
+                            board.bob_count.insert(u, 0);
+                        }
+                        board.bob_last.insert(u, (cell, tick.0));
+                    }
                 }
                 if let Some(v) = velocities.get_mut(entity) {
                     v.0 = vel;
@@ -56506,6 +56551,19 @@ mod tests {
             common::path::jumps_admitted(TRUNK_SCRAMBLE_REACH, true, true, false),
             "the trunk plans the two-up jump edge"
         );
+    }
+
+    /// ★ W18-i pinned: a second drop at the same cell within the window is
+    /// a bob; a drop elsewhere, or after the window, or with no previous
+    /// drop, is not. Planted defect: the cell test widened to 100 -> red.
+    #[test]
+    fn the_body_names_its_bob() {
+        let here = Vec2::new(7791, 6242);
+        assert!(bob_repeats(Some((here, 1000)), here, 1500), "same cell, 500 ticks later: a bob");
+        assert!(bob_repeats(Some((here, 1000)), Vec2::new(7792, 6243), 1500), "the next cell over: a bob");
+        assert!(!bob_repeats(Some((here, 1000)), Vec2::new(7800, 6242), 1500), "nine blocks away: not a bob");
+        assert!(!bob_repeats(Some((here, 1000)), here, 2000), "after the window: not a bob");
+        assert!(!bob_repeats(None, here, 1500), "no previous drop: not a bob");
     }
 
     /// ★ W14-e pinned: the fresh exhaustions are the count less those already
