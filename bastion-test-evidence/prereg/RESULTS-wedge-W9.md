@@ -3077,6 +3077,175 @@ bobs peak 2; no starver). W18-b2's "drops 0" bar fails on b1 as
 on b2 for the same reason: the pit is not a Closed basin by the
 rule, and W18-c is what keeps a body from bobbing in it.
 
+### W14-g's first hour on both arms (17:33): the restart fires thousands of times at no tick cost; the flood is unchanged
+
+Restart witness moved=4096 within ~15 minutes on each arm (b1 since
+17:17, b2 since 17:23): the "thousands a day" clause TRIPPED on
+count. The sampled restarts are Medium (13) and Small (4) tier
+searches with 1-255 iterations spent -- the pump's fill lane, whose
+target cell is re-picked every tick (the old SEARCH TARGET MOVED
+instrument read 4,096 moves a day): the producer is the pump's
+re-pick, and the churn it causes is cheap -- ITEM 39 p95 440-690 us
+on both arms (the +4-minute block's 5,072 us was the boot spike;
+the trend is the day's normal 450-720). The flood: b1 295 exhausts
+by hour 13 (139-256 at that hour on earlier days; 3 on the quiet
+W14-w day), b2 144 by hour 11 -- unchanged, as the lab predicted: the
+touched class is the finished-search resume (W14-g2), not a moved
+goal. Disposal of W14-g: its mechanism is correct and its pin holds;
+its flood bars FAIL (not its class); its churn clause tripped on
+count with no measured cost, so it stands. The moved goals, read
+(17:34): the ends sit one or two blocks from the start and advance
+by a block at a time ((7769,6375) -> (7770,6375) -> (7771,6375)) --
+they are the route follower's NEXT NODES, re-targeted as the body
+advances; each restart abandons a search that had spent 1-5
+iterations. Not a jitter, not a producer to fix: the witness counts
+ordinary route following, and the row's count clause was written
+without knowing that the fill lane's goal is the next node. THE PICK
+DOES NOT JITTER is withdrawn as a candidate; the witness stays (its
+count is a rate, not a defect).
+
+b2 under W14-g at hour 12 (17:36): 219 exhausts -- far 140 (73 with
+the flee term, 67 without), TOUCHED 79 (36%), of which 13 carry a
+priced direct edge (the end a neighbour of the start) and all have
+end_g 5.0-15.0 with flee None: the finished-search resume signature
+persists with the moved-goal restart aboard, on the second world
+too. W14-g2's premise holds on both arms; it stages ~18:30.
+
+### The far class's design gap, read (17:37): the chaser arrives within a block, the search demands the cell
+
+Chaser::chase returns "arrived" when the body is within
+min_tgt_dist (1.0, z weighted x2) of the target; the job loop's B5
+arrival admits 2 blocks; the search's `satisfied` is `node.pos ==
+end`, the exact resolved cell. A target cell the search cannot enter
+(a shelf or crate cell, a bed on a sprite, a cell behind a fence
+line or a doorway the admission rules refuse) is therefore a search
+that can never finish and a walker that can still arrive -- the far
+three quarters, and W14-i6's four false proofs. Candidate (after
+W14-g2 reads, and a judgement item because the chaser is vanilla's):
+THE GOAL IS A BAND -- `satisfied` accepts a node within the
+traversal's tolerance of the end when the end itself is not
+enterable (the symmetric change to W17-b's moved START), so the
+search returns a Path to the adjacent cell and the walker's own
+tolerance finishes the walk. NOT a plot change; NOT the router's
+step down; those remain for the cells that really are cut off.
+
+### W14-i7 landed (9e714b0f9c, staged 17:29:22; shipped to lab-bin 17:29:39)
+
+Chain bew730pvv: check ok, pin the_flood_names_its_walker green,
+committed 9e714b0f9c, both halves from one commit, the server exe
+carries "THE FLOOD NAMES ITS WALKER" (grep 1). Falsifier RED at
+17:35 (a plain greater-than planted in its own worktree: 0 passed,
+1 failed on 2 -> 1; restored, 0 dirty). W14-w2's chain fired at
+17:34:22. Live read:
+the arms board it at their next restarts (b1 ~18:08 under the W18-b
+reader, b2 ~18:12 under the W14-g reader) -- unless W14-g2 stages
+first, in which case they board that (it carries W14-i7). b2 boarded
+a468786d41 (W14-g) at 17:23 under the W18-c reader, with the diag:
+the W14-g b2 live read comes at ~17:50.
+
+### W14-g's first live read on b1 (17:20-17:22; a468786d41 since 17:17): the restart fires, the touched class persists -- and the lab names why
+
+THE END MOVED UNDER THE SEARCH: 14 sampled lines, moved=512 within
+three minutes (a restart roughly three times a second, all at the
+Small tier, 1-255 iterations spent: the goals jitter constantly --
+the registered "thousands a day" clause, the producer to name). And
+the TOUCHED exhausts persist: ten at (7679,6203,181) in two
+minutes, end_g 5.0-15.0, end_states 1, direct_edge Some(5.0) on two
+(the end a direct up-step neighbour of the start, priced 5), flee
+None, no END MOVED line for that end, one start per 68-step search.
+So the goal did not move and the search still failed to pop an
+f = 5 entry in 62,000 pops. THE LAB (the falsify worktree, 17:26): a
+one-block step up beside the start on a slab, Longest tier -- Path
+(len 2, cost 5) in 3 expansions; with the flee term 289; the same
+on a raised plateau. The machinery finds it. The only way an f = 5
+entry is absent from a min-heap is that it was popped already: the
+search had RETURNED ITS PATH, and the retained astar was polled
+again for the same goal (the chaser's Path arm sets its route and
+never drops the astar; the pump likewise) -- a re-ask (the route
+invalidated when the body came closer to the target than the
+route's end, or the same cell picked again) resumes a finished
+frontier. W14-g's premise (a moved goal on a kept frontier) is a
+real case and is fixed; it was not THIS case. W14-g2 THE FINISHED
+SEARCH IS NOT RESUMED is written: Astar.finished on Path/None, the
+search dropped before any further poll, witnessed; pinned on the
+slab (poll to Path, poll again -> Path in under 30); falsifier
+resumes the finished search -> the second poll floods -> red. Chain
+behind W18-d. Desktop probe at 17:29: 0x0 (the ninth).
+
+### W14-i6 on b2, the full day (17:19; e4351e2457, read at day 1 hour 0)
+
+Arrivals 873, THE PROOF WAS FALSE 4 = every arrival that carried
+three or more strikes (jobs 539, 328, 676, 663: three Hauls to
+store cells at z 181-182 and one Designated at z 184), bench lines
+1 (one job, terminal), starving sleepers 0, FETCH STALLED 3, bobs
+peak 2, LONGEST-EXHAUST 625 (far 359+, touched 150+ by hour 18).
+The instrument's bars held (every B5 line carries the fields; the
+false-proof lines name their jobs). The rate: 4 false proofs
+against 1 witnessed bench and an unknown number of silent ones --
+W14-w2 (queued) makes that denominator honest. All four false
+proofs were struck by W14-e2's Longest exhausts after a silent
+bench, and all four walkers reached their targets: on b2 today the
+"proven unreachable" jobs a walker still held were reachable every
+time.
+
+### W18-d registered (17:18): THE REPEATED LIFT IS NOT PROGRESS
+
+The assist site (bastion_jobs.rs 38563) resets stuck_time and
+best_dist after every completed promised step; a step completed at
+the cell of the last one is the bounce. Mechanism: lift_repeats(
+prev, cell, now) (Chebyshev <= 1 in x-y within LIFT_WINDOW_TICKS =
+900, the bob window); the board keeps lift_last per walker; a first
+or distant lift resets as before (identity), a repeated lift keeps
+the clock, counts (LIFTS_REPEATED) and prints "THE REPEATED LIFT IS
+NOT PROGRESS -- the clock keeps running" (colonist, cell, repeats)
+at the first eight and powers of two. Pin
+the_repeated_lift_is_not_progress (same cell / next cell / nine
+away / after the window / none); falsifier widens the cell test to
+100 -> red. Bars (both arms' next days): bobs peak <= 16, no bob at
+64+ with stuck_time < 1 s, the witness >= 1 when a body bounces,
+stalls/census <= 2x, starving unchanged, arrivals >= 900 / 720.
+Falsified if a bobber still reaches 64 near zero on a pair with the
+witness (a third reset path), or stalls double with arrivals down
+> 10%. Rejected: refusing the drop after a lift (W18-b2's open
+landing is right; the clock is what is blind); another window (a
+taste number). Queued behind W14-w2 (bastion-server).
+
+### W18-c's third day, the night block (17:14, hour-6 frame): the bob bar FAILED and the registered falsification clause TRIPPED
+
+BOB: colonist 49 bobs=256 at (7700,6303) -- the same terrace step
+that held colonists 117, 65 and 136 -- with stuck_time 0.033 s at
+64, 128 and 256; colonist 14 bobs=16; 28 bob lines. W18-c is aboard
+this pair. The registration said: "Falsified if a bobber still
+reaches 64 with stuck_time at zero (another reset path: the steer
+switch at 2.0 blocks, or a best_dist improvement from the drop
+itself)." It did. So the x-y window closes one reset path and the
+clock has at least one more that a bob at this step exercises (a
+route re-plan after the drop resets best_dist and the clock; or the
+steer switch). W18-c's mechanism is right and incomplete: two
+prior days read peak 1-2 because no body bobbed at that step; this
+one did. Arrivals 880 at hour 6 (889, 916 before; bar 900 FAILED
+at the registered frame this day), starving sleepers 1 (named at
+the day read), FETCH STALLED 16, fetch bans 5 / other 5, flood 20.
+Candidate W18-c2: THE BOB'S RE-PLAN DOES NOT RESET THE CLOCK -- the
+reset sites are read below; the bob witness's stuck_time is the
+instrument, already in place.
+
+Colonist 49's bob, traced (17:15): 21:09:00 UTC a rest preempt to
+its bed at (7714,6343,186) -- a z-186 bed, the sealed-sleeper
+class; 21:09:07 MOVE ASSIST "the router promised this cell; the
+vault/step completes" (class climb) at (7712,6305,181); then from
+21:09:51 to 21:12:01 the bridge probe drops it 183 -> 181 at
+(7700,6303) and the assist lifts it again, 256 times, the clock
+reading 0.033 s throughout because the assist's completed step
+resets it. GENERATOR AND CONSUMER at one cell: the route promises
+up, the probe says the surface is two below. The step at (7700,6303)
+is on the home road to that bed and has now bounced four bodies
+across both arms. The consumer to build (W18-d): a body the assist
+has just lifted is not dropped by the probe for a hold, or the bob
+count bans the promised climb at that cell after N (the climb-ban
+consumer the shun already reads) -- and the stuck clock does not
+reset on an assist step that lands where the last one did.
+
 ### W14-w2 registered (17:12): THE BENCH HAS ONE DOOR (instrument honesty)
 
 Mechanism: SilentBench { StuckTimeoutRelease, SelfRescueNoAccess,

@@ -9526,6 +9526,25 @@ pub(crate) fn bench_is_new(bench: bool, already_benched: bool) -> bool {
     bench && !already_benched
 }
 
+/// ★ W14-w2 pinned: THE BENCH HAS ONE DOOR. The three writers that benched a
+/// job without a strike and without a witness -- the stuck-timeout release,
+/// the self-rescue that could emit no access, the exposure sweep -- name
+/// their reason through one label, and the tallies count them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SilentBench {
+    StuckTimeoutRelease,
+    SelfRescueNoAccess,
+    NotExposed,
+}
+
+pub(crate) fn silent_bench_label(reason: SilentBench) -> &'static str {
+    match reason {
+        SilentBench::StuckTimeoutRelease => "stuck-timeout release",
+        SilentBench::SelfRescueNoAccess => "self-rescue found no access",
+        SilentBench::NotExposed => "no exposed face",
+    }
+}
+
 /// ★ W6-D pinned: A BANNED CLIMB STRIKES THE JOB. The stuck-timeout release
 /// of a non-self job with the body on a wall bans the column (300 s) and
 /// writes a claim penalty whose reader is gated OFF; the same colonist
@@ -39175,7 +39194,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // colonist cycling in place still gets
                                     // the humanitarian bubble (~10s of
                                     // bounces) — employed or not.
-                                    job.unreachable = true;
+                                    // ★ W14-w2: the bench has one door.
+                                    if bench_is_new(true, job.unreachable) {
+                                        job.unreachable = true;
+                                        info!(
+                                            job = active.job,
+                                            reason = silent_bench_label(SilentBench::StuckTimeoutRelease),
+                                            "bastion: UNREACHABLE PROVEN — job benched off the board (silent writer named)"
+                                        );
+                                    }
                                     // ★ FAILURE MEMORY (E2-safe): fold this
                                     // failure into the (colonist, job) decay
                                     // record so the claim score discourages —
@@ -44773,7 +44800,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 },
                 None => {
                     if let Some(job) = board.jobs.get_mut(&parent) {
-                        job.unreachable = true;
+                        // ★ W14-w2: the bench has one door.
+                        if bench_is_new(true, job.unreachable) {
+                            job.unreachable = true;
+                            info!(
+                                job = parent,
+                                reason = silent_bench_label(SilentBench::SelfRescueNoAccess),
+                                "bastion: UNREACHABLE PROVEN — job benched off the board (silent writer named)"
+                            );
+                        }
                     }
                     info!(
                         job = parent,
@@ -48398,7 +48433,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // Fully enclosed: flag unreachable-for-now so the audit/UI
                     // reflect it (the periodic retry sweep re-tests as the dig
                     // opens the shell; B4's buried-job invariant rides this).
-                    job.unreachable = true;
+                    // ★ W14-w2: the bench has one door.
+                    if bench_is_new(true, job.unreachable) {
+                        job.unreachable = true;
+                        info!(
+                            job = *id,
+                            reason = silent_bench_label(SilentBench::NotExposed),
+                            "bastion: UNREACHABLE PROVEN — job benched off the board (silent writer named)"
+                        );
+                    }
                     continue;
                 }
                 exposed.insert(*id);
@@ -56965,6 +57008,21 @@ mod tests {
         assert!(!proof_was_false(0) && !proof_was_false(2), "under three strikes: the search never benched it");
         assert!(proof_was_false(3), "three strikes and the body arrived: the proof was false");
         assert!(proof_was_false(9), "and however many after");
+    }
+
+    /// ★ W14-w2 pinned: each silent writer carries a distinct, non-empty
+    /// reason label; the door is bench_is_new with bench = true. Planted
+    /// defect: one label emptied -> red.
+    #[test]
+    fn the_bench_has_one_door() {
+        let labels = [
+            silent_bench_label(SilentBench::StuckTimeoutRelease),
+            silent_bench_label(SilentBench::SelfRescueNoAccess),
+            silent_bench_label(SilentBench::NotExposed),
+        ];
+        assert!(labels.iter().all(|l| !l.is_empty()), "every silent writer names its reason");
+        assert!(labels[0] != labels[1] && labels[1] != labels[2] && labels[0] != labels[2], "distinct reasons");
+        assert!(bench_is_new(true, false) && !bench_is_new(true, true), "the door: a silent bench is new once");
     }
 
     /// ★ W14-w pinned: a bench is new only when the job is not already
