@@ -8546,6 +8546,19 @@ pub enum NightShelf {
     Refused,
 }
 
+/// ★ E2-i2 pinned: who holds a stack -- the jobs whose reservation is one
+/// of the stack's reservation ids, named job:class:claimant; a job with no
+/// reservation, or another stack's, is not named.
+pub(crate) fn reservation_holders<'a>(
+    jobs: impl Iterator<Item = (&'a JobId, &'a Job)>,
+    ids: &[common::bastion::ReservationId],
+) -> Vec<String> {
+    jobs
+        .filter(|(_, j)| j.reservation.is_some_and(|r| ids.contains(&r)))
+        .map(|(id, j)| format!("{}:{}:{:?}", id, job_release_class(&j.kind), j.claimed_by))
+        .collect()
+}
+
 /// ★ E2-i1 pinned: no home -> NoHome whatever the counts; nothing present
 /// -> Empty; present and none admissible -> Refused.
 pub(crate) fn night_shelf_verdict(home_known: bool, present: u32, admissible: u32) -> NightShelf {
@@ -32211,6 +32224,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 let mut refused_reach = 0u32;
                                 let mut refused_cap = 0u32;
                                 let mut refused_closed = 0u32;
+                                let mut units = 0u32;
+                                let mut reserved = 0u32;
+                                let mut holders: Vec<String> = Vec::new();
                                 if let Some(h) = night_home {
                                     for (pi, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
                                         let icell = ipos.0.map(|e| e.floor() as i32);
@@ -32221,6 +32237,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             continue;
                                         }
                                         present += 1;
+                                        units += pi.amount();
+                                        reserved += board.reserved_count(*iuid);
                                         if board.stockpile_at(icell).is_some_and(|z| store_closed(&board.closed_stores, z, tick.0)) {
                                             refused_closed += 1;
                                         }
@@ -32235,6 +32253,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                         if !board.has_capacity(*iuid, pi.amount()) {
                                             refused_cap += 1;
+                                            // ★ E2-i2: name the holders.
+                                            let ids: &[common::bastion::ReservationId] = board
+                                                .reservations_by_item
+                                                .get(iuid)
+                                                .map_or(&[][..], |v| v.as_slice());
+                                            holders.extend(reservation_holders(board.jobs.iter(), ids));
                                         }
                                     }
                                 }
@@ -32255,6 +32279,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         refused_reach,
                                         refused_cap,
                                         refused_closed,
+                                        units,
+                                        reserved,
+                                        holders = ?holders,
                                         verdict = ?verdict,
                                         night_no_food = k,
                                         "bastion: NIGHT SHELF EMPTY — a sleeper's night pick found nothing at home; what the home held and what refused it"
@@ -55691,6 +55718,41 @@ mod tests {
         assert!(draft_at_plan(0, 1909), "the plan lands, nobody builds: draft now");
         assert!(!draft_at_plan(1, 1909), "one builder counts: the day line will size the crew");
         assert!(!draft_at_plan(0, 0), "nothing to build: nothing to draft");
+    }
+
+    /// ★ E2-i2 pinned: the holders of a stack are the jobs whose reservation
+    /// is one of its ids, named job:class:claimant; a job with no
+    /// reservation, or another stack's, is not named. Planted defect:
+    /// nobody named -> red.
+    #[test]
+    fn the_night_shelf_names_its_holders() {
+        let job = |reservation: Option<u64>, claimant: Option<u64>| Job {
+            player_ordered: false,
+            kind: common::bastion::JobKind::EatFrom {
+                item: common::uid::Uid(NonZeroU64::new(11).expect("nonzero")),
+            },
+            work: DesignationKind::Stockpile.work_type(),
+            pos: Vec3::new(14, 10, 0),
+            skill_floor: 0,
+            claimed_by: claimant.map(|c| common::uid::Uid(NonZeroU64::new(c).expect("nonzero"))),
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation,
+            affordance: AffordanceClass::Untargeted,
+        };
+        let jobs: Vec<(JobId, Job)> = vec![(1, job(Some(5), Some(64))), (2, job(None, Some(20))), (3, job(Some(9), None))];
+        let named = reservation_holders(jobs.iter().map(|(i, j)| (i, j)), &[5]);
+        assert_eq!(named, vec!["1:eat:Some(Uid(64))".to_string()], "the holder of id 5 is named; the others are not");
+        assert!(reservation_holders(jobs.iter().map(|(i, j)| (i, j)), &[7]).is_empty(), "nobody holds id 7");
+        assert_eq!(reservation_holders(jobs.iter().map(|(i, j)| (i, j)), &[5, 9]).len(), 2, "two ids, two holders");
     }
 
     /// ★ E2-i1 pinned: no home is NoHome whatever the counts; nothing

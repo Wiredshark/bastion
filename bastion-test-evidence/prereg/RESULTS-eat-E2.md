@@ -1243,7 +1243,51 @@ string present in the binary). The b1 reader restarts b1 after
 E2-o's night-1 block and reads the shelves. Falsified: the bed
 admitted as a shelf cell planted at eda115908a, the pin RED at
 23:14, the tree restored clean. Shipped to lab-bin 23:11. E2-n-i's
-chain fires five minutes after this stage.
+chain fires five minutes after this stage. Boot read on b1 (+3
+min, 23:22): 116 beds, 19 shelves added, ON A BED CELL 0 (the
+row's bar), beds_in_house 2 for every one of the 19 -- the shelf
+is never a bed at boot; the night read follows E2-o's block.
+
+### E2-n-i landed (74b373f5ac, staged 23:33)
+
+Check clean, the pin green, both halves staged 23:33; the binary
+verified by contents (the meal line's new tail present). Read on
+E2-i2's pair after its night-1 block by the printer. Falsified:
+the shelf named as the store planted at 74b373f5ac, the pin RED at
+23:38, the tree restored clean. Shipped to lab-bin 23:33.
+
+## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
+
+THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the
+leisure door opened 1,024 times and the eaters still claimed 32
+of 56 loads, 18 swept; the refusal census is aggregate and blind
+to which job was the own load, the sweep line says how many and
+not whose. Colonist 30 (a night watchman) had its door opened at
+32 and 64 and never claimed -- the suspect is his own schedule
+frame in `supper_walk_home_hour` (it walks back to his Sleep, not
+a Work block) -- and the size of that class and the others is not
+evidenced. Now the board tallies per colonist the door's opens and
+(passes, last verdict) the scan gave the own load
+(lane_hold_night_watch, already_claimed, unreachable_job,
+connectivity_refused, affordance, walk_home_hour_false,
+priority_zero_despite_own, out_of_zone, condemned, access_dist,
+outranked, claimed, not_in_scan), and the sweep names every swept
+load's eater with profession, night_watch, door_opens, passes and
+`sweep_verdict` (never_free when the door never opened;
+opened_not_scanned when no pass recorded a verdict; else the last
+verdict), then clears the day's tallies. No behaviour changes. Pin
+`the_sweep_names_its_eaters` (never_free whatever the passes;
+opened_not_scanned; the last verdict); planted: a never-opened
+door named by a verdict, red. Prediction (b1, W14's pair, read by
+`wait-e2li-b1.sh` after W14's night-1 block; the day-0 sweep):
+every swept load carries an eater and a verdict, none
+opened_not_scanned; the night watch at most 4 of the swept; the
+other classes counted without a bar. Falsified if a swept load has
+no eater or opened_not_scanned is common. Rejected: printing every
+pass; re-deriving the eater in the reader. NOT evidenced: the fix
+rows the read names; b2. The W14 chain was re-keyed behind this
+row by its pid file; the dry tree was rebuilt from HEAD 74b373f5ac
+in the order E2-i2, W12-a-b, W15-i1, E2-l-i, W14.
 
 ## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
 
