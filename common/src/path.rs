@@ -689,6 +689,17 @@ pub fn priced_outside_destination(in_destination: bool, surcharge: f32) -> f32 {
 /// Reach 1 names a colony body that glides: it keeps the stair floor and the
 /// ladders (`scramble_reach > 0`) and plans no jump; reach 0 (vanilla) and
 /// reach 2 or 3 (the inline chaser configs) admit jumps exactly as before.
+/// ★ W14-e2 pinned: THE PARTIAL ROUTE DOES NOT FORGIVE THE EXHAUSTION. The
+/// chaser's count of consecutive Longest-tier exhaustions (W14-e) is what
+/// the job loop strikes on; an exhausted search returns a partial route to
+/// its closest node and the chaser walks it, so a reset on every route set
+/// zeroed the count each time it was earned (one end asked eighteen times,
+/// no strike). The count survives a partial route and resets on a complete
+/// one only.
+pub fn exhaust_count_after(complete: bool, count: u8) -> u8 {
+    if complete { 0 } else { count }
+}
+
 pub fn jumps_admitted(scramble_reach: u8, on_land: bool, can_climb: bool, can_fly: bool) -> bool {
     if scramble_reach == 1 {
         return false;
@@ -1084,19 +1095,22 @@ impl Chaser {
             },
             PathResult::None(path) => {
                 self.path_state = PathState::None;
-                self.longest_exhausts = 0; // ★ W14-e: a route was found
+                // ★ W14-e2: a partial route keeps the count.
+                self.longest_exhausts = exhaust_count_after(false, self.longest_exhausts);
                 self.route = Some((Route { path, next_idx: 0 }, false, tgt));
             },
             PathResult::Exhausted(path) => {
                 self.path_state = PathState::Exhausted;
-                self.longest_exhausts = 0; // ★ W14-e: a route was found
+                // ★ W14-e2: a partial route keeps the count.
+                self.longest_exhausts = exhaust_count_after(false, self.longest_exhausts);
                 self.route = Some((Route { path, next_idx: 0 }, false, tgt));
             },
             PathResult::Path(path, _) => {
                 self.flee_from = None;
                 self.path_state = PathState::Path;
                 self.path_length = Default::default();
-                self.longest_exhausts = 0; // ★ W14-e: a route was found
+                // ★ W14-e2: a complete route forgives the count.
+                self.longest_exhausts = exhaust_count_after(true, self.longest_exhausts);
                 self.route = Some((Route { path, next_idx: 0 }, true, tgt));
             },
         }
@@ -2831,6 +2845,17 @@ mod bastion_vertical_tests {
         assert!(jumps_admitted(0, false, true, false), "vanilla in liquid but a climber: jumps");
         assert!(!jumps_admitted(0, false, false, false), "vanilla in liquid, no climb, no fly: none");
         assert!(jumps_admitted(2, true, true, false) && jumps_admitted(3, true, true, false), "reach 2 and 3: as before");
+    }
+
+    /// ★ W14-e2 pinned: a partial route keeps the exhaustion count, a
+    /// complete one forgives it. Planted defect: the partial arm zeroed ->
+    /// red.
+    #[test]
+    fn the_partial_route_does_not_forgive_the_exhaustion() {
+        assert_eq!(exhaust_count_after(false, 2), 2, "a partial route keeps the count");
+        assert_eq!(exhaust_count_after(false, 0), 0, "nothing to keep");
+        assert_eq!(exhaust_count_after(true, 2), 0, "a complete route forgives it");
+        assert_eq!(exhaust_count_after(true, 0), 0, "and stays at zero");
     }
 
     /// ★ W15-c-b pinned: a start in one plot and a target in another free

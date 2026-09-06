@@ -2906,6 +2906,68 @@ loops 7 with arrivals 1,013. Both consumers (W6-D for the loops,
 W14-d for the floods) are aboard from the W14-d pair on; the
 decision rule's day is the first full b1 day on that pair.
 
+### The pit cost a meal (b2, 203321df48, hours 20-0; 13:25) -- the pit is the row
+
+The two-minute watch: hour 21 starving 3 (16, 97, 100, all EatFrom
+Traveling at hunger 0.00); hour 22 starving 1 (16); hour 23
+colonist 16's job is RestAt (bed (7589,6370,181)), still starving;
+hour 0 "Arrived", still starving -- a night starver, the class the
+morning's E2 rows closed for the stalled-target case, made here by
+the pit: 39 mover drops at (7712/7713,6306) from z 181 to 179
+through the evening, its feet in the drop cell at 13:23. The
+registered condition ("a meal is lost to this cell") is met. The
+row: THE BODY DOES NOT DROP INTO A CELL IT CANNOT LEAVE -- the
+mover's surface probe takes a -2 step only when a neighbour of the
+landing cell stands within one block above it (an exit the glide
+can take); otherwise the body holds at the edge, a stall, which
+has consumers (the shun, the stuck timeout, the strikes). Prior
+art: every colony sim's mover walks a grid whose down-steps are
+the same as its up-steps (RimWorld, Banished: no vertical at all;
+DF: ramps both ways); a one-way drop is a trap in all of them.
+
+### The pit's third day (b2, 203321df48, hour 20; 13:20) -- now with hunger
+
+STARVING 3 at hour 20 (colonists 16, 97, 100; all EatFrom
+Traveling, hunger 0.00-0.03). Colonist 16 has 39 mover drops
+today and 97 five, both last dropped from z 181 to 179 at
+(7712/7713,6306): the same two-deep cell that held 33 and 62 on
+the W14-c day and 134 on the W6-D day. Thirty-nine drops in a day
+by one body at one cell is the bob (W18-i's class) at a pit on a
+store route: fall in, climb out one and one, fall in. Whether the
+three eat before day 1 is being watched every two minutes; W18-i
+boards b2 at the next restart (~13:40) and names the pit's bobs
+with the stuck clock's state. If a starver stays or a meal is
+lost to this cell, the pit becomes the row: the mover's -2 step
+where the router plans none.
+
+### W14-e read: b1 night 1 (203321df48; 13:11) -- the day closed FAILED, as read at hour 19
+
+LONGEST-EXHAUST 90 for the day (65x one end, (7712,6345,186); 18x
+colonist 55's wall), LONGEST-TIER lines 7,571, benches by Longest
+exhausts 0 (the partial-route reset; W14-e2 chained); route-proof
+benches 17, W14-d's bench 1; CLIMB BANNED (fetch) 1, other 8 (three
+colonists at two each: no loop), FETCH STALLED 14, budgets expired
+18, STALL BLAMED 3, stuck 9 (5 at the census); arrivals 974 (1,090
+on the decision day, 945-1,013 before); starving: no STARVING
+COLONISTS line all day; p95 685. b1 restarts onto the latest pair
+under the W14-c reader (203321df48 again until W18-i stages).
+
+### W18-i landed (0d603edbae, staged 13:16:32)
+
+Check and pin green on the chain (1 test passed), both halves built
+fresh, the binary verified by its contents ("THE BODY BOBS" present
+once in stage-bin); shipped to lab-bin at 13:17. The falsifier
+planted the cell test at 100 blocks at 13:18 and the pin went RED
+at 13:21, the tree restored clean (0 dirty); W14-e2's chain fires
+five minutes after the stage (stage ~13:48, both halves, common/
+changed). Of the pit's three starving at hour 20 on b2, two had
+eaten by hour 22 and colonist 16 (39 drops at the pit today) was
+still Traveling to eat at hunger 0.00; the watch runs to day 1. The readers restart b1 after W14-e's night block
+and b2 after W14-e's day-1 block; with the arms cycling every ~35
+minutes, the first bob read comes from whichever reader restarts
+onto this pair or a later one (the bob tally is run by hand on any
+log carrying 0d603edbae or newer).
+
 ### W14-e read: b1 hour 19 (203321df48 under the relaunched W2-b-r reader; 12:56) -- FAILED by its own defect
 
 LONGEST-EXHAUST 78 by hour 19 (bar <= 60 for the day: FAILED),
