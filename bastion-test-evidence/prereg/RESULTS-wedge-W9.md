@@ -2940,6 +2940,104 @@ is the next candidate -- THE BOB IS NOT PROGRESS (the stuck clock
 measured on xy, or a bob counted as no displacement, so the stall's
 consumers act) -- registered after W18-b's first read.
 
+### E2-t landed (a86bb23715, staged 14:28:43; shipped to lab-bin 14:29)
+
+Chain btaa424v0: check ok, pin the_supper_outranks_the_posted_haul
+green (1 passed), committed a86bb23715, both halves built from one
+commit, the server exe carries the witness string (grep count 1).
+The falsifier went RED at 14:33 (the class test set to a name no job
+has: 0 passed, 1 failed; restored, 0 dirty). Readers:
+b1 fresh after W18-b's night-1 block, b2 fresh after W18-b's day-1
+block. lab-bin is now a86bb23715 (playable).
+
+### The first-hour read on dfa366b6db, by hand (14:27; b1 hour 16, b2 hour 17)
+
+W18-b: the refusal witness fires on both arms (b1 refused=8192 by
+hour 16, b2 4096), and NOBODY IS HELD: the refused bodies (uid 53
+on b1, 130 on b2) went on to arrive at cook and haul jobs within
+minutes, 0 stalls and 0 census lines of their own. Pit drops at
+(7712,6306): 0 on both (the W18-b bar's first half PASSES so far).
+Starving 0 both. Bob lines 5 / 11, no bobber past 2. The COST shows
+on b2: FETCH STALLED 19 by hour 17 (1 on the whole W18-i day; 4-13
+on the days before), clustered at the refused ledge (7640,6436):8,
+(7644,6436):3 -- the drops became stalls, as W18-b's registration
+said they would; the ramp plot row (Ben's roadmap) is that ledge's
+real answer. b1 stalls 8 (6-18 on the W16-b days). Arrivals 724 /
+545 at hours 16 / 17, on pace for both bars.
+
+W14-e2: on b2 the bench fires (2 by hour 17, colonist 120's jobs 310
+and 453, exhausts=2 and 3 -- one bench carried a strike from another
+arm, the label names the last striker). On b1 ZERO benches against
+374 LONGEST-EXHAUST by hour 16 (bar <= 60/day: FAILED), whole-town
+371, ends repeating 26x, 26x, 21x; 149 of the 374 (40%) exhausted
+with closest_dist=0: the search VISITED its end cell and still
+spent 61k states. The top end (7607,6272,181) is ONE block from its
+body (7608.3,6272.5,181.0), which re-asked the whole-town search 21
+times at 15 s intervals for five minutes, jittering 0.2 blocks in
+y; the goal endf z=180.0 sits inside Rock (end_snap_dz=1), and 94%
+of all Longest-tier search steps carry end_snap_dz 1-2 -- goals one
+or two blocks inside terrain. No id-bearing line places that body
+(no job line at the target, no glide line, no arrival): a jobless
+colonist or one of the 180 vanilla rtsim NPCs; either way W14-e2's
+consumer (the job loop's active-job branch) never sees it -- A
+CONSUMER PIN MUST COVER THE PRODUCER'S PATH, third instance.
+
+The fixed point: after a Longest exhaust the chaser sets
+flee_from=pos and keeps path_length=Longest across targets (reset
+only on a complete route); the flee heuristic (path.rs 1662-1670)
+subtracts 10*sqrt(nd)*(cos+0.1) from d. But the arithmetic does not
+flood 61k cells on its own with g(E) of a few units (f goes
+negative only within ~30 blocks of the body), so either the S->E
+edge is priced in the hundreds, or E is reached only by a long
+detour (a fence or wall rule between the body and a target one
+block away). The exhaust diag does not print g(E). NEXT: an
+instrument row -- the exhaust names its end's g, its state count and
+the max g popped -- then the fix (the flee term clamped, or the
+price named). W14-e2 stands on b2's witness; its b1 bar FAILED for
+the stated reason.
+
+### W18-c registered (14:15): THE BOB IS NOT PROGRESS
+
+Not gated on W18-b's first read after all: a bob climbs back, so its
+landing has a way up by construction, and W18-b's refusal never
+touches the class. The instrument (W18-i) named the mechanism: the
+stuck clock's displacement window (tightdig_measure, every
+TIGHTDIG_WINDOW 2.0 s) takes pos.distance(anchor) in three
+dimensions against TIGHTDIG_MIN_PROGRESS 1.5; a two-block bob
+displaces 2.0 in z alone, so every window reads as progress and no
+stall, timeout, shun or strike reaches the body (colonist 75:
+stuck_time 0.033 s at bobs 64 and 128). TWO FRAMES COMPARED AS ONE:
+a walk and a bob in one distance.
+
+MECHANISM: tightdig_displacement(pos, anchor) = the x-y distance;
+the window asks it instead of the 3-D distance. Nothing else in the
+measure changes (window, minimum, steer switch, segment check). No
+new log line: the bob witness's stuck_time and the stall counters
+read the change. Pin (bastion-server) the_bob_is_not_progress: a
+two-block vertical oscillation displaces nothing; two over displaces
+two; two over and two down displaces two. Falsifier plants the 3-D
+distance back -> red on the bob.
+
+PREDICTION (b1 fresh after E2-t's night-1 block, b2 fresh after
+E2-t's day-1 block; wait-w18c-b1/b2): b2 bob peak <= 16 for the day
+(128, 242, 221 before), stuck_time on any bob line at >= 64 above
+0, FETCH STALLED and STUCK CENSUS <= 2x the day before (the bobs
+become stalls: the honest cost), starving sleepers 0, arrivals >=
+720; b1 bob peak <= 16, arrivals >= 900, starving <= 1. FALSIFIED
+if a bobber still reaches 64 with stuck_time 0 (another reset path:
+the steer switch at 2.0 blocks, or best_dist improving from the drop
+itself), or arrivals fall > 10% (the window's z-credit was counting
+real walks).
+
+Rejected: counting the bob inside the witness (the witness stays
+blind to its fix); a smaller window or larger minimum (a taste
+number; a 2.0 bob clears any minimum a walk must pass). NOT
+evidenced: the gate-OFF branch (unchanged); the assist and glide
+overrides that lift bodies on purpose (they gain no ground either
+and now read as stalls when they never do -- which is what they
+are). Chain behind E2-t's stage (+300 s); the dry tree HEAD + E2-t +
+W18-c applied clean; types checked (pos and anchor both Vec3<f32>).
+
 ### E2-t registered (14:03): THE SUPPER OUTRANKS THE POSTED HAUL
 
 b1's replicate-2 night (203321df48): starving sleepers 2. Colonist

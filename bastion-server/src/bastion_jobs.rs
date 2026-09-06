@@ -8898,6 +8898,16 @@ fn detour_leg_end(wps: &[Vec3<i32>], from: usize) -> usize {
 /// steer sources (anchor / fetch / beeline-or-path) read correctly by
 /// construction.
 #[expect(clippy::too_many_arguments, reason = "a pure measure over drive state")]
+/// ★ W18-c pinned: THE BOB IS NOT PROGRESS. The stuck clock's displacement
+/// window measured the body against its anchor in three dimensions, so a
+/// body dropping two blocks and climbing back displaced 2.0 every window
+/// (colonist 75: 128 bobs at one cell, stuck_time 0.033 s throughout) and
+/// no stall ever reached it. The window's displacement is the x-y distance:
+/// a bob is zero, a walk is what it was.
+pub(crate) fn tightdig_displacement(pos: Vec3<f32>, anchor: Vec3<f32>) -> f32 {
+    pos.xy().distance(anchor.xy())
+}
+
 fn tightdig_measure(
     progress_watch: &mut HashMap<Uid, (Vec3<f32>, f64, usize)>,
     last_steer: &mut HashMap<Uid, Vec3<f32>>,
@@ -8931,7 +8941,8 @@ fn tightdig_measure(
             if now - start < TIGHTDIG_WINDOW {
                 return base;
             }
-            let displaced = pos.distance(anchor);
+            // ★ W18-c: the bob is not progress -- x-y displacement only.
+            let displaced = tightdig_displacement(pos, anchor);
             let s_ok = !committed_active || idx_now > idx0;
             progress_watch.insert(u, (pos, now, idx_now));
             if displaced >= TIGHTDIG_MIN_PROGRESS && s_ok {
@@ -56733,6 +56744,18 @@ mod tests {
         assert!(!reservation_yields_to_owner(true, "haul"), "a claimed haul stands");
         assert!(!reservation_yields_to_owner(false, "eat"), "an unclaimed eat stands");
         assert!(!reservation_yields_to_owner(false, "deposit"), "an unclaimed deposit stands");
+    }
+
+    /// ★ W18-c pinned: a two-block vertical oscillation displaces nothing;
+    /// a two-block walk displaces two; a diagonal walk with a drop counts
+    /// its ground only. Planted defect: the three-dimensional distance ->
+    /// red on the bob.
+    #[test]
+    fn the_bob_is_not_progress() {
+        let anchor = Vec3::new(7632.5, 6317.5, 184.0);
+        assert!(tightdig_displacement(Vec3::new(7632.5, 6317.5, 182.0), anchor) < 0.01, "a bob: no displacement");
+        assert!((tightdig_displacement(Vec3::new(7634.5, 6317.5, 184.0), anchor) - 2.0).abs() < 0.01, "two blocks over: two");
+        assert!((tightdig_displacement(Vec3::new(7634.5, 6317.5, 182.0), anchor) - 2.0).abs() < 0.01, "two over and two down: two, the ground's share");
     }
 
     /// ★ W18-i pinned: a second drop at the same cell within the window is
