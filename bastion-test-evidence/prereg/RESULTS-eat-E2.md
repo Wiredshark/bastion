@@ -1154,6 +1154,24 @@ not answered by this read: the shelves that were stocked (35 of
 54) fed 7 night meals, and which shelves those were is E2-i2's
 read.
 
+### E2-o landed (ead39f481d, staged 22:25)
+
+Check clean on the first try, the pin green (four asserts on the
+two-argument rule), both halves staged 22:25; the binary verified
+by contents (THE LOUNGE YIELDS TO A NEED present, E2-m's string
+present). The E2-m chain before it needed three launches: the
+first retyped `queue_snapshot` and broke three other readers
+(the dry tree validates anchors, not types); the second borrowed
+`board.jobs` while the active job's own mutable borrow was live;
+the third took the anchor from the live `job` binding. The b1
+reader restarts b1 after E2-m's night-1 block and reads day 0 and
+night 1 against the bars above. Falsified: the original pid-less
+falsifier failed loudly on its stale one-argument string ("nothing
+planted, verdict INVALID", as a precondition must); the
+two-argument one planted `no_need_pending || own_supper_pending`
+and the pin went RED at 22:30 (the "own supper load unclaimed"
+assert), the tree restored clean. Shipped to lab-bin 22:26.
+
 ## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
 
 THE QUEUE IS FOR THE SAME ANCHOR. The anchor queue (the eat queue's

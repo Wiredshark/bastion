@@ -1739,6 +1739,12 @@ five, and is WITHDRAWN; the raise-only snap (W13-b) lifts exactly
 the riser lag and cost nothing on this geometry (387/586 with it,
 355/535 without). W13-b was removed on a clause that compared the
 pre-lift store with the lifted one; the removal was for nothing.
+The pair kept running while W13-b-r queued: by hour 15 of day 1
+EMBED WATCH stood at 18 (5 at the day-1 line, 13 more in fifteen
+game hours), arrivals 1,215, pump pending 23 and mean wait 134 --
+the no-raise rate on the lifted store is W12-a's order (18 a day)
+once the town is under way, and the raise's day-1 count of 0 is
+the number to beat.
 
 ## W13-b-r, registered 21:58 (keyed on the E2-o stage; ahead of E2-k, E2-i2, W12-a-b and W15-i1)
 
