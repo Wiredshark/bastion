@@ -9496,6 +9496,19 @@ pub(crate) fn job_strike(strikes: u8) -> (u8, bool) {
     (next, next >= UNREACHABLE_STRIKES)
 }
 
+/// ★ W6-D pinned: A BANNED CLIMB STRIKES THE JOB. The stuck-timeout release
+/// of a non-self job with the body on a wall bans the column (300 s) and
+/// writes a claim penalty whose reader is gated OFF; the same colonist
+/// re-claimed the same haul every ten seconds and climbed the next column
+/// of the same wall, fifty-eight times in ten minutes (colonist 68, job
+/// 745, b1 under W2-b-r). A banned climb is a failed route proof like the
+/// approach lane's Unreachable and the fill lane's exhaustion: it strikes
+/// the held job through the same rule, and three bench it. A stuck timeout
+/// that was not a climb strikes nothing here (None).
+pub(crate) fn banned_climb_strike(climbing: bool, strikes: u8) -> Option<(u8, bool)> {
+    climbing.then(|| job_strike(strikes))
+}
+
 /// ★ W2-b-r pinned: THE TRUNK PLANS THE JUMP AGAIN. W2-b set the trunk's
 /// reach to 1 (no two-up jump edge for a gliding body); on the ledge arm
 /// the town is not connected at one-up steps, so every search to a plot
@@ -38448,6 +38461,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 record_claim_failure(prev, tick.0),
                                             );
                                         }
+                                        // ★ W6-D: a banned climb strikes the job (the claim
+                                        // penalty above has no reader while its gate is OFF).
+                                        if let Some((next, bench)) = banned_climb_strike(climbing, job.stuck_strikes) {
+                                            job.stuck_strikes = next;
+                                            if bench {
+                                                job.unreachable = true;
+                                                info!(
+                                                    job = active.job,
+                                                    colonist = uids.get(entity).map(|u| u.0.get()),
+                                                    job_pos = ?job.pos,
+                                                    "bastion: UNREACHABLE PROVEN — job benched off the board (three banned climbs)"
+                                                );
+                                            }
+                                        }
                                         job.claimed_by = None;
                                         to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, colonist = uids.get(entity).map(|u| u.0.get()), "to_release fired (site scan)"); }
                                     }
@@ -56405,6 +56432,17 @@ mod tests {
             common::path::jumps_admitted(TRUNK_SCRAMBLE_REACH, true, true, false),
             "the trunk plans the two-up jump edge"
         );
+    }
+
+    /// ★ W6-D pinned: a banned climb strikes (the first two do not bench,
+    /// the third does); a stuck timeout that was not a climb strikes
+    /// nothing. Planted defect: the gate inverted -> red.
+    #[test]
+    fn a_banned_climb_strikes_the_job() {
+        assert_eq!(banned_climb_strike(true, 0), Some((1, false)), "first banned climb: struck, not benched");
+        assert_eq!(banned_climb_strike(true, 2), Some((3, true)), "third banned climb: benched");
+        assert_eq!(banned_climb_strike(false, 0), None, "a plain stuck timeout: no strike");
+        assert_eq!(banned_climb_strike(false, 2), None, "a plain stuck timeout near the bench: still none");
     }
 
     /// ★ W14-c pinned: the first strike does not bench, the third does,

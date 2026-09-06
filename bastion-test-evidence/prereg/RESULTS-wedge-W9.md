@@ -2827,6 +2827,177 @@ present once in stage-bin and in lab-bin). The falsifier planted
 reach 1 at 10:11 and the pin went RED at 10:14, the tree restored
 clean (0 dirty); W14-c's chain fires at 10:15.
 
+### W16-b read: b1 night 1 (f408e4b8a9; 10:23) -- PASS
+
+CLIMB BANNED (fetch) 1 for the whole day (9 on the W2-b day, 15 and
+24 on the two days before): colonist 65 once, on_prev, trunk frame;
+other 7 (sleepers), PROMISED CLIMB TAKEN 1, FETCH STALLED 6 (18),
+budgets expired 10 (19), STALL BLAMED 2; arrivals 1,013 (915 on the
+W2-b night, 933 on W15-c's: +8-10%); starving 1 (colonist 8 at hour
+6, hunger 0.04, EatFrom Traveling -- on its way to eat, bar <= 1);
+stuck census 18 distinct (8 the day before; a night rise to watch);
+p95 732. Flood tally for the day: LONGEST-EXHAUST 21 (617 / 13),
+whole-town 21, LONGEST-TIER lines 2,315 (51,798 / 1,642), top ends
+6x(7667,6200,182), 5x(7721,6346,188), 4x(7706,6310,181). Ledge
+tally: bans under a +2 edge 1 (trunk), stalls near +2-edge heads 2,
+clusters (7664,6432) 2 and (7640,6504) 2. W16-b PASSES on both
+arms: the ledge class on b1 went 24 -> 15 -> 9 -> 1 across W16-a,
+W2-b and W16-b, and the two ledges now cost a stall each a day.
+
+### W14-c landed (5f785e2a5a, staged 10:33:34)
+
+Check and pin green on the chain (1 test passed), both halves built
+fresh, the binary verified by its contents ("three exhausted fill
+searches" present once in stage-bin, the trunk witness still there).
+The falsifier planted the threshold at 30 at 10:35 and the pin went
+RED at 10:38, the tree restored clean (0 dirty); shipped to lab-bin
+at 10:34. The readers restart b1 after W2-b-r's
+night block and b2 after W2-b-r's day-1 block; the shipper moves
+the pair to lab-bin when Ben's server is down.
+
+### W2-b-r read: b1 night 1 (d4760fa9fd; 11:01) -- the flood bars PASSED, and the climb loops are the cost
+
+Flood: LONGEST-EXHAUST 33 for the day (617 on the W2-b day, 21 on
+W16-b's reach-1 day, 13 before W2-b; the bar <= 30 was at hour 19,
+where it read 19: PASSED), LONGEST-TIER lines 4,309 (51,798 /
+2,315 / 1,642), top ends 6x(7711,6359,188), 4x(7742,6404,181),
+4x(7706,6346,181). Arrivals 977 (1,013 on W16-b's night, 915 on
+W2-b's, 933 on W15-c's: -3.5%, within the bar); starving 0; stuck
+21 distinct (18, 8); p95 649. CLIMB BANNED (fetch) 4 for the day
+(1 / 9 / 15 / 24), all trunk-frame under a +2 edge; FETCH STALLED
+11 (6 / 18); PROMISED CLIMB TAKEN 3. The cost, and it is the worse
+witness: CLIMB BANNED (other) 154 for the day (7 on W16-b's reach-1
+day, 0 on W2-b's, 4-7 on the reach-2 days before W16-b) -- three
+loopers: colonist 68 72 (job 745, the haul above the wall, looping
+from 10:38 to 10:49 and never arriving), colonist 54 28, colonist
+61 27. The reach-2 trunk plans the jump edge; W16-b walks the body
+to the wall beneath it instead of standing still; the physics puts
+it on_wall; the stuck timeout bans the column and releases the
+job; the same colonist re-claims it. Under the reach-1 trunk there
+was no jump edge to walk into (7 other bans), and the cost was the
+flood, once, now capped by W14-c at three asks per job. Two
+replicates of the reach-2 + W16-b day are needed before the trunk's
+reach is judged again; the b1 restart onto 5f785e2a5a (W14-c, still
+reach 2, no W6-D) under the W16-b reader is the second, and the
+W6-D day after it reads the loops capped.
+
+DECISION RULE, registered now: after one full b1 day under W6-D
+(reach 2 + W16-b + the strike): if CLIMB BANNED (other) <= 20,
+benches by banned climbs <= 15 and arrivals >= 950, the reach-2
+trunk with strikes stands; otherwise the trunk goes back to reach
+1 with W14-c as the flood's consumer (the reach-1 + W16-b day read
+bans 1, other 7, exhausts 21, arrivals 1,013), and that is not a
+flip-flop but the three-replicate comparison the loop demands.
+
+### W14-c and W2-b-r read: b2 +10 (5f785e2a5a under the W16-b reader; 10:53, hour 14)
+
+Exhausted 43 (35, 47, 30, 40 at +10 on the four pairs before), probes
+42 (29 cut_off, 13 sealed), unreachable 0, CLIMB BANNED (fetch) 0,
+other 2 (two colonists, one each), stalls 0, budgets 0, arrivals 388
+(421 at hour 13 on the W16-b pair), p95 428, starving 0; fill benches
+0 with memo refusals 3 (no end has repeated three times yet); the
+trunk witness reach=2. The day-1 block (~11:35) carries W14-c's b2
+bars and the un-confounded W15-c-b / W16-b exhaustion read.
+
+### W6-D registered (10:57): A BANNED CLIMB STRIKES THE JOB
+
+The climb loop's consumer. The stuck-timeout release of a non-self
+job with the body in Climb or on_wall bans the feet and ahead
+columns (300 s) and writes a claim penalty whose reader is behind
+`claim_penalty_enabled()` (BASTION_CLAIM_PENALTY, default OFF): a
+writer without a reader, and colonist 68 re-claimed job 745 every
+ten seconds. Mechanism: `banned_climb_strike(climbing, strikes) ->
+Option<(next, bench)>` = `job_strike` when the release was a banned
+climb, None otherwise; applied in the release arm's non-self branch
+before the release; on the bench: unreachable + "UNREACHABLE PROVEN
+-- job benched off the board (three banned climbs)" with job,
+colonist, job_pos. Self-jobs (suspended, not released) untouched;
+the fetch-lane ban (its consumer the walker shun) untouched. Pin
+`a_banned_climb_strikes_the_job`; falsifier plants the gate
+inverted. Bars: b1 other-bans per colonist-day <= 6 (58), per day
+<= 20 (61), benches >= 1 when a colonist reaches 3 and <= 15/day,
+arrivals >= 700, starving <= 1; b2 benches <= 15, other bans <= 40,
+arrivals >= 760. Falsified if a colonist's other-bans stay >= 20
+with zero benches (another release arm), if benches exceed 15
+(reachable hauls benched), or if arrivals fall > 10%. Rejected:
+switching the claim penalty's reader on (Ben's gate ruling stays
+open; the strike's consumer is already on); the whole-wall ban (a
+plot row, and still no consumer); striking every stuck timeout
+(crowd stalls and door waits would bench the board). Chain behind
+W14-c (fires at once: W14-c staged 10:33; stage ~11:25); readers
+behind the W14-c readers. The loop tally (`loop-tally.sh`) reads
+other-bans per colonist and the benches.
+
+### W2-b-r read: b1 hour 19 (d4760fa9fd, the reach-2 trunk with W16-b and W17-b aboard; 10:45)
+
+The flood: LONGEST-EXHAUST 19 by hour 20 (617 on the W2-b day, 21
+on W16-b's reach-1 day, 13 before W2-b) -- bar <= 30 PASSED;
+LONGEST-TIER lines 2,674 at hour 19 (bar <= 3,000 PASSED; 3,044 by
+hour 20); the trunk witness reach=2 in the log. The registered bar
+"whole-town floods 0" was ill-posed: every Longest-tier exhaustion
+expands the whole town (its 75,000-iteration budget exceeds the
+town's 60,696 cells), on every run before too; the count is the
+number. Top exhaust ends 4x(7742,6404,181) -- colonist 55's wall
+target from the W2-b flood, asked FOUR times today instead of
+1,675: with the jump edge planned, the body walks, is banned and
+shunned, and the pick goes elsewhere (the cheap path, as claimed).
+Arrivals 772 (790 / 733 / 736; bar >= 700 PASSED); exhausted 21 (up
+10, down 2, flat 9); stuck 4 distinct; p95 597; starving 0. The
+recorded cost: CLIMB BANNED (fetch) 4 by hour 19 (1 on W16-b's
+reach-1 day, 8 on W2-b's, 15-24 before), all trunk-frame under a
++2 edge one over (trunk_dxy 1, trunk_dz 1-2: the trunk itself holds
+the jump again), push_site chaser-refused-rock 3 / chaser-probed 1;
+FETCH STALLED 11 (4 / 12); the ledge tally 3+3 stalls and 4 bans at
+the same two ledges. And a NEW counter: CLIMB BANNED (other) 37 by
+hour 19, 61 by hour 20 (0 on W2-b's day, 7 on W16-b's), 58 of them
+colonist 68 at one column (7698,6349,181) within ten minutes: a
+live climb loop -- the ban prices the column out and the replan
+comes back to it. Named: colonist 68 holds job 745, a Haul of item
+782 to destination 79; every ten seconds the cycle is claim (ITEM
+27 material-job claim committed) -> CLIMB BANNED (the column priced
+out for CLIMB_BAN_SECS 300) -> RELEASE-DIAG class=haul reason=Other
+site=38438 -> the same job re-claimed by the same colonist -> the
+jump planned at the NEXT column of the same wall (feet x 7698 to
+7706 along y 6349, z 181). Fifty-eight cycles in ten minutes. The
+ban's only consumer is the column price, which the router answers
+with the adjacent column; the job is never struck, so nothing ends
+the loop but the day. This is the "infinite climb loop" Ben named,
+now with a witness, and it exists at reach 2 regardless of W2-b-r
+(0 on the reach-1 days because the trunk planned no jump and the
+fill search flooded instead; 4-7 on the earlier reach-2 days: the
+loop needs a haul to a destination above a wall to be claimed).
+Next row: the ban's release strikes the held job with W14-c's
+rule; three banned climbs bench it.
+
+### W17-b read: b2 day 1 (e5c4d9965d; 10:38) -- its class PASSED, the total bar missed
+
+Unreachable deliveries 8 for the day (24 on the W16-b day, 0 on the
+W15-c-b day, 12-39 on the days the class occurred): 6 open-start, 1
+boxed, 1 start-in-solid, and from_in_house 0 of 8. W17-b's own bar
+(from_in_house <= 5) PASSED at 0 against 24 the day before; the
+registered total (<= 5) missed by three, and the three-plus-five
+that remain are other classes (an open start whose target the
+search cannot reach; one boxed; one in solid). No door probe fired
+(the probe fires on the in-house class). Exhausted 758 (1,043 /
+598 / 513: W2-b still aboard), probes 67 (50 cut_off, 17 sealed),
+components start_unlabelled 34 / same 15 / target_unlabelled 10 /
+untrusted 7 / different 1. CLIMB BANNED (fetch) 3 (2 on_prev with
+rise_next Some(2) at push_site chaser-refused-rock, 1 no_prev; all
+trunk), other 1, FETCH STALLED 13 (1 on the W16-b day, 5 before:
+above the two-day band -- recorded, watched on the next b2 day),
+budgets expired 17, STALL BLAMED 4, arrivals 807 (808), starving 0,
+p95 496. The W16-b reader restarts b2 next onto 5f785e2a5a (W14-c
++ W2-b-r): that day separates W2-b's flood from W16-b's bodies on
+the exhaustion, and reads W17-b's stalls a second time.
+
+### W17-b read: b2 +10 (e5c4d9965d; 10:16, hour 13)
+
+Unreachable deliveries 7 (6 open, 1 start_solid; the day's in-house
+class comes with the night), exhausted 51 (35 at +10 on the W16-b
+pair, 47 on W15-c-b's), probes 50 (34 cut_off, 16 sealed), CLIMB
+BANNED (fetch) 1, other 1, PROMISED CLIMB TAKEN 3, FETCH STALLED 4,
+budgets expired 5, arrivals 520, p95 446, starving 0.
+
 ### W17-b read: b2 +4 (e5c4d9965d under the W15-c-b reader; 10:10, hour 10)
 
 Unreachable deliveries 2, both start=Open and from_in_house=false
@@ -2834,9 +3005,10 @@ Unreachable deliveries 2, both start=Open and from_in_house=false
 at day 1); exhausted 16, probes 16 (11 cut_off, 5 sealed; components
 untrusted 7, start_unlabelled 5, same 3); bans 0/0, stalls 1,
 budgets expired 2, arrivals 229, p95 521, starving 0.
-b1 boards this pair at the W15-c-b reader's restart (~10:25): the
-first ledge-arm read of the reach-2 trunk with W16-b aboard is that
-run's hour 19 (~11:00).
+b1 booted fresh on this pair at 10:26 under the W15-c-b reader, and
+its log carries "THE TRUNK'S REACH reach=2" (the binary names
+itself): the first ledge-arm read of the reach-2 trunk with W16-b
+aboard is that run's hour 19 (~11:00) and night (~11:20).
 
 ### W2-b-r registered (09:50): THE TRUNK PLANS THE JUMP AGAIN
 
