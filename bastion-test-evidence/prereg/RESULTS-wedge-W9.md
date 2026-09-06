@@ -3128,6 +3128,195 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### b1's W14-w2 day (18:57, pair d4523dc9f2, night 1 -> hour 6): arrivals 1,033, the best day yet; the flood's worst
+
+The W18-b reader's night block: arrivals 1,033 (875 on the W14-g
+day, 828-991 on the W18-c days: bar 900 passed), FETCH STALLED 15,
+STUCK CENSUS 13 distinct, starving sleepers 1, bobs: colonist 125
+bobbed 32 at the pit cell (7700,6303) (W18-c aboard, W18-d not: 32
+is the class W18-e caps at 16), CLIMB BANNED(other) 6 (colonist 30
+twice at (7688,6317,186): z 186 again), reclaims none, LONGEST-
+EXHAUST 807 (the b1 flood's highest count; W14-g2 boards b1 at the
+next restart and is the read), ledge stalls 15 with 9 at (7664,6432)
+(the ramp plot), p95 680 us, panics 0. W14-w2 and W14-i7 aboard: the
+day's silent benches named and floods named are in the log for the
+W14-g2 comparison.
+
+### W14-g full day on b2 (18:56, archived log to hour 9 of day 1): PASSED, and the night onset is the same as b1's
+
+The archived d4523dc9f2 log (76,349 lines, hour 7 to hour 9 of day
+1): arrivals 946 (bar 720), LONGEST-EXHAUST 71 for the whole day
+(513 / 598 / 1,043 before: W14-g's bar of half passes by 8x), END
+MOVED 19, FLOOD NAMES 16, bobs peak 1, CLIMB BANNED(other) 2,
+reclaims top 5 (colonist 70), FETCH STALLED 4, starving sleepers 37
+and 63 (both NIGHT SHELF EMPTY: the curfew's empty shelf), start
+snaps 185 -> 181: 451, mover drops from z >= 185: 26. BED CENSUS
+in_bed by hour: h22 7, h23 10, h0 12, h1 15, h2 17, h3 19, h4 22,
+h5 22, h6 2 -- the same slow onset as b1 (h0 11 ... h5 22): on both
+arms a quarter of the town is in bed at midnight and under half by
+4 am. H1-i's census reads the reason.
+
+### W17-c registered (18:54): THE MOVER STANDS WHERE THE ROUTER WALKS
+
+Mechanism: probe_landing_ok(below_solid, feet_solid, head_solid,
+routable) = the mover's triple AND routable, with routable =
+common::path::colonist_walkable(terrain, feet) at all three surface
+probes (bridge 37290, walk 37814, nudge 38678). The walk probe
+witnesses a landing the triple accepted and the router refused (THE
+MOVER STANDS WHERE THE ROUTER WALKS: uid, feet, the block or sprite
+under, count) at the first eight and powers of two and does not land
+there. In common, the Longest-tier endpoint diag gains start_snap_dz
+and, when |dz| > 2, start_under (the block or sprite under the
+requested start) -- env-gated, no behaviour. Pin
+the_mover_stands_where_the_router_walks (a floor lands; a fence top
+-- triple yes, router no -- does not; the triple's refusals stand);
+falsifier plants `(routable || true)`. Chain b1srw87tj holds on
+h1i-staged (+300 s; both halves); falsifier bls6219hu; dry tree HEAD
+1d8588199c + W18-e + W6-E + H1-i + W17-c (9 uses of the fn, 1
+start_under). Readers wait-w17c-b1/b2 (keyed on H1-i's blocks; b2
+night-safe) print a SNAP line: starts snapped > 2, start_under
+counts, router-refused landings with their surfaces, two-block mover
+drops from z >= 185 (the line read 20 on b2's archived pre-fix day).
+
+Bars (each arm's first full day): starts snapped > 2 at most 40
+(451 / 60); drops from z >= 185 at most 8 (20 / 37); the witness
+>= 1; starving sleepers unchanged or down; arrivals >= 900 / 720;
+FETCH STALLED at most 2x. Falsified if the snapped starts stay
+above 200 with the witness present (another surface class: the
+diag names it), or if arrivals fall more than 10% (the fence tops
+were load-bearing routes).
+
+### W14-g2 LANDED (18:49): 1d8588199c, both halves, marker 'THE FINISHED SEARCH IS NOT RESUMED' 3 in each exe
+
+Falsifier bsyvfg9m0: planted `true || !finished` at 18:51, the pin
+went RED (0 passed, 1 failed), 0 dirty files restored at 18:54.
+W14-g2 is red on its plant. b2 boarded it at 18:55 (the W14-g2
+reader, after the W14-g pair's night completed on the live clock).
+
+Pin the_finished_search_is_not_resumed green on the fresh compile of
+common; committed 18:36, staged 18:49:24, shipped to lab-bin 18:50
+(playable). Falsifier bsyvfg9m0 planted at +90 s (verdict recorded
+below when it prints). Both arms board it at their next reader
+restarts: b2 by the W14-g2 reader (after the W14-g pair's night
+completes on the live clock), b1 by the W14-g2 reader after the
+W18-b reader's night block.
+
+### THE START SNAP DROPS THROUGH THE FLOOR (18:48): the searches from upper floors start under them
+
+Read from b2's live log (d4523dc9f2 day) while W14-g2 built: the
+endpoint diag's start resolution for searches whose feet were at z
+185-188 -- 486 at 186 stayed at 186, but 451 at z 185 resolved to z
+181, FOUR below (b1's archived day: 60 the same; 205 from 186 to
+185). The 451 are one walker's re-asks: startf (7733,6362,185) and a
+line of cells to (7752,6345,185), all with endf (7725,6368,186) --
+colonist 37 walking a terrace at z 185 toward its bed at z 186 eight
+blocks away, every search starting from the ground under it, all
+exhausted; three exhausts benched the bed (UNREACHABLE PROVEN at
+22:31:24), and the night ended starving above an empty shelf.
+Mechanism, from the code: find_path_priced's get_walkable_z tries
+the requested cell and z 0/+1/-1/+2, then the four lateral
+neighbours, then column_near(pos, 32) -- a scan to +-16 that finds
+the ground floor through the floor. The requested cell fails the
+router's `walkable` (on_ground = a FILLED block below, or a sprite
+whose solid height is not in 0.2..=1.6 under colonist rules) while
+all three of the mover's surface probes (bastion_jobs.rs 37290
+bridge, 37814 walk, 38678 nudge) accept ANY is_solid block as
+support -- hurdle-height sprites included. GENERATOR AND CONSUMER
+DISAGREE: the mover stands bodies on surfaces the router cannot
+start a search from, and every search from there begins in the
+wrong frame. Candidate row W17-c THE MOVER STANDS WHERE THE ROUTER
+WALKS: the probes land only on colonist_walkable cells; the diag
+prints start_snap_dz and the block under the requested start when
+the snap exceeds two, so the day names the surfaces that remain.
+
+### b1 hour 19 on d4523dc9f2 (18:38) and b2's starving sleeper on an upper floor (18:43)
+
+b1 (W14-w2 pair, the W18-b reader's hour-19 block): arrivals 831
+(645 / 688 / 688 / 686 at hour 19 on the four days before: +20%),
+FETCH STALLED 14, STUCK CENSUS 2 distinct, bobs peak 1, CLIMB
+BANNED(other) 0, starving 0, LONGEST-EXHAUST 598 (b1's flood stands
+until W14-g2). b2 at hour 4 of the W14-g day: starving 1 -- colonist
+37, hunger 0.00 since hour ~1, RestAt to the bed at (7724,6369,186),
+Traveling; NIGHT SHELF EMPTY x15 (home (7714,6360,180), present 0,
+units 0, verdict Empty, night_no_food 1024) -- the curfew's empty
+shelf (E2's class) again. Its path: at hour 22 it stood at
+(7595,6355,185), an upper floor, its search to (7603,6251,181)
+exhausted and refused 4,096 times by the memo; the rest preempt at
+22:27 sent it to a z 186 bed 116 blocks away; CHASER GLIDE OVERRIDE
+walked it at (7608,6364,186) toward a refused node at z 181; one
+MOVE ASSIST, one STUCK CENSUS. A colonist that climbed to z 185-186
+and cannot come down, starving above an empty shelf: the upper-floor
+class has a witness on b2 as well as b1 (961's bed at z 186, 132's
+at z 186). H1-i's census now also prints the feet-z histogram and
+the farthest walkers' feet (fix-h1i.py amended 18:45 before its
+chain fires) so the night read names how many bodies sit upstairs.
+
+### W14-g day 1 on b2 (18:36, pair d4523dc9f2): THE FLOOD IS GONE ON b2 -- 24 exhausts against 513-1043
+
+The W14-g b2 reader's day-1 block (read at hour 0 of day 1, the
+premature key; see the reader fix below): LONGEST-EXHAUST 24 (all
+whole-town) against 513 / 598 / 1,043 on the three b2 days before,
+top ends (7742,6404,181) x15, (7725,6368,186) x4; END MOVED 18 (the
+restart witness); arrivals 735 by hour 0 (the b2 bar 720 for the
+full day, passed early); FETCH STALLED 4; starving sleepers 1 (uid
+at the night shelf: NIGHT SHELF EMPTY 13 lines); bobs peak 1; CLIMB
+BANNED(other) 0; reclaims: one colonist once; p95 619 us; panics 0.
+So b2's flood WAS the moved-goal class (the pump's pick cell and the
+snap column move under a retained search) and W14-g closes it; b1's
+584 on the same row is the finished-search class W14-g2 is built for.
+The W14-g b2 bar (LONGEST-EXHAUST at most half the previous day's
+598) PASSES by 24x. Recorded against W14-g: PASSED on b2; the b1 day
+is the W14-g2 read.
+
+### The b2 readers keyed the day on the YEAR CENSUS line (18:42): fixed before the next restart
+
+The W14-g b2 block printed "day 1" at hour 0 -- the reader template
+waits for `YEAR CENSUS day=N`, the very trap the day-line memory
+names, and the next reader's restart would cut every b2 night at
+hour ~2 (H1-i's census needs hours 21-6). The three unfired b2
+readers (W18-e, W6-E, H1-i) were killed by their pid files, patched
+(the day-N block waits for `hour>=6 game_day=N` on the DAY SCHEDULE
+clock; after keying on the previous reader's block they also wait
+for hour 6 of day 1 in the live log before restarting) and
+relaunched 18:43. The W14-g2 b2 reader (already running, unpatched)
+restarts b2 only after its own stage (~19:00), by which time the
+W14-g pair's night is complete on the live log. Desktop probe #10 at
+18:38: 0x0 (locked).
+
+### H1-i registered (18:36): THE NIGHT CENSUS NAMES THE AWAKE -- an instrument, no behaviour change
+
+Half the town is not in bed at night on both arms (the BED CENSUS
+plateaus at 22-24 of 50; b1's onset takes six game hours) and the
+log cannot say what each awake colonist is doing (the EXPERIENCE
+census has no kinds; the EAT CENSUS skips are per scan pass across
+all needs). The schedule's Sleep block (22-5) says rest is wanted
+regardless of the meter, but the arbiter's rest preempt is need-gated
+(interrupt 0.2 at 0.000646/s decay: rested at dawn reaches it near
+22:30; a napper never does); the night watch is the exception; a
+suspended bed job is reclaimed and lost (W6-E); far walkers never
+arrive (961). Instrument before the hypothesis: night_class(watch,
+holds_rest, arrived, bed_held, has_job) -> Watch | InBed | ToBed |
+BedHeld | Working | Idle; night_census_hour(h) = h >= 21 || h <= 6;
+on the BED CENSUS cadence, once per game hour (a static last-hour),
+one NIGHT CENSUS line: roster, the six counts, untired (no bed job,
+not the watch, rest >= interrupt), rest_min/mean, the working kinds
+(top six by variant name) and the three farthest walkers to bed
+(uid, distance, stuck clock, state). Pin
+the_night_census_classifies_the_awake; falsifier plants the arrived
+arm away (a walker counted in bed). Chain (holds on w6e-staged) and
+falsifier launched 18:37; dry tree HEAD 1d8588199c (W14-g2
+committed 18:36, building) + W18-e + W6-E + H1-i (8 uses).
+
+Bars (each arm's first night): a line at every hour 21..6; in_bed
+within 2 of the BED CENSUS at the same hour (the new instrument
+validated against the old); the six counts sum to the roster on
+every line. The read decides the next row: `untired` dominant -> the
+Sleep block is not reaching the arbiter (a curfew row, Ben's HUMAN
+HOURS ruling); `to_bed` + far dominant -> the bed distance and
+routes (housing); `working` with Haul/Cook -> the shift end is not
+honoured at night. Readers wait-h1i-b1/b2 (keyed on W6-E's blocks)
+print the ten lines in each night block.
+
 ### W6-E registered (18:20): A BANNED CLIMB STRIKES THE HELD JOB TOO -- the reclaim cap gets its producer
 
 Read from the archived b1 log of the W14-g day (a468786d41): colonist

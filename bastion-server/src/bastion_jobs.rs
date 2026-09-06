@@ -9622,6 +9622,21 @@ pub(crate) static SUPPER_YIELDS: core::sync::atomic::AtomicU64 = core::sync::ato
 
 pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
 
+/// ★ W18-e pinned: THE BOB IS A STALL. A body that has dropped two blocks at
+/// the same cell this many times inside the bob window is stalled whatever
+/// its stuck clock says (colonist 132: 256 bobs at (7700,6303) with the clock
+/// at 0.033 s -- no assist, no re-plan; the per-tick distance check reset it
+/// every lift). At the count the mover sets the walker's stuck_time to the
+/// timeout and the stall's consumers act.
+pub(crate) const BOB_STALL_COUNT: u32 = 16;
+
+pub(crate) fn bob_is_a_stall(bobs: u32) -> bool {
+    bobs >= BOB_STALL_COUNT
+}
+
+/// ★ W18-e: the witness count.
+pub(crate) static BOB_STALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W18-b / W18-b2 pinned: THE BODY DOES NOT DROP INTO A CELL IT CANNOT
 /// LEAVE -- AND THE DROP INTO THE OPEN IS ALLOWED. A two-block drop is
 /// refused only when its landing is a CLOSED basin: the walk over standable
@@ -42648,6 +42663,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if bob_repeats(last, cell, tick.0) {
                             let n = board.bob_count.entry(u).or_insert(0);
                             *n += 1;
+                            let bobs_now = *n;
                             if n.is_power_of_two() {
                                 info!(
                                     uid = u.0.get(),
@@ -42659,6 +42675,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     stuck_time = ?active_jobs.get(entity).map(|a| a.stuck_time),
                                     "bastion: THE BODY BOBS — the mover dropped this body two blocks at the same cell again within thirty seconds (W18-i)"
                                 );
+                            }
+                            // ★ W18-e: THE BOB IS A STALL -- at the count, the
+                            // walker's stuck clock is set to the timeout so the
+                            // release, shun and strike consumers act, whatever
+                            // reset path was open.
+                            if bob_is_a_stall(bobs_now)
+                                && let Some(aj) = active_jobs.get_mut(entity)
+                                && aj.stuck_time < STUCK_TIMEOUT
+                            {
+                                aj.stuck_time = STUCK_TIMEOUT;
+                                let k = BOB_STALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if k <= 8 || k.is_power_of_two() {
+                                    info!(
+                                        uid = u.0.get(),
+                                        ?cell,
+                                        bobs = bobs_now,
+                                        job = aj.job,
+                                        stalls = k,
+                                        "bastion: THE BOB IS A STALL — sixteen two-block drops at one cell inside the window; the stuck clock is set to its timeout (W18-e)"
+                                    );
+                                }
                             }
                         } else {
                             board.bob_count.insert(u, 0);
@@ -56971,6 +57008,15 @@ mod tests {
         assert!(!reservation_yields_to_owner(true, "haul"), "a claimed haul stands");
         assert!(!reservation_yields_to_owner(false, "eat"), "an unclaimed eat stands");
         assert!(!reservation_yields_to_owner(false, "deposit"), "an unclaimed deposit stands");
+    }
+
+    /// ★ W18-e pinned: fifteen bobs are not a stall, sixteen are, and so is
+    /// every count after. Planted defect: the count out of reach -> red.
+    #[test]
+    fn the_bob_is_a_stall() {
+        assert!(!bob_is_a_stall(0) && !bob_is_a_stall(15), "under the count: the clock's own business");
+        assert!(bob_is_a_stall(16), "the sixteenth drop at one cell inside the window: a stall");
+        assert!(bob_is_a_stall(256), "and every one after");
     }
 
     /// ★ W18-d pinned: a first or distant lift resets the clock; a lift
