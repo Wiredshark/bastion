@@ -914,6 +914,29 @@ two sleepers on one bed, or a housemate standing beside it. Read
 below before it is named (B7-2 assigns beds to sleepers; a shared
 bed would be a defect of that row).
 
+### E2-j-b landed (230257dddd, staged 19:53)
+
+Check clean, the pin green, both halves staged 19:53 and shipped to
+lab-bin 19:53. The row has no witness string of its own (a pure
+ordering change); the binary carries W13's string and the pair's
+lineage, and the behaviour is read live. The falsifier (the reach
+unbounded) went RED at 19:56, the tree restored clean. The b2
+reader restarts b2 after W12-b-b's day-1 read and reads the evening
+walk, the queue and night 1.
+
+### The W13 pair's night 1 on b1 (21edda27ad, read 20:00 at hour 6 of day 1; one-off, no E2 row new since E2-g-c)
+
+The one-cell store (W12-b, in this pair) reaches the supper: SUPPER
+ROUND loads 30, skipped_no_small 20 (E2-h's skip: a single 12,000-
+unit pile has no small stack), arrivals to private shelves 27,
+SUPPER CARRIED HOME 8, NIGHT MEAL AT HOME 3, no_food_found 1,387,
+distinct starving sleepers 6. The night's samples: at hours 20-3
+every census sees three starving bodies -- one RestAt/Waiting (the
+bed queue, E2-m's), one RestAt/Traveling, one in bed -- 7-8 samples
+an hour each; hour 4 sends 15 eaters out. The same shape as E2-g-c's
+night 2, on the pair that also carries W12-a, W12-b and W13; the
+wedge rows did not change the night. E2-l and E2-m read next on b1.
+
 ## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
 
 THE QUEUE IS FOR THE SAME ANCHOR. The anchor queue (the eat queue's

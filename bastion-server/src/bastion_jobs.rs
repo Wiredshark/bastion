@@ -10079,6 +10079,10 @@ pub fn deposit_chunks(amount: u32, cap: u32) -> Vec<u32> {
 
 pub(crate) static DROP_CELLS_SPREAD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub(crate) static DROP_CELL_FILTER_VOIDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// ★ W12-c: how far above the resolved surface the drop cell may lift to
+/// find a standable cell (a plank floor is one; a raised platform a few).
+pub const DROP_CELL_LIFT_MAX: i32 = 6;
+pub(crate) static DROP_CELLS_LIFTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// ★ W12-b pinned: THE DROP CELL SPREADS FROM THE CENTRE OUT, NOT FROM THE
 /// CORNER IN. A candidate must be standable; among the least filled the
@@ -10090,15 +10094,44 @@ pub(crate) fn stockpile_drop_cell_spread(
     standable: impl Fn(Vec3<i32>) -> bool,
     r: &Region,
 ) -> Vec3<i32> {
-    let centre = stockpile_drop_cell_impl(&surface_z, r);
+    // ★ W12-c: THE DROP CELL STANDS ON THE FLOOR, NOT UNDER IT -- the
+    // surface resolves through Wood (a roof), so under a plank floor it is
+    // the ground beneath the floor and surface + 1 is the plank. The drop
+    // cell is the first standable cell above the surface; surface + 1 when
+    // none is (identity).
+    let lift = |x: i32, y: i32, sz: i32| -> i32 {
+        (sz + 1..=sz + DROP_CELL_LIFT_MAX).find(|z| standable(Vec3::new(x, y, *z))).unwrap_or(sz + 1)
+    };
+    let centre = {
+        let c = stockpile_drop_cell_impl(&surface_z, r);
+        Vec3::new(c.x, c.y, lift(c.x, c.y, c.z - 1))
+    };
     let mut surface_cells: Vec<(u32, Vec3<i32>)> = Vec::new();
+    let mut lifted = 0u32;
     for y in r.min.y..=r.max.y {
         for x in r.min.x..=r.max.x {
-            if let Some(sz) = surface_z(x, y, r.min.z)
-                && sz + 1 <= centre.z + SPREAD_MAX_RISE
-            {
-                surface_cells.push((occupancy(x, y), Vec3::new(x, y, sz + 1)));
+            if let Some(sz) = surface_z(x, y, r.min.z) {
+                let lz = lift(x, y, sz);
+                if lz != sz + 1 {
+                    lifted += 1;
+                }
+                if lz <= centre.z + SPREAD_MAX_RISE {
+                    surface_cells.push((occupancy(x, y), Vec3::new(x, y, lz)));
+                }
             }
+        }
+    }
+    if lifted > 0 {
+        let n = DROP_CELLS_LIFTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        if n <= 8 || n.is_power_of_two() {
+            info!(
+                region_min = ?r.min,
+                centre = ?centre,
+                lifted,
+                surface = surface_cells.len(),
+                lifts = n,
+                "bastion: DROP CELLS LIFTED ONTO THE FLOOR — the surface lay under a floor; the drop cells stand on it"
+            );
         }
     }
     // ★ W12-b-b: A FILTER THAT EMPTIES THE STORE IS VOID -- on the live
@@ -55243,6 +55276,20 @@ mod tests {
         assert_eq!(stockpile_drop_cell_spread(flat, centre_full, only_east, &zone), Vec3::new(3, 2, 6), "a filter admitting one cell: that cell");
         let none = |_x: i32, _y: i32, _h: i32| None;
         assert_eq!(stockpile_drop_cell_spread(none, centre_full, |_| false, &zone), stockpile_drop_cell_impl(none, &zone), "no surface at all: the centre");
+    }
+
+    /// ★ W12-c pinned: a plank at surface + 1 lifts the drop cell to surface
+    /// + 2 (the centre too); bare ground keeps surface + 1; nothing
+    /// standable within reach keeps surface + 1 (identity). Planted defect:
+    /// the lift ignored -> red.
+    #[test]
+    fn the_drop_cell_stands_on_the_floor() {
+        let zone = Region { min: Vec3::new(0, 0, 5), max: Vec3::new(4, 4, 5) };
+        let flat = |_x: i32, _y: i32, _h: i32| Some(5);
+        let plank = |c: Vec3<i32>| c.z == 7;
+        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, plank, &zone), Vec3::new(2, 2, 7), "a plank floor: the cell above it");
+        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, |_| true, &zone), Vec3::new(2, 2, 6), "bare ground: surface + 1");
+        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, |_| false, &zone), Vec3::new(2, 2, 6), "nothing standable: surface + 1 as before");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable

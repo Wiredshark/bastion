@@ -1489,6 +1489,43 @@ stuck 0, panics 0. The store spreads and the corner stays gone; the
 pump has been slower on every pair since W12-b (W12-b-b's +10 and
 W12-c's read say whether the plank floor is that too).
 
+W12-b-b +10 on b2 (read 19:41, hour 14 of day 0): FILTER VOIDS 15
+(every call); DROP CELL SPREAD from the centre out (dist2 1..169);
+founding cells 24, DepositRun job_pos 51 distinct; general_max_cell
+128; EMBED WATCH 0 (W12-a's +10: 12; W12-b's: 4; W13's: 2); GLIDE
+HELD 0; snaps 32,768; unreachable 3 of 342 (open 2; two NoDoor
+probes, the upstairs window); FIRST LEG GATE 7 of 8; arrivals 333;
+pump pending 34, mean wait 105, max 225; stuck 0, panics 0. So the
+row's own bars hold at +10 (the store spread, the corner gone, the
+pile gone) with the void still fired every call (W12-c's).
+
+THE DECIDER FOR W13's ARRIVALS BAR: 333 with the store spread. The
+arrivals at +10 on b2 by pair: W12-a 502, W12-b 437 (the pile),
+W13 301 (pile and snap), W12-b-b 333 (spread and snap); b1's W13
+471 against a 527-617 baseline. The pile is not the cause; the snap
+is. W13's clause ("arrivals under 350: the snap holds bodies at
+edges") FIRED on both b2 replicates. The likely mechanism, read
+next: the arrive test measures the body against the on-top target
+(cell + 1, one above the standable cell), which the line's z used
+to float the body up to; the snapped body stays on the floor, one
+block under the target, and does not arrive. If so W13 is right
+about the walk and wrong about the arrive, and the companion row
+(the arrival is measured on the floor) goes in before W13 stays.
+
+W12-b-b day 1 on b2 (read 19:58 at hour 0 of day 1; the reader's
+block was cut at its sixth line by the E2-j-b reader's takeover,
+the rest recovered from the rolled log): the row's bars -- DepositRun
+job_pos 59 distinct (bar at least 8), general_max_cell 380 (under
+600), founding cells 24 (at least 15), the corner 0, the void
+witness firing every call with surface 752 / standable 0 -- ALL
+PASSED; W12-b-b stands. The day beside it: arrivals 497 (W12-a's b2
+day 1: 729; W12-b's: 675; W13's b1 day: 772), EMBED WATCH 0 all
+day (W12-a: 18), STALL BLAMED 4, unreachable 6, exhausted 677 (W12-a
+761), works 147 (the day-0 line; W12-a's b2 day-0 works 252), no
+panic. So on b2 the snap's arrivals cost holds at the day scale
+(-32%) while the embeds are gone; W13-b's read decides whether the
+lift alone keeps the embeds off without the cost.
+
 ## W12-c, registered 19:36 (keyed on the E2-j-b stage; ahead of E2-l and the rest)
 
 THE DROP CELL STANDS ON THE FLOOR, NOT UNDER IT. `column_surface_z`
@@ -1514,6 +1551,39 @@ offset; a walkable-only scan from the top. NOT evidenced: the four
 other stores' floors; the haul re-aim's cells. The E2-l chain and
 reader were re-keyed behind this row; the dry tree was rebuilt in
 the order E2-j-b, W12-c, E2-l, E2-m, E2-k, E2-i2, W12-a-b, W15-i1.
+
+W13 day 1 on b1 (read 19:51, hour 0 of day 1): EMBED WATCH 9 (bar
+under 12; W11-b's day 18, W10-g's 11) -- PASSED, all chaser-pure-
+glide, most at the store rows' z (181.96, 180.0x: the plank, W12-c);
+STALL BLAMED 5, ROUTE FAULT 4; arrivals 772 by day 1 (W12-a's b2
+day 1: 729) -- the +10 deficit closed over the day on this arm;
+unreachable 0 of 447; FIRST LEG GATE 119 of 128; snaps 65,536;
+stuck 0, starving 3 at midnight, panics 0; the day's works 446
+(E2-g-c's 444). So on b1 W13 passes its day bars and the arrivals
+question is left to W12-b-b's b2 day 1 and W13-b's read.
+
+## W13-b, registered 19:48 (keyed on the W12-c stage; ahead of E2-l and the rest)
+
+THE GLIDE RISES TO THE FLOOR AND NEVER SINKS TO IT. W13's snap set z
+to the floor whether the line was above or below it; the embeds
+came only from lines under the floor, and the lowering cost a third
+of the arrivals (b2 +10: 502 -> 301 with the pile, 333 with the
+store spread; b1 471 against 527-617). The arrive test (3D, 2.5
+blocks against the on-top target) is not the reason: a body one
+block under the target still arrives. Now `glide_snap_z` = (x, y,
+max(line z, floor z)); a line above the floor keeps its z. Pin
+re-stated (a floor above lifts; a floor below leaves the line);
+planted: the snap lowering again, red. Prediction (b2 fresh,
+`wait-w13b-b2.sh`, after E2-j-b's night-1 read; +10 and day 1):
+arrivals at +10 at least 450 (301, 333); pure-glide embeds at most
+2 by +10 and 4 by day 1; pump mean wait under 70 (104); GLIDE HELD
+0; stuck 0. Falsified if arrivals stay under 400 (W13 comes out
+whole), or the pure-glide embeds return above 4 by +10. Rejected:
+W13 out whole before this read; a tolerance band around the floor.
+NOT evidenced: b1; day 2. The E2-l chain was re-keyed behind this
+row and the W12-a-b reader behind its day 1; the dry tree was
+rebuilt in the order E2-j-b, W12-c, W13-b, E2-l, E2-m, E2-k, E2-i2,
+W12-a-b, W15-i1.
 
 ## W12-a-b, registered 18:32 (keyed on the E2-i2 stage, the end of the queue)
 
