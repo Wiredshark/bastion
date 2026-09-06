@@ -17695,8 +17695,16 @@ pub(crate) static SEARCH_TARGETS_MOVED: std::sync::atomic::AtomicU64 = std::sync
 /// whose cell below is standable stands as it always did; only a target
 /// whose own column cannot be stood on is moved.
 pub(crate) fn search_stand(target: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> bool) -> Vec3<i32> {
-    if standable(target) || standable(target - Vec3::unit_z()) {
+    if standable(target) {
         return target;
+    }
+    // ★ W12-a-c: the search aims one below an on-top target. The router's
+    // goal is the exact end cell and a body cannot stand in the target
+    // itself; W12-a-b kept the target for the arrival check's sake and 44
+    // of 65 probed exhausted searches (75,000 expansions each) were aimed
+    // at exactly such a cell over a standing one.
+    if standable(target - Vec3::unit_z()) {
+        return target - Vec3::unit_z();
     }
     for r in 1..=SEARCH_STAND_REACH {
         for dx in -r..=r {
@@ -55908,12 +55916,19 @@ mod tests {
         // ★ W12-a-b-p: the on-top case must offer a COMPETING ring cell, or the
         // fallback (nothing found: the target) answers the same and the pin
         // cannot tell the rule from its absence (the plant stayed green at
-        // b6b78b96d1). With one below AND one east standable, the rule
-        // answers the target; the ring alone answers the east cell.
+        // b6b78b96d1). ★ W12-a-c: with one below AND one east standable, the
+        // rule answers the cell BELOW (the search aims one below the on-top
+        // target); the ring alone answers the east cell; the old rule the
+        // target itself, which no body can stand in.
         assert_eq!(
             search_stand(t, |c| c == t - Vec3::unit_z() || c == t + Vec3::new(1, 0, 0)),
-            t,
-            "one below and one east stand: the on-top target stands, not its east neighbour (W12-a-b)"
+            t - Vec3::unit_z(),
+            "one below and one east stand: the search aims one below the on-top target (W12-a-c)"
+        );
+        assert_eq!(
+            search_stand(t, |c| c == t - Vec3::unit_z()),
+            t - Vec3::unit_z(),
+            "one below stands alone: the search aims one below"
         );
         assert_eq!(search_stand(t, |c| c == t + Vec3::new(1, 0, 0)), t + Vec3::new(1, 0, 0), "one east stands");
         assert_eq!(search_stand(t, |c| c == t + Vec3::new(0, -2, 1)), t + Vec3::new(0, -2, 1), "two south, one up, in the second ring");

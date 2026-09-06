@@ -1377,6 +1377,38 @@ load, then the never-free non-watch eater. E2-p (the watch's
 walk-home hour in his own frame) is the next behaviour row; a
 second sweep read on W15-i2's pair is armed for the replicate.
 
+### E2-l-i second read (b1, the W15-i2 pair a6fa8fe2ee, after its night-1 block, read 02:51): the watch again, and a second class
+
+54 loads, SWEPT 19, all 19 named, no eater missing. By verdict:
+walk_home_hour_false 7 -- every one a night watchman (31 Cook,
+42 Craft, 37 Guard, 62 Farm twice, 78 Farm, and one more), doors
+opened 51-250 times each and refused every pass; claimed 6 (44,
+76, 75, ...): the load was the best on its eater's last pass and
+was claimed, then released unclaimed before the sweep;
+never_free 5 (43 Build, 25 Build, 49 Guard, ...): the door never
+opened; unreachable_job 1. Night watch 7 of 19 (4 of 7 the night
+before). The night: meals 72, no_food_found 275, distinct starving
+sleepers 0 (0 the night before). Two replicates now say the same:
+the watch's refused hour is the largest leak (E2-p, landed 02:49,
+is its answer); the claimed-then-released load is the second (6
+and 1: E2-q's question -- who releases it, a preempt, the haul
+gate at shift end, or the eater's own need); the never-free eater
+the third (the door never opened: the eater held a job through
+its leisure -- Build twice, Guard -- and the sweep line does not
+name the job, an instrument refinement). Traced on the log: the
+six claimed loads were claimed by their own eaters (44, 75, 61,
+70, 80, ...) and released by "Personal entry releases the held
+work job" (class haul, reason Other) -- the eater's own need
+entering (the supper line at 20-21 raises hunger to a candidate)
+drops the haul it is carrying; the items stay in the eater's pack
+(carried), the job is swept, the shelf never gets the load, and
+the eater eats from the pack. Nobody among them starved (0
+starving sleepers on this night). Disposition of E2-q: PARKED --
+the outcome for the eater is a meal from the pack, not a hunger;
+the cost is a shelf left bare for a household of one. It becomes
+a row if a shared household's second sleeper is found starving
+beside a bare shelf whose load sits in a housemate's pack.
+
 ## E2-p, registered 02:20 (keyed on the W14-b1 stage; the queue's end)
 
 THE WATCH CARRIES ITS SUPPER BEFORE THE SHIFT. From E2-l-i's
@@ -1410,6 +1442,17 @@ a watchman, or his loads sweep as never_free with the hour fixed
 (he is not job-free at 20-21), or the total swept rises above 12.
 NOT evidenced: uid 110's never_free loads; the claimed-then-
 released load; night 2; b2.
+
+### E2-p landed (105f775a97, staged 02:49)
+
+Check clean, the re-stated pin green (the watch's 20-21 true, its
+16, 19 and 12 false; the default's 6-7 true, 12-13 and 22, 3
+false), both halves staged 02:49. The b1 reader restarts b1 after
+W14-b1's night-1 block and reads the E2 night set and the sweep's
+named eaters. Falsified: the forward walk refused planted at
+105f775a97, the pin RED at 02:54 on "watch, town hour 20: the
+pre-shift leisure is the walk home", the tree restored clean.
+Shipped to lab-bin 02:50.
 
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 

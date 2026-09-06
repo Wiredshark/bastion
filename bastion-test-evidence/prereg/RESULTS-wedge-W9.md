@@ -1997,6 +1997,74 @@ called sealed planted at a6fa8fe2ee, the pin RED at 02:09 on "the
 frontier never came near", the tree restored clean. Shipped to
 lab-bin 02:05.
 
+### W15-i2 read at hour 19 (b1 fresh on a6fa8fe2ee, read 02:34): the probe names two thirds of the exhausted searches as aimed one above a standing cell
+
+65 probes by hour 19 of day 0, every one with a closest node
+(unknown 0: the stash agrees with the outcome; the reader's class
+grep missed the quoted field, the log tallied by hand). By class
+and target: 44 target_unwalkable with target_walk (false, true,
+false) -- the target cell is not a standing cell, the cell below it
+is; 13 sealed and 8 cut_off with a walkable target, (true, false,
+false). The 44 aim at store cells at z 183 over standing cells at
+z 182 (the main store's 7662-7667, 6362-6367; zone 61's 7791-7793,
+6365-6367) from starts five to forty blocks away; the frontier's
+closest node stopped 2-15 blocks short in xy at z 182 (histogram
+of closest_xy: one under 1.5, four under 3, twenty-one under 8,
+eighteen beyond). The router's goal is the exact end cell
+(`satisfied = |node| node.pos == end`), and no node can stand in
+the end cell, so these searches never close; W12-a-b (the on-top
+target stands) kept exactly this target for the search. The
+deliveries arrive by the trunk and the glide, which never ask the
+fill. The ring strings all read '~' (air over air at z 183): the
+probe reads the target's own row, one above the floor, which is
+the finding restated. Disposition: the instrument PASSED (every
+probe classed, no unknown) and named the row: W12-a-c, the search
+aims one below the on-top target. The sealed 13 and cut_off 8
+(walkable targets, the frontier near or far) are the interior
+gate's or the door's territory, read after W12-a-c lands.
+
+W15-i2 at night 1 (read 02:50, hour 6 of day 1): 68 probes over
+the day -- 44 target_unwalkable (the on-top target), 13 sealed, 11
+cut_off (tallied by hand from the log; the reader's class grep
+misses the quoted field). Unknown 0. The pair's longest-tier
+steps by day 1: 1,857 -- against 77,947 on the W14 pair the day
+before and 46,545-82,331 on the pairs before that: nobody was
+stranded under the raised road today (the top pair there, 7721,
+6355 to 7721,6354,185, took 201 steps; on the W14 pair one walker
+took 14,791), and the day's search load is what a town without a
+stranded walker costs. THE SEARCH IS NOT ASKED TWICE 8,192 by
+night 1, two walkers named, both arrived after; pump mean wait 59,
+pending at midnight 31; arrivals 717; stuck 0; panics 0. The
+stranded walker is a one-in-two event per day on this arm --
+W14-b1's read (the third replicate, the key fixed) says whether
+the memo holds it when it happens.
+
+## W12-a-c, registered 02:42 (keyed on the E2-p stage; the queue's end)
+
+THE SEARCH AIMS ONE BELOW THE ON-TOP TARGET. `search_stand` returns
+the target when standable, the cell BELOW when that is standable
+(the on-top case), else the ring search; one branch changed, the
+arrival check untouched (it tolerates the offset by the ruling).
+SEARCH TARGET MOVED counts the on-top moves again (it fell 4,096
+to 512 under W12-a-b; the rise back is the fix working). Pin
+`the_search_aims_at_the_stand_not_the_stone` re-stated: one below
+and one east -> the cell below; one below alone -> the cell below;
+planted: the on-top branch returning the target, red on both.
+Prediction (b2 fresh at the stage, `wait-w12ac-b2.sh`, +10 and day
+1, with W15-i2's probe aboard): probed searches with target_walk
+(false, true, false) at most 5% (44 of 65 on b1); exhausted
+deliveries by day 1 at most 200 (572 a day under W12-a-b);
+pump mean wait at midnight under 40 (50-55); arrivals by day 1 at
+least 550 (641); unreachable at most 3; stuck 0. Falsified if the
+on-top class stays above a fifth of the probes, or exhausted
+deliveries stay above 400 with the on-top class gone (the sealed
+and cut_off classes are the bulk), or arrivals fall under 500.
+Rejected: a goal tolerance in the router (vanilla, beyond the
+colony); moving the target at the job (the arrival check and the
+witness read the on-top cell by the ruling); trusting the trunk.
+NOT evidenced: the sealed and cut_off classes; b1's next pair. Dry
+tree from HEAD 105f775a97 (E2-p).
+
 ## W14-b1, registered 02:00 (keyed on the W15-i2 stage; the queue's end)
 
 THE MEMO KEYS ON THE JOB'S TARGET. From W14's hour-19 read: the
