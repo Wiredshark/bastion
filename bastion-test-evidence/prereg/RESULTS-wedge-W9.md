@@ -1562,6 +1562,31 @@ stuck 0, starving 3 at midnight, panics 0; the day's works 446
 (E2-g-c's 444). So on b1 W13 passes its day bars and the arrivals
 question is left to W12-b-b's b2 day 1 and W13-b's read.
 
+### W12-c landed (8f1bd71ae6, staged 20:15)
+
+Check clean, the pin green, both halves staged 20:15; the binary
+verified by its witness string ("DROP CELLS LIFTED ONTO THE FLOOR"
+present once), shipped to lab-bin 20:15. The falsifier (the lift
+ignored) went RED at 20:18, the tree restored clean. The b1 reader
+restarted the 160-day arm at 20:16; at boot the founding deliveries
+landed at z 182 (every previous pair: 181) and the store's biggest
+cell read 144. +4, +10 and day 1 follow; W13-b's chain fires five
+minutes after this stage.
+
+W12-c +4 on b1 (read 20:20, hour 11 of day 0), against the bars:
+the void witness 0 (every call before) -- PASSED; DROP CELLS LIFTED
+15 lines, the general store lifted 698 of 1,005 surface cells (the
+rise cap admits more cells once lifted; the 307 unlifted are bare
+ground at the edges) -- PASSED; DELIVERED z 182 on all 25 founding
+cells (181 before) -- PASSED; DepositRun job_pos z 182 on all 69 --
+PASSED; embeds at the store rows 0, EMBED WATCH 0 -- PASSED;
+general_max_cell 144 -- PASSED. Beside them: the pump's mean wait
+41 ticks (W12-b-b's +4: 73; W12-a's: 33) and pending 14 -- the
+plank was the pump's cost; arrivals 279 (b1 baseline 209-335 at
++4); unreachable 0 of 165; stuck 0; panics 0. The search targets in
+the store now read z 183 (the on-top convention over the lifted
+cell; W12-a moves them one down until W12-a-b lands).
+
 ## W13-b, registered 19:48 (keyed on the W12-c stage; ahead of E2-l and the rest)
 
 THE GLIDE RISES TO THE FLOOR AND NEVER SINKS TO IT. W13's snap set z
@@ -1584,6 +1609,31 @@ NOT evidenced: b1; day 2. The E2-l chain was re-keyed behind this
 row and the W12-a-b reader behind its day 1; the dry tree was
 rebuilt in the order E2-j-b, W12-c, W13-b, E2-l, E2-m, E2-k, E2-i2,
 W12-a-b, W15-i1.
+
+## W15, written 20:24 and HELD (launches only if W15-i1's night count says the exhausted searches go up)
+
+THE TOP STEP UNDER THE SLAB. The house staircase
+(`Primitive::Ramp`, inset storey, rise storey + 1) paints heights 1,
+2, 3, 4, 5 by cell -- five 1-up steps ending under the floor slab of
+the storey above -- and the router (common/src/path.rs) admits a
+1-up only when the cell two above the ORIGIN feet is free, a jump's
+clearance; the top step is refused and no route reaches the
+bedroom storey. `stair_step_under_slab(dz, colonist_rules)`: a
+colonist's 1-up (the scramble_reach discriminator that already
+scopes the town's window and fence rules) is admitted on the
+destination's headroom alone; vanilla walkers keep the jump rule;
+2-ups keep their clearances; the flood's symmetric admission is
+untouched. Pin `the_top_step_under_the_slab` in veloren-common;
+planted: the stair rule refusing, red. Prediction (b1 fresh after
+W15-i1's night-1 read; night 1): exhausted at hours 21-3 at least
+60% below W15-i1's night with exhausted_up under 30%; NIGHT MEAL AT
+HOME at least twice; RestAt/Traveling starving at 0-3 at most half;
+EMBED WATCH by day 1 at most 6 with no upstairs entries; ROUTE FAULT
+at most 4; arrivals not below. Falsified if the night's exhaustions
+stay within 30% (the slab is not the refusal) or arrivals fall by a
+fifth. Rejected: raising scramble reach; carving the slab; a
+colonist jump. The chain, falsifier and b1 reader are derived and
+dry-run (path.rs); they launch after W15-i1's read, not before.
 
 ## W12-a-b, registered 18:32 (keyed on the E2-i2 stage, the end of the queue)
 

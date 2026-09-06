@@ -2063,9 +2063,13 @@ pub(crate) enum CommittedGlide {
 /// and the line's z when it is not (identity: a body never waits on a
 /// probe). On a step down the body stays on the upper floor until its xy
 /// crosses the edge; on a step up it climbs the riser as it reaches it.
+/// ★ W13-b: the snap only RAISES -- a line below the floor (the dip before
+/// a step-down edge, the lag under a riser) is lifted to it; a line above
+/// the floor keeps its z, as the old glide did (W13's lowering cost a third
+/// of the arrivals on three replicates).
 pub(crate) fn glide_snap_z(try_pos: Vec3<f32>, surface_z: Option<f32>) -> Vec3<f32> {
     match surface_z {
-        Some(gz) => Vec3::new(try_pos.x, try_pos.y, gz),
+        Some(gz) => Vec3::new(try_pos.x, try_pos.y, try_pos.z.max(gz)),
         None => try_pos,
     }
 }
@@ -55256,8 +55260,8 @@ mod tests {
     #[test]
     fn the_glide_follows_the_surface() {
         let line = Vec3::new(10.5, 10.5, 181.4);
-        assert_eq!(glide_snap_z(line, Some(182.0)), Vec3::new(10.5, 10.5, 182.0), "a known floor: the body stays on it");
-        assert_eq!(glide_snap_z(line, Some(181.0)), Vec3::new(10.5, 10.5, 181.0), "a lower floor past the edge: the body drops to it");
+        assert_eq!(glide_snap_z(line, Some(182.0)), Vec3::new(10.5, 10.5, 182.0), "a floor above the line: the body rises to it");
+        assert_eq!(glide_snap_z(line, Some(181.0)), line, "a floor below the line: the line keeps its z (W13-b)");
         assert_eq!(glide_snap_z(line, None), line, "no floor known: the line as before");
     }
 
