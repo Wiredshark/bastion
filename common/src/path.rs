@@ -708,6 +708,19 @@ pub fn search_end_moved(retained_tag: u64, end_tag: u64) -> bool {
     retained_tag != 0 && retained_tag != end_tag
 }
 
+/// ★ W14-g2 pinned: THE FINISHED SEARCH IS NOT RESUMED. A retained search
+/// may be polled again only while it is unfinished (Pending, or Exhausted
+/// at a lower tier awaiting a larger budget); one that returned Path or
+/// None has consumed its goal's entry, and polling it again floods the
+/// component (b1, W14-g aboard: end_g 5, direct_edge 5.0, no goal move,
+/// 62,000 states).
+pub fn search_is_resumable(finished: bool) -> bool {
+    !finished
+}
+
+/// ★ W14-g2: finished searches dropped before a further poll (the witness).
+pub static FINISHED_DROPPED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// The goal's tag: a nonzero hash of the resolved end cell.
 pub fn search_end_tag(end: Vec3<i32>) -> u64 {
     use core::hash::{Hash, Hasher};
@@ -2206,6 +2219,24 @@ where
 
     let satisfied = |node: &Node| node.pos == end;
 
+    // ★ W14-g2: THE FINISHED SEARCH IS NOT RESUMED (see search_is_resumable).
+    if astar
+        .as_ref()
+        .is_some_and(|(a, _)| !search_is_resumable(a.is_finished()))
+    {
+        let n = FINISHED_DROPPED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        if n <= 8 || n.is_power_of_two() {
+            tracing::info!(
+                ?start,
+                ?end,
+                ?path_length,
+                iters_spent = astar.as_ref().map(|(a, _)| a.iters_consumed()),
+                dropped = n,
+                "bastion: THE FINISHED SEARCH IS NOT RESUMED — a search that already returned its path is dropped before the next poll (W14-g2)"
+            );
+        }
+        *astar = None;
+    }
     // ★ W14-g: THE SEARCH RESTARTS WHEN ITS END MOVES (see search_end_moved).
     let end_tag = search_end_tag(end);
     if astar
@@ -2960,6 +2991,50 @@ mod bastion_vertical_tests {
         assert_eq!(n, 2, "two states at the end");
         assert_eq!(m, 20.0, "the dearest g anywhere");
         assert_eq!(end_cost_summary(std::iter::empty()), (None, 0, 0.0), "nothing visited: nothing named");
+    }
+
+    /// ★ W14-g2 pinned: a search polled to its Path, then polled again for
+    /// the same start and goal, finds the Path again in a fresh search's few
+    /// expansions; an unfinished search stays resumable. Planted defect: the
+    /// finished search resumed -> the second poll floods the slab -> red.
+    #[test]
+    fn the_finished_search_is_not_resumed() {
+        assert!(search_is_resumable(false) && !search_is_resumable(true), "the rule");
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let cfg = TraversalConfig {
+            node_tolerance: 1.5,
+            slow_factor: 0.0,
+            on_ground: true,
+            in_liquid: false,
+            min_tgt_dist: 1.0,
+            can_climb: false,
+            scramble_reach: 2,
+            can_fly: false,
+            vectored_propulsion: false,
+            is_target_loaded: true,
+            search_allowed: true,
+            climb_ban: Vec::new(),
+            road_cells: Default::default(),
+            route_jitter_seed: 0,
+            wall_margin_cells: Default::default(),
+            interior_cells: Default::default(),
+        };
+        let mut blocks = StdHashMap::new();
+        for x in 0..40 {
+            for y in 0..40 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        let vol = MockVol::from_parts(blocks, Block::empty());
+        let startf = Vec3::new(10.5, 20.5, 1.0);
+        let endf = Vec3::new(13.5, 20.5, 1.0);
+        let mut astar = None;
+        let (r1, c1) = find_path_priced(&mut astar, &vol, startf, endf, &cfg, PathLength::Longest, None, None);
+        assert!(matches!(r1, PathResult::Path(..)), "the first poll finds the path (consumed {c1})");
+        assert!(astar.as_ref().is_some_and(|(a, _)| a.is_finished()), "the retained search is marked finished");
+        let (r2, c2) = find_path_priced(&mut astar, &vol, startf, endf, &cfg, PathLength::Longest, None, None);
+        assert!(matches!(r2, PathResult::Path(..)), "asked again for the same goal: a path, not a flood (got {})", match r2 { PathResult::Path(..) => "Path", PathResult::Pending => "Pending", PathResult::Exhausted(_) => "Exhausted", PathResult::None(_) => "None" });
+        assert!(c2 < 30, "found in a fresh search's few expansions, not the old frontier's: {c2}");
     }
 
     /// ★ W14-g pinned: a search left Pending toward a far goal A, then

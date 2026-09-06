@@ -165,6 +165,9 @@ pub struct Astar<S, Hasher> {
     /// ★ W14-g: the goal this search was built for (0 = untagged). A retained
     /// search whose goal moves is restarted by its caller.
     goal_tag: u64,
+    /// ★ W14-g2: set when a poll returned Path or None. A finished search's
+    /// frontier is garbage for any further poll: its goal entry is consumed.
+    finished: bool,
 }
 
 /// NOTE: Must manually derive since Hasher doesn't implement it.
@@ -209,6 +212,7 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
             closest_node: None,
             next_seq: 1,
             goal_tag: 0,
+            finished: false,
         }
     }
 
@@ -225,6 +229,9 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
 
     /// ★ W14-g: the goal tag this search was built for (0 = untagged).
     pub(crate) fn goal_tag(&self) -> u64 { self.goal_tag }
+
+    /// ★ W14-g2: has a poll already returned Path or None?
+    pub(crate) fn is_finished(&self) -> bool { self.finished }
 
     pub fn set_max_iters(&mut self, max_iters: usize) { self.max_iters = max_iters; }
 
@@ -302,6 +309,8 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                 }
 
                 if satisfied(&node) {
+                    // ★ W14-g2: the goal is popped; this frontier is done.
+                    self.finished = true;
                     return PathResult::Path(self.reconstruct_path_to(node), node_cost);
                 // Note, we assume that cost_estimate isn't an overestimation
                 // (i.e. that `heuristic` doesn't overestimate).
@@ -383,6 +392,8 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                     }
                 }
             } else {
+                // ★ W14-g2: the frontier emptied; this search is done.
+                self.finished = true;
                 return PathResult::None(
                     self.closest_node
                         .clone()

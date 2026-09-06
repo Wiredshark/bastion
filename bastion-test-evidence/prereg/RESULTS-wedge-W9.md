@@ -3128,6 +3128,125 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W6-E registered (18:20): A BANNED CLIMB STRIKES THE HELD JOB TOO -- the reclaim cap gets its producer
+
+Read from the archived b1 log of the W14-g day (a468786d41): colonist
+961, a cook, took its rest preempt at 21:45 UTC (game hour ~21) to the
+bed at (7590,6502,186) -- 225 blocks away, five up -- and stood on a
+window at (7709,6311,181) until hour 6: 134 CLIMB BANNED (124 at that
+cell, 21:46:32-22:05:23), 129 "need preempt -- reclaiming suspended
+RestAt" for job 982 (one every 8-9 s), seven STUCK CENSUS samples
+(speed 0, best_dist f32::MAX, dz 5, front Window1). The loop tally's
+CLIMB BANNED(other) was 156 against 0-8 on every other day read, with
+benched_by_banned_climbs 0. The path: the stuck timeout with the body
+on a wall records the climb ban and takes the SOFT-0 staged-at-anchor
+branch (anchor_steer.is_some()); for a labor-hold self job (RestAt /
+EatFrom / Despond) that branch SUSPENDS without a strike -- W6-D put
+banned_climb_strike in the non-self arm only. The need pass reclaims a
+suspended RestAt "only while it hasn't struck out past the cap"
+(stuck_strikes < PERSIST_ESCALATE_STRIKES = 3): a consumer with no
+producer on this path. This is the consumer gap W18-e's own
+falsification clause named (a bobbing RestAt walker's timeout suspends
+and is reclaimed at once), so it is queued directly behind W18-e.
+
+Mechanism: held_job_strike(climbing, strikes) = W6-D's
+banned_climb_strike, applied in the self-job arm before the suspend;
+held_job_reclaim_allowed(strikes) names the reclaim's side of the cap
+and the RestAt reclaim reads through it; the strike is witnessed (THE
+HELD JOB STRIKES: job, colonist, kind, job_pos, feet, strikes,
+struck_out) at the first eight and powers of two, and the discard past
+the cap (silent before) prints THE HELD JOB STRUCK OUT once each. Pin
+the_held_job_strikes_and_strikes_out (two strikes reclaimable, the
+third strikes out and the reclaim refuses; a non-climb stall strikes
+nothing). Falsifier plants the old arm (climbing && false). Chain
+bjy5rv5ae holds on w18e-staged; falsifier bjw5mk4x1; dry tree HEAD +
+W18-d + W14-g2 + W18-e + W6-E in queue order (5 uses of the fn).
+
+Bars (each arm's first full day): top reclaims per colonist <= 12 (129
+/ 10 today); THE HELD JOB STRIKES >= 1 and STRUCK OUT >= 1 on a day a
+held job is banned; CLIMB BANNED(other) <= 20; starving sleepers
+unchanged; arrivals >= 900 / 720. Residual to read, not fixed here:
+the same colonist striking out the SAME bed more than twice a night
+(the picker re-offering an unreachable bed) -> the next row shuns the
+struck-out bed for the night. Falsified if a colonist's reclaims stay
+above 30 with the strike witness present, or if starving or bedless
+sleepers rise. The loop tally now prints the top banner's cell and
+span, the reclaim churn and both witnesses; the bob tally prints
+W18-d's repeated lifts and W18-e's stalls.
+
+Readers: W18-e (b1 keyed on the W14-g2 b1 night block; b2 on its day
+block) and W6-E (keyed on W18-e's) launched 18:25, each restarting its
+arm onto the latest staged pair.
+
+### W18-d LANDED (18:23): d08deac5dc, both halves, marker 'THE REPEATED LIFT IS NOT PROGRESS' 1 in the exe
+
+Pin the_repeated_lift_is_not_progress green on the fresh compile;
+committed and pushed; the shipper put the pair in lab-bin at 18:23:40
+(playable). Falsifier bfna7oxus: planted `true || !repeated` at 18:24,
+the pin went RED (0 passed, 1 failed), 0 dirty files restored at
+18:27. W18-d is red on its plant.
+
+The night, read from the same archived logs while the chains ran
+(18:28): BED CENSUS in_bed peaks by hour, roster 50 -- b1 (a468786d41
+day): h23 9, h0 11, h1 13, h2 15, h3 16, h4 21, h5 22; b2's last three
+days: h22 16-18, h23 19-24, h0-h5 20-24. HALF THE TOWN IS NOT IN BED
+AT NIGHT on both arms, and b1's onset takes six game hours. At b1's
+hour 23 the EXPERIENCE census read engaged 30-32, working 15-20,
+moving 11-17, idle 18-20, rested 26-29: colonists work at midnight
+(563 HAUL-GEN lines in six minutes). The rest preempt is need-driven
+("rest below interrupt", 49 distinct colonists on the day) so a
+colonist who napped is not tired at 21 and keeps working. What the
+other 26 are doing hour by hour is not instrumented: a NIGHT CENSUS
+(per active job kind, walkers to bed, the untired awake) is the next
+instrument row, queued behind W6-E. Both arms board it at their next reader restarts (b1's
+W14-g2 reader, b2's W14-g2 reader).
+
+### W18-e registered (18:08): THE BOB IS A STALL -- an outcome-level consumer at the bob witness
+
+Every reset path closed one at a time leaves the next (the x-y window
+W18-c, the assist W18-d, the re-plan, the per-tick distance check
+colonist 132 found). The outcome the town needs is one rule: a body
+that has dropped two blocks at the same cell BOB_STALL_COUNT (16)
+times inside the bob window (900 ticks) IS stalled, whatever its
+clock says. At the W18-i witness (which already counts per walker
+and resets the count at a drop elsewhere) the sixteenth and every
+later drop sets the walker's active-job stuck_time to STUCK_TIMEOUT
+when it is below it, counts BOB_STALLS and prints THE BOB IS A STALL
+(uid, cell, bobs, job, count) at the first eight and powers of two;
+the stuck-timeout branch's release, shun and strike act as for any
+stalled walker. Pin the_bob_is_a_stall (0, 15 not; 16, 256 are);
+falsifier plants the count at a million. Chain bz918z1ni holds on
+w14g2-staged (+300 s); falsifier bhyhvbmfh; dry tree HEAD d4523dc9f2
++ W18-d + W14-g2 + W18-e applied in queue order (6 uses of the fn).
+
+Bars (each arm's first full day on the pair): bobs peak <= 32 (256
+on b2 today and on b1 yesterday); the witness >= 1 on any day a body
+reaches 16; every bob line at >= 32 preceded by a stall line for that
+uid; the walker's job released within 15 s of the sixteenth drop;
+starving sleepers unchanged; arrivals >= 900 / 720; FETCH STALLED and
+STUCK CENSUS at most 2x. Falsified if a body still reaches 64 on a
+pair that shows the witness (the stuck-timeout branch does not act
+on a RestAt or leisure walker: a consumer gap to name), or if the
+released walker bounces at the same cell again within the day (a
+release without a shun on the cell).
+
+### W14-g day 1 on b1 (18:09, pair a468786d41, W18-c aboard, W18-d/W14-g2 not yet)
+
+Night 1 -> hour 6 of day 1: arrivals 875 (bar 900; the three W18-c
+days 828-991), FETCH STALLED 7, STUCK CENSUS 12 distinct, starving
+sleepers 0, bobs peak 2 (W18-c holds on b1: 134:2, 99:1, 961:1),
+p95 733 us, panics 0. The flood stands as predicted with W14-g alone:
+LONGEST-EXHAUST 584 (whole-town 583), top ends (7631,6280,182) x44,
+(7679,6203,181) x39 -- the finished-search-resumed class W14-g2 is
+built for. NEW on this day: CLIMB BANNED(other) 156, of which
+colonist 961 took 134 (122: 17, 54: 2), benched_by_banned_climbs 0 --
+a non-fetch climb-ban loop the W6-D cap (fetch strikes) does not
+bench; the log was rotated by the W18-b reader's restart at 18:09
+before its lines were read, so its kind, step and span are read on
+the next day this repeats (the loop tally now prints them). A
+candidate row: THE BAN CAP COVERS EVERY JOB KIND. b1 rebooted at
+18:09 onto d4523dc9f2 (W14-w2) by the W18-b reader.
+
 ### The b2 bobber named (18:05): colonist 132, no assist, no re-plan -- the clock is reset by the per-tick progress check
 
 uid 132, rest preempt at 21:58:09 UTC to the bed at (7769,6401,186)
