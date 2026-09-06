@@ -9482,6 +9482,20 @@ pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
     head.is_some_and(|h| h.z - feet.z >= 2)
 }
 
+/// ★ W14-c pinned: THE EXHAUSTED SEARCH STRIKES THE JOB. A proven
+/// Unreachable from the approach lane strikes the held job and three
+/// strikes bench it (UNREACHABLE PROVEN); an exhausted Longest-tier fill
+/// search is the same proof at the same budget and had no consumer -- the
+/// walker kept the job, moved, missed the start-keyed memo and asked the
+/// whole-town search again (one pair 1,675 times in a day on b1). One
+/// rule for both arms: the next strike count, and whether it benches.
+pub(crate) const UNREACHABLE_STRIKES: u8 = 3;
+
+pub(crate) fn job_strike(strikes: u8) -> (u8, bool) {
+    let next = strikes.saturating_add(1);
+    (next, next >= UNREACHABLE_STRIKES)
+}
+
 /// ★ W2-b-r pinned: THE TRUNK PLANS THE JUMP AGAIN. W2-b set the trunk's
 /// reach to 1 (no two-up jump edge for a gliding body); on the ledge arm
 /// the town is not connected at one-up steps, so every search to a plot
@@ -43816,9 +43830,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if let Some(j) = held
                                         && let Some(job) = board.jobs.get_mut(&j)
                                     {
-                                        job.stuck_strikes =
-                                            job.stuck_strikes.saturating_add(1);
-                                        if job.stuck_strikes >= 3 {
+                                        let (next, bench) = job_strike(job.stuck_strikes);
+                                        job.stuck_strikes = next;
+                                        if bench {
                                             job.unreachable = true;
                                             info!(
                                                 job = j,
@@ -43928,6 +43942,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 tick.0 + EXHAUSTED_MEMO_TICKS,
                                             ),
                                         );
+                                        // ★ W14-c: THE EXHAUSTED SEARCH STRIKES THE JOB. The
+                                        // memo refuses the same ask from the same start; the
+                                        // strike ends the loop once the body has moved. Only
+                                        // the Longest tier is a proof at the town's scale.
+                                        if matches!(ps.search.length, common::path::PathLength::Longest) {
+                                            let held: Option<JobId> = (&entities, &active_jobs)
+                                                .join()
+                                                .find(|(e, _)| uids.get(*e) == Some(&u))
+                                                .map(|(_, aj)| aj.job);
+                                            if let Some(j) = held
+                                                && let Some(job) = board.jobs.get_mut(&j)
+                                            {
+                                                let (next, bench) = job_strike(job.stuck_strikes);
+                                                job.stuck_strikes = next;
+                                                if bench {
+                                                    job.unreachable = true;
+                                                    info!(
+                                                        job = j,
+                                                        uid = k,
+                                                        to = ?ps.job_target,
+                                                        "bastion: UNREACHABLE PROVEN — job benched off the board (three exhausted fill searches)"
+                                                    );
+                                                }
+                                            }
+                                        }
                                     }
                                     board.path_cache.remove(&u);
                                 },
@@ -56366,6 +56405,18 @@ mod tests {
             common::path::jumps_admitted(TRUNK_SCRAMBLE_REACH, true, true, false),
             "the trunk plans the two-up jump edge"
         );
+    }
+
+    /// ★ W14-c pinned: the first strike does not bench, the third does,
+    /// and every strike after it keeps the bench; the count saturates.
+    /// Planted defect: the bench threshold at 30 -> red on the third.
+    #[test]
+    fn the_exhausted_search_strikes_the_job() {
+        assert_eq!(job_strike(0), (1, false), "first strike: not benched");
+        assert_eq!(job_strike(1), (2, false), "second strike: not benched");
+        assert_eq!(job_strike(2), (3, true), "third strike: benched");
+        assert_eq!(job_strike(3), (4, true), "a fourth keeps the bench");
+        assert_eq!(job_strike(255), (255, true), "saturates, still benched");
     }
 
     /// ★ W16-b pinned: a pure glide is d; a target two up and two over is

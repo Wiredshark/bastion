@@ -2769,6 +2769,75 @@ registration stay in the scratchpad and above for the record). The
 jump"; nothing asks for reach 1 now). Memory filed:
 removing-an-edge-class-turns-bans-into-whole-map-floods.
 
+### W16-b read: b1 hour 19 (f408e4b8a9 under W2-b's b1 reader; 10:05) -- PASS, and the flood's second replicate
+
+CLIMB BANNED (fetch) 1 by hour 19 on the ledge arm (8 on the W2-b
+run, 15-24 on the runs before): colonist 65, on_prev, rise_next
+Some(2), push_site chaser-probed, frame trunk, trunk_dxy 1. Other
+bans 4, PROMISED CLIMB TAKEN 1, FETCH STALLED 4 (12), budgets
+expired 8 (15), STALL BLAMED 2, starving 0; arrivals 790 (733 on
+the W2-b run, 736 on W15-c's: +7%); stuck 5 distinct; p95 726. The
+ledge tally puts the two old ledges in the STALL column now instead
+of the ban column: stalls near +2-edge heads 2, clusters
+(7664,6432) 2 and (7640,6504) 2 -- the bodies still stop there, but
+the fetch stalls and the shun answers it rather than a climb ban.
+PASS on the ban bar; the ledge itself stands (a ramp is the plot
+row). The flood: LONGEST-EXHAUST 10 (617 on the W2-b run, 13 before
+W2-b), LONGEST-TIER lines 1,346 (51,798 / 1,642), whole-town floods
+10, top ends 5x(7721,6346,188), 3x(7706,6310,181) (the W17-i sealed
+house), 2x(7741,6393,180). This pair STILL CARRIES W2-b, so the
+flood is not a fixed cost of reach 1: it needs a claimed job behind
+a two-up-only barrier (colonist 55's DepositRun to destination 59
+on the W2-b run) and the re-ask loop; today no such job was
+claimed. The W2-b-r revert stands as a removal of that latent
+60,000-cell-per-ask risk (the closest-frontier evidence was a wall
+the reach-1 graph cannot pass), and W14-c makes the loop
+self-limiting either way; but the flood has ONE replicate, and the
+record says so. The next question is whether W2-b-r brings the bans
+back with W16-b aboard (its read, ~11:15).
+
+### W16-b read: b2 day 1 (f408e4b8a9 under W2-b's b2 reader; 10:02)
+
+CLIMB BANNED (fetch) 0 for the whole day (2 on the day before, 2-6
+on the days before that), so W16-b's own class (on_prev with
+rise_next Some(1), chaser-settle) is 0 of 0; other bans 5
+(sleepers), FETCH STALLED 1 (5), budgets expired 3 (8), STALL
+BLAMED 0, starving 0; arrivals 808 (846: -4.5%, within the 10%
+bar); p95 659 (508). PASS on b2 for the ban class. Two counters
+moved the other way and are recorded against it: exhausted (pump
+census sum) 1,043 (598 the day before under W2-b + W15-c-b, 513 the
+day before that: outside the two-day band), and unreachable
+deliveries 24 / UNREACHABLE APPROACH 18, all from_in_house (W17-b's
+class, absent the day before, present today; W17-b is not on this
+pair). The exhaustion doubling has two candidates: W2-b's flood
+growing with the day's job mix (this pair still carries W2-b), or
+W16-b's walking bodies searching from new places. The b2 arm
+cannot read the flood tally (its LONGEST-TIER diag is not set on
+b2: 0 lines), so the separation comes from the next b2 day that
+carries W2-b-r and W16-b without W2-b: exhausted back near 500 =
+W2-b's flood; still near 1,000 = W16-b's, and W16-b is then
+re-examined. The W15-c-b reader restarts b2 now onto e5c4d9965d
+(W17-b, still with W2-b); W2-b-r boards at the restart after it.
+
+### W2-b-r landed (d4760fa9fd, staged 10:09:54, shipped to lab-bin 10:10)
+
+Check and pin green on the chain (1 test passed), both halves built
+fresh, the binary verified by its contents ("THE TRUNK'S REACH"
+present once in stage-bin and in lab-bin). The falsifier planted
+reach 1 at 10:11 and the pin went RED at 10:14, the tree restored
+clean (0 dirty); W14-c's chain fires at 10:15.
+
+### W17-b read: b2 +4 (e5c4d9965d under the W15-c-b reader; 10:10, hour 10)
+
+Unreachable deliveries 2, both start=Open and from_in_house=false
+(not W17-b's class: that class is the night's sealed sleeper, read
+at day 1); exhausted 16, probes 16 (11 cut_off, 5 sealed; components
+untrusted 7, start_unlabelled 5, same 3); bans 0/0, stalls 1,
+budgets expired 2, arrivals 229, p95 521, starving 0.
+b1 boards this pair at the W15-c-b reader's restart (~10:25): the
+first ledge-arm read of the reach-2 trunk with W16-b aboard is that
+run's hour 19 (~11:00).
+
 ### W2-b-r registered (09:50): THE TRUNK PLANS THE JUMP AGAIN
 
 Mechanism: `TRUNK_SCRAMBLE_REACH: u8 = 2` at the pump's search
