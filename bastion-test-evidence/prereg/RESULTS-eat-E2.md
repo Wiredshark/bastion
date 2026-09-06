@@ -1047,6 +1047,32 @@ after 15; 64 ate at 16, visit at 17); the fifth, 41, was preempted
 at 20 and 21 and found no meal. A third of the town skips supper
 for the visit and a quarter of those starve in bed.
 
+## E2-n-i, registered 22:12 (keyed on the E2-k stage; ahead of E2-i2, W12-a-b and W15-i1)
+
+A MEAL NAMES ITS SOURCE. An instrument row for E2-o's open
+question and E2-n's premise: the meal line ("ate — hunger
+restored", uid and job) says nothing about where the food was, and
+NIGHT MEAL AT HOME names a shelf meal only when the pile lies
+inside the eater's own house. Now the line carries the pile, the
+store kind under it (`meal_source`: private = a household shelf,
+general = a store, none = no store under the pile) and the hour;
+`stockpile_region_at` sits beside `stockpile_at` with the same
+containment rule and returns the region too. No behaviour changes.
+Pin `a_meal_names_its_source` (private under a shelf, general
+under a store, none under nothing); planted: the shelf named as the
+store, red. Prediction (b1, read on E2-i2's pair after its night-1
+block by `wait-e2ni-b1.sh`): every meal line carries a source, and
+"none" is under 10% of meals; the private night meals (22-5) agree
+with NIGHT MEAL AT HOME within 2; the evening (20-21) split is
+recorded without a bar. Falsified if a meal line lacks a source or
+the two shelf counts disagree by more than 2. Rejected: deriving
+the source in the reader from the pile's coordinates (the region
+rule lives in the engine); a counter per kind (the distribution by
+hour is the question). NOT evidenced: E2-n itself; b2. The E2-i2
+chain was re-keyed behind this row by its pid file; the dry tree
+was rebuilt in the order E2-m, E2-o, W13-b-r, E2-k, E2-n-i, E2-i2,
+W12-a-b, W15-i1.
+
 ## E2-o, registered 21:25 (keyed on the E2-m stage; ahead of E2-k and E2-i2)
 
 SUPPER IS EATEN AT SUPPER TIME. Two defects in one: (1) the supper

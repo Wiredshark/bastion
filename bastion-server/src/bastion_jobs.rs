@@ -8491,6 +8491,19 @@ pub(crate) fn supper_interrupt(base: f32, supper: bool) -> f32 {
     }
 }
 
+/// ★ E2-o pinned: THE LOUNGE YIELDS TO A NEED -- the evening visit is posted
+/// only when the scan found no rest or hunger candidate this pass (a
+/// hunger under the supper line in supper hours is one) AND no supper load
+/// bound for the colonist's own shelf waits unclaimed. E2-l opened the
+/// leisure-hour claim door, and the visit then kept the eater out of the
+/// claim scan: on b1 (E2-l pair, day 0) 152 visits were posted at hours
+/// 16-21 against 13 own-supper claims, and 19 of the round's 54 loads
+/// were swept unclaimed at the Sleep block.
+pub(crate) fn lounge_may_post(no_need_pending: bool, own_supper_pending: bool) -> bool {
+    no_need_pending && !own_supper_pending
+}
+pub(crate) static LOUNGE_YIELDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// ★ NIGHT HUNGER IS MET AT HOME: the house the colonist sleeps in (its
 /// bed's house), the only place its night food scan may look. The curfew
 /// (the night-massacre autopsy) keeps everyone indoors; eating from one's
@@ -31318,11 +31331,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     ),
                     healths.get(entity).map(|h| h.fraction()).unwrap_or(1.0),
                 );
-                let hunger_th = comp::bastion::stagger_interrupt(
-                    mood_cfg.hunger.interrupt,
-                    &colonist.0.values,
-                    consc,
-                    neur,
+                // ★ E2-o: the need loop's line is the SUPPER line in supper
+                // hours -- the arbitration raised it (SUPPER BEFORE CURFEW)
+                // and this loop never did, so the arbiter said Personal at
+                // 0.37 and the loop found no candidate above 0.2.
+                let hunger_th = supper_interrupt(
+                    comp::bastion::stagger_interrupt(
+                        mood_cfg.hunger.interrupt,
+                        &colonist.0.values,
+                        consc,
+                        neur,
+                    ),
+                    supper_hour(
+                        &board.night_watch,
+                        uids.get(entity),
+                        hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                    ),
                 );
                 // Item 8 pre-flight (measure 1's revised contingency +
                 // measure 5): the dormant `NeedCrossed` vocabulary
@@ -31532,10 +31556,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // lounging ruling — vanilla villagers idling in the plaza,
                 // "this needs to be in our colony" — was dead code). During
                 // the Leisure block a job-free colonist takes the break
-                // directly; needs still outrank (the rest/hunger candidates
-                // run in the same scan and this fires only when no active
-                // job is held), and the cooldown insertion keeps one break
-                // per window.
+                // directly, and the cooldown insertion keeps one break per
+                // window. ★ E2-o: the candidates found this pass (rest,
+                // hunger under the supper line) come FIRST -- this branch
+                // used to `continue` before they were consulted, and a
+                // hungry idle colonist took the visit every pass.
                 // ★ MOVED ABOVE THE EMPTY-CANDIDATES CONTINUE (probe on the
                 // first live evening: the continue below skips every colonist
                 // with no urgent needs — the lounge's entire audience — so
@@ -31554,6 +31579,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .preempt_cooldown
                         .get(uid)
                         .is_some_and(|until| time.0 < *until)
+                    && {
+                        let own_supper_pending = board.supper_eaters.iter().any(|(j, v)| {
+                            v.contains(uid) && board.jobs.get(j).is_some_and(|jb| jb.claimed_by.is_none())
+                        });
+                        let may = lounge_may_post(candidates.is_empty(), own_supper_pending);
+                        if !may {
+                            let n = LOUNGE_YIELDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                            if n <= 8 || n.is_power_of_two() {
+                                info!(
+                                    colonist = %uid,
+                                    hunger = needs.hunger,
+                                    rest = needs.rest,
+                                    own_supper = own_supper_pending,
+                                    yields = n,
+                                    "bastion: THE LOUNGE YIELDS TO A NEED — a rest or hunger candidate, or the colonist's own unclaimed supper load, is pending; the evening visit waits"
+                                );
+                            }
+                        }
+                        may
+                    }
                 {
                     // ROW 36 (+36d): evenings LINGER, and a hold may never
                     // outlive the block that authorised it — Leisure is TWO
@@ -55362,6 +55407,21 @@ mod tests {
         assert!(!queue_ahead(2.0, 181.0, Some(my_bed), steer, &[]), "nobody: no queue");
         let far = vec![(Vec3::new(13.5, 10.5, 181.0), Some(my_bed))];
         assert!(!queue_ahead(2.0, 181.0, Some(my_bed), steer, &far), "a body bound for my anchor but farther than me is behind me");
+    }
+
+    /// ★ E2-o pinned: the lounge posts only when no need candidate is
+    /// pending; the need loop's line is the supper line in supper hours
+    /// (0.6 over a 0.2 base) and the base outside them; an own supper
+    /// load unclaimed holds the visit too. Planted defect: the lounge
+    /// posting over a pending need or an unclaimed own load -> red.
+    #[test]
+    fn the_lounge_yields_to_a_need() {
+        assert!(lounge_may_post(true, false), "no need, no own load: the visit is posted");
+        assert!(!lounge_may_post(false, false), "a need pending: the visit waits");
+        assert!(!lounge_may_post(true, true), "an own supper load unclaimed: the visit waits");
+        assert!(!lounge_may_post(false, true), "both pending: the visit waits");
+        assert_eq!(supper_interrupt(0.2, true), SUPPER_LINE, "supper hours: the supper line");
+        assert_eq!(supper_interrupt(0.2, false), 0.2, "other hours: the base");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable

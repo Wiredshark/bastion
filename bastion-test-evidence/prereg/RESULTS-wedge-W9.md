@@ -1724,6 +1724,105 @@ block (hour 6 of day 1) reads it; at most 3 pure-glide embeds
 means the embed class was the plank store (W12-c) and W13-w
 stands with W13-c held; ten or more means W13-c launches.
 
+### W13-w read at day 1 (b2, 21:48): five embeds, four of them risers -- the raise returns
+
+EMBED WATCH 5 by day 1 (W12-a's 18 before the store lift; W13-b's
+0), all chaser-pure-glide; the entry -> embedded z pairs 181.54 ->
+181.72, 181.56 -> 182.01, 181.41 -> 182.00, 181.68 -> 181.85 and
+184.00 -> 183.94: four of the five ROSE into a riser (the line's z
+lagging under a step-up) and one dipped six hundredths. Arrivals
+535 by day 1 (W13-b 586); pump at midnight pending 1, mean wait 13
+(W13-b 38); stuck 0; unreachable 0 of 372; panics 0. The count fell
+in the gap the decider left open (4-9), and the signature settles
+it: W13-c's own-floor hold answers the dip, which is one embed in
+five, and is WITHDRAWN; the raise-only snap (W13-b) lifts exactly
+the riser lag and cost nothing on this geometry (387/586 with it,
+355/535 without). W13-b was removed on a clause that compared the
+pre-lift store with the lifted one; the removal was for nothing.
+
+## W13-b-r, registered 21:58 (keyed on the E2-o stage; ahead of E2-k, E2-i2, W12-a-b and W15-i1)
+
+THE RAISE RETURNS. W13-b's three hunks return as W13-w removed
+them: `glide_snap_z(try_pos, floor)` = the line lifted to a known
+floor above it, the line otherwise; the Step arm steps the snapped
+point; THE GLIDE FOLLOWS THE SURFACE (uid, line_z, floor_z, node,
+snaps) and GLIDE_SNAPS. The removed comments' false claim ("cost a
+third of the arrivals on three replicates") is rewritten to the
+reads. Pin `the_glide_follows_the_surface` (a floor above: the body
+rises; a floor below: the line; no floor: the line); planted: the
+snap lowering again (z = floor), red. Prediction (b2 fresh after
+W13-w's day-1 block, `wait-w13br-b2.sh`; +10 and day 1): EMBED
+WATCH at most 1 by day 1 (W13-b 0; W13-w 5); arrivals at +10 at
+least 300 and by day 1 at least 480 (the lifted-store band:
+355/535 without, 387/586 with); pump mean wait at midnight under
+60; GLIDE SNAPS at least 512 by day 1; stuck 0; unreachable 0.
+Falsified if the embeds reach 4 by day 1 with the raise aboard
+(the residual is not the riser lag), or if day-1 arrivals fall
+under 430 (the raise costs after all on this geometry). Rejected:
+W13-c (one embed in five); a route node per step (the route is
+right, the walk lags); leaving the class open with the raise in
+hand. NOT evidenced: b1 (its 490-at-+10 "cost" was the same two
+frames; E2-l's pair is b1's first post-lift no-raise number); the
+one dip; night 2. The queue was reordered (E2-m, E2-o, W13-b-r,
+E2-k, E2-i2, W12-a-b, W15-i1); the E2-k chain and the W12-a-b b2
+reader were re-keyed by their pid files; the dry tree was rebuilt
+in the new order.
+
+## W14, registered 22:12 (keyed on the W15-i1 stage; the queue's end)
+
+THE SEARCH IS NOT ASKED TWICE. Found while E2-m built, by mining
+the E2-l pair's b1 log for repeated longest-tier searches: colonist
+112 stood 18 wall minutes (hours 19-23 of day 0) at (7714,6344,181)
+under a raised road whose tile centre lies at (7713,6344,187); its
+trunk route's node 0 was that tile six blocks above its head, the
+first leg went to the pump, the search escalated to the longest
+tier and spent its budget, the fill consumer dropped the path
+cache, and two seconds later (`path_fill_at`) the same search was
+asked again: 11,849 LONGEST-TIER SEARCH steps for one (start,
+target) pair, a quarter of the arm's longest-tier steps at that
+point (82,331 by day 1), one of the pump's two slices per tick held
+by one body while the town's searches waited 72-173 ticks (pending
+20-33). The walker was never rescued: with no route it beelined at
+its bed into the wall under the road and slid along it, so the
+stuck census saw a moving body (named once in 15 minutes). Two more
+spots on the day share the shape (7721,6353: 861 steps; 7714,6344:
+735). b2, the flat lab arm, has no longest-tier line at all: the
+class is terrain's. Mechanism: on a BudgetExhausted fill delivery
+the pump writes `search_memo[uid] = (start cell, target cell, tick +
+EXHAUSTED_MEMO_TICKS)`; before the fill enqueues (trunk approach or
+exact search) `search_memo_refuses(memo, feet cell, target cell,
+tick)` refuses the same cell, the same target, inside the window
+(900 ticks, 30 s of sim -- a stated assumption); a moved body,
+another target or an expired memo asks again; no memo, no refusal.
+THE SEARCH IS NOT ASKED TWICE (uid, feet, target, refusals) names
+the first eight and the powers of two -- every refusal names a
+stranded walker, the instrument for the rescue row W14-b. Prior
+art: RimWorld's cached unreachable verdict per pawn and destination
+region with an expiry; Dwarf Fortress's "cannot reach" job flag;
+Song of Syx's timed failed-search cache. Pin
+`the_search_is_not_asked_twice` (the same cell and target inside
+the window: refused; a moved body, another target, an expired memo,
+no memo: asked); planted: the cell ignored, red. Prediction (b1
+fresh after E2-i2's night-1 block, `wait-w14-b1.sh`; hour 19 of day
+0 and night 1): the most-repeated longest-tier pair at most 1,500
+steps (11,849); longest-tier steps by day 1 at most 30,000
+(82,331); refusals at least 200 by day 1, the named walkers and
+their fate recorded without a bar; the day's PUMP CENSUS mean wait
+averaged under 60 ticks (72-173 in the hot window); pending at
+midnight under 20 (30-34). Falsified if the top pair stays above
+3,000 (another lane re-asks), or the pump's mean wait does not fall
+below the E2-l pair's, or refusals stay under 20 with the top pair
+high (the memo never matches under the slide: widen to the 3x3).
+Rejected: rejecting a trunk route whose node 0 is more than three
+blocks off the feet (W14-b's candidate with the rescue; it changes
+routing for every body under an overhang and does nothing for the
+exact search after it); treating an exhausted search as
+unreachable (a released bed job is not a rescued body); a longer
+window. NOT evidenced: the rescue itself (W14-b); b2; night 2. The
+patch anchors on W15-i1's rewritten fill arm and sits last in the
+dry tree (E2-m, E2-o, W13-b-r, E2-k, E2-n-i, E2-i2, W12-a-b,
+W15-i1, W14).
+
 ## W13-c, written 21:07 and HELD (launches only if W13-w's read shows the embeds returning with the arrivals)
 
 THE GLIDE NEVER SINKS BELOW THE FLOOR IT STANDS ON. The narrowest
