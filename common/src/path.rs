@@ -621,6 +621,47 @@ pub fn node_z_completed(dz: f32, in_liquid: bool, scramble_reach: u8) -> bool {
     (floor..=2.25).contains(&dz) || (in_liquid && dz < 0.8 && dz > 0.0)
 }
 
+/// ★ W15-c pinned: THE DESTINATION'S BUILDING IS NOT A DETOUR. The interior
+/// surcharge and the wall band price a route THROUGH a building; a target
+/// inside a building pays them on its own last cells, and an admissible A*
+/// floods every cheaper cell in town before paying tens of units for a few
+/// blocks (W15-i4: 34 exhausted frontiers in the target's own component, 0
+/// in another). The destination's plot is the 4-connected flood over the
+/// interior columns from the target's column, capped; inside it both
+/// surcharges are free. Empty when the target stands outside every building.
+pub const DEST_PLOT_CAP: usize = 4_096;
+
+pub fn destination_plot(
+    interior: &std::collections::HashSet<Vec2<i32>>,
+    target: Vec2<i32>,
+    cap: usize,
+) -> std::collections::HashSet<Vec2<i32>> {
+    let mut plot = std::collections::HashSet::new();
+    if !interior.contains(&target) || cap == 0 {
+        return plot;
+    }
+    let mut queue = std::collections::VecDeque::new();
+    plot.insert(target);
+    queue.push_back(target);
+    while let Some(c) = queue.pop_front() {
+        for d in [Vec2::new(1, 0), Vec2::new(-1, 0), Vec2::new(0, 1), Vec2::new(0, -1)] {
+            if plot.len() >= cap {
+                return plot;
+            }
+            let n = c + d;
+            if interior.contains(&n) && plot.insert(n) {
+                queue.push_back(n);
+            }
+        }
+    }
+    plot
+}
+
+/// The surcharge a walk edge pays: nothing inside the destination's plot.
+pub fn priced_outside_destination(in_destination: bool, surcharge: f32) -> f32 {
+    if in_destination { 0.0 } else { surcharge }
+}
+
 impl TraversalConfig {
     /// bastion ledger #178: the SEARCH-PROFILE fingerprint — every field
     /// that changes which nodes/edges a search ADMITS or how it terminates.
@@ -1441,6 +1482,26 @@ fn find_path<V>(
 where
     V: BaseVol<Vox = Block> + ReadVol,
 {
+    find_path_priced(astar, vol, startf, endf, traversal_cfg, path_length, flee_from, None)
+}
+
+/// ★ W15-c: the same search with the destination's plot priced free (see
+/// `destination_plot`). Inline callers pass no plot and search exactly as
+/// before; the scheduled colonist searches pass theirs.
+#[allow(clippy::too_many_arguments)]
+fn find_path_priced<V>(
+    astar: &mut Option<(Astar<Node, FxBuildHasher>, Vec3<f32>)>,
+    vol: &V,
+    startf: Vec3<f32>,
+    endf: Vec3<f32>,
+    traversal_cfg: &TraversalConfig,
+    path_length: PathLength,
+    flee_from: Option<Vec3<f32>>,
+    dest_plot: Option<&std::collections::HashSet<Vec2<i32>>>,
+) -> (PathResult<Vec3<i32>>, u64)
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
     let is_walkable = |pos: &Vec3<i32>| {
         walkable(
             vol,
@@ -1800,10 +1861,14 @@ where
                 // street is still the street).
                 // ★ INTERIOR (see the field's doc): roads exempt by
                 // disjointness (streets are never Building tiles).
+                // ★ W15-c: THE DESTINATION'S BUILDING IS NOT A DETOUR --
+                // inside the plot the target stands in, neither the
+                // interior surcharge nor the wall band applies.
+                let in_destination = dest_plot.is_some_and(|d| d.contains(&next_node.pos.xy()));
                 let interior = if !interior_pricing_off()
                     && traversal_cfg.interior_cells.contains(&next_node.pos.xy())
                 {
-                    INTERIOR_SURCHARGE
+                    priced_outside_destination(in_destination, INTERIOR_SURCHARGE)
                 } else {
                     0.0
                 };
@@ -1811,7 +1876,7 @@ where
                     && road >= 1.0
                     && traversal_cfg.wall_margin_cells.contains(&next_node.pos.xy())
                 {
-                    WALL_MARGIN
+                    priced_outside_destination(in_destination, WALL_MARGIN)
                 } else {
                     0.0
                 };
@@ -2288,11 +2353,14 @@ pub struct FullPathSearch {
     /// path `PathResult::Exhausted` carries, which the step used to drop).
     /// None until a step exhausts.
     pub last_closest: Option<Vec3<i32>>,
+    /// ★ W15-c: the destination's plot (see `destination_plot`), computed
+    /// once per target column.
+    pub dest_plot: Option<(Vec2<i32>, std::collections::HashSet<Vec2<i32>>)>,
 }
 
 impl FullPathSearch {
     pub fn new(length: PathLength) -> Self {
-        Self { astar: None, length, last_closest: None }
+        Self { astar: None, length, last_closest: None, dest_plot: None }
     }
 }
 
@@ -2311,7 +2379,15 @@ pub fn bastion_full_path_step<V>(
 where
     V: BaseVol<Vox = Block> + ReadVol,
 {
-    match find_path(
+    // ★ W15-c: the destination's plot, computed once per target column.
+    let target_xy = endf.xy().map(|e| e.floor() as i32);
+    if search.dest_plot.as_ref().is_none_or(|(t, _)| *t != target_xy) {
+        search.dest_plot = Some((
+            target_xy,
+            destination_plot(&traversal_cfg.interior_cells, target_xy, DEST_PLOT_CAP),
+        ));
+    }
+    match find_path_priced(
         &mut search.astar,
         vol,
         startf,
@@ -2319,6 +2395,7 @@ where
         traversal_cfg,
         search.length,
         None,
+        search.dest_plot.as_ref().map(|(_, p)| p),
     )
     .0
     {
@@ -2359,8 +2436,14 @@ where
         PathLength::Long => 52,
         PathLength::Longest => 102,
     };
+    // ★ W15-c: the destination's plot, once for the whole search.
+    let plot = destination_plot(
+        &traversal_cfg.interior_cells,
+        endf.xy().map(|e| e.floor() as i32),
+        DEST_PLOT_CAP,
+    );
     for _ in 0..calls {
-        match find_path(
+        match find_path_priced(
             &mut astar,
             vol,
             startf,
@@ -2368,6 +2451,7 @@ where
             traversal_cfg,
             path_length,
             None,
+            Some(&plot),
         )
         .0
         {
@@ -2677,6 +2761,32 @@ where
 #[cfg(test)]
 mod bastion_vertical_tests {
     use super::*;
+
+    /// ★ W15-c pinned: a target outside every building has no plot; a
+    /// target inside a 3x3 plot gets its nine columns and not a plot five
+    /// blocks away; the cap holds exactly; inside the destination the
+    /// surcharge and the band are free, outside they are paid. Planted
+    /// defect: the surcharge paid inside the destination -> red.
+    #[test]
+    fn the_destinations_building_is_not_a_detour() {
+        let mut interior = std::collections::HashSet::new();
+        for x in 10..13 {
+            for y in 10..13 {
+                interior.insert(Vec2::new(x, y));
+            }
+        }
+        for x in 20..22 {
+            interior.insert(Vec2::new(x, 10));
+        }
+        assert!(destination_plot(&interior, Vec2::new(0, 0), 4096).is_empty(), "outside: no plot");
+        let plot = destination_plot(&interior, Vec2::new(11, 11), 4096);
+        assert_eq!(plot.len(), 9, "the building's nine columns");
+        assert!(!plot.contains(&Vec2::new(20, 10)), "not the plot five blocks away");
+        assert_eq!(destination_plot(&interior, Vec2::new(11, 11), 4).len(), 4, "the cap holds");
+        assert_eq!(priced_outside_destination(true, INTERIOR_SURCHARGE), 0.0, "inside: free");
+        assert_eq!(priced_outside_destination(false, INTERIOR_SURCHARGE), INTERIOR_SURCHARGE, "outside: paid");
+        assert_eq!(priced_outside_destination(true, WALL_MARGIN), 0.0, "the band too");
+    }
 
     /// ★ W16-a pinned: a vanilla body (reach 0) completes a node from one
     /// block below; a colony body (reach 2) does not, but does from half a

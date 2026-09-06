@@ -2481,6 +2481,21 @@ mover (the PROMISED CLIMB assist exists and did not fire for 28);
 a wider xy tolerance. NOT evidenced: descents; ladders; the 3-up
 scramble edges. The dry tree at a1dc121908 validated the anchors.
 
+### W16-a landed (cb7bea7543, staged 06:26)
+
+Check clean, the common pin green (1 of 711), committed 06:22,
+both halves staged 06:26:47 with the client compiled fresh against
+the changed common crate (a mismatched pair would be UnexpectedEnd
+at the join screen; both halves are from one commit); shipped to
+lab-bin 06:26. The b2 reader restarts b2 at this stage (W15-i4's
+day-1 block already read) and reads +10 and day 1 with the stair
+tallies; the b1 reader restarts b1 after E2-s-i's night-1 block
+and reads hour 19 and night 1. Falsifier at 06:37 (in its own
+detached worktree, so the W15-c chain patching path.rs in the main
+worktree at the same time was untouched): the colony floor back at
+-1.0, the pin RED (0 passed, 1 failed of 711), restored clean.
+W15-c's chain fired at 06:31.
+
 ## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
 
 THE MEMO NAMES ITS NEAR MISSES. SEARCH_MEMO_WRITES counts the
