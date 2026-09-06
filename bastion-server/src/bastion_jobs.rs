@@ -9461,6 +9461,34 @@ pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
     head.is_some_and(|h| h.z - feet.z >= 2)
 }
 
+/// ★ W16-b pinned: THE MOVER WALKS TO THE STEP IT SLID OFF. The chaser mover
+/// phases its move from `d` (target minus feet). The old rule sent a body
+/// straight up at any target more than 1.2 above -- a vanilla body would
+/// jump; the kinematic mover cannot rise in place, so it stood still until
+/// the fetch stalled (W16-i: five of twenty-four bans short_of_prev, the
+/// body two blocks short of a credited stair step, push_site chaser-settle).
+/// Now a higher target with horizontal distance is walked toward (the
+/// surface probe lifts the body a block at each column it can) and the
+/// vertical-only push is kept for a target straight overhead. A pure glide
+/// is `d` as before; a drop with horizontal distance is horizontal as
+/// before; a flat target is horizontal; an xy-arrived target settles.
+pub(crate) fn glide_phase(d: Vec3<f32>, pure_glide: bool) -> Vec3<f32> {
+    let horiz = Vec3::new(d.x, d.y, 0.0);
+    if pure_glide {
+        d
+    } else if d.z > 1.2 && horiz.magnitude() <= 0.3 {
+        Vec3::new(0.0, 0.0, d.z)
+    } else if d.z > 1.2 {
+        horiz
+    } else if d.z < -1.2 && horiz.magnitude() > 0.3 {
+        horiz
+    } else if horiz.magnitude() > 0.05 {
+        horiz
+    } else {
+        d
+    }
+}
+
 /// ★ W16-i pinned: THE BAN NAMES THE STEP IT MISSED -- where the body stands
 /// against the route's PREVIOUS node (the one the chaser credited) when a
 /// climb is banned: no_prev; on_prev (within one block in xy and at its
@@ -36839,17 +36867,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // so ONE VOXEL is the step offset; only
                                 // deeper promises keep the phased shape.
                                 let horiz = Vec3::new(d.x, d.y, 0.0);
-                                let phased = if pure_glide {
-                                    d // A to B, straight — the ruling.
-                                } else if d.z > 1.2 {
-                                    Vec3::new(0.0, 0.0, d.z)
-                                } else if d.z < -1.2 && horiz.magnitude() > 0.3 {
-                                    horiz
-                                } else if horiz.magnitude() > 0.05 {
-                                    horiz // GLIDE: z comes from the surface
-                                } else {
-                                    d // xy arrived: settle the last of z
-                                };
+                                // ★ W16-b: one phase rule (see `glide_phase`): a higher
+                                // target with horizontal distance is walked toward.
+                                let phased = glide_phase(d, pure_glide);
                                 let dist = phased.magnitude();
                                 if dist > 0.05 {
                                     // ★ REAL SIM DT, NOT A CONSTANT (Ben's
@@ -56285,6 +56305,23 @@ mod tests {
         assert_eq!(memo_near_miss(memo, feet + Vec3::new(0, 4, 0), target, 1000), Some("start"), "the start off by four");
         assert_eq!(memo_near_miss(memo, feet, target + Vec3::unit_x(), 1000), Some("target"), "the target off");
         assert_eq!(memo_near_miss(memo, feet, target, 1900), Some("expired"), "the window past");
+    }
+
+    /// ★ W16-b pinned: a pure glide is d; a target two up and two over is
+    /// walked toward (horizontal); a target two up straight overhead is
+    /// pushed vertically; a drop with distance is horizontal; a flat target
+    /// is horizontal; an xy-arrived target settles. Planted defect: the old
+    /// vertical-only push for any higher target -> red.
+    #[test]
+    fn the_mover_walks_to_the_step_it_slid_off() {
+        let up_over = Vec3::new(2.0, 0.5, 2.0);
+        assert_eq!(glide_phase(up_over, true), up_over, "a pure glide is d");
+        assert_eq!(glide_phase(up_over, false), Vec3::new(2.0, 0.5, 0.0), "two up and two over: walk toward it");
+        assert_eq!(glide_phase(Vec3::new(0.1, 0.0, 2.0), false), Vec3::new(0.0, 0.0, 2.0), "straight overhead: vertical");
+        assert_eq!(glide_phase(Vec3::new(3.0, 0.0, -2.0), false), Vec3::new(3.0, 0.0, 0.0), "a drop with distance: horizontal");
+        assert_eq!(glide_phase(Vec3::new(1.0, 1.0, 0.4), false), Vec3::new(1.0, 1.0, 0.0), "flat: horizontal");
+        let arrived = Vec3::new(0.01, 0.02, 0.6);
+        assert_eq!(glide_phase(arrived, false), arrived, "xy arrived: settle the last of z");
     }
 
     /// ★ W16-i pinned: no previous node: no_prev; higher than it: above_prev;

@@ -2439,6 +2439,63 @@ class W15-c-b prices), `same` 36, `start_unlabelled` 21, arrivals
 starving sleepers 0, stuck 0, p95 481 us. The W16-i b2 reader
 took b2 at 08:26 on the W16-i2 pair.
 
+### W17-i read: the class recurred on b2 (the W2-b pair e6ce19724f; 08:39, hour 14) -- door_below
+
+Unreachable deliveries 24 by hour 14, UNREACHABLE APPROACH 18,
+every one from_in_house; the door probe fired nine times, every
+verdict door_below: colonists 52 and 30 at (7706,6310,183) in the
+house whose box spans z 180..210, doors_any_z 2, the nearest door
+at (7690,6304,181) TWO BELOW the feet, the walker's own column
+'#~~~~~~~~~' -- solid three below, then nine cells neither solid
+nor walkable. The body stands at z 183 on a bed sprite two blocks
+above its floor at 180; a sprite block is not solid and the cell
+above it is not colonist-walkable (no solid directly below), the
+router descends one block at a time, so the search from the bed
+is an island and answers "unreachable" in its first poll. W17-i
+registered three arms (door_above, no_door, level) and the read
+gave a fourth; the instrument PASSED (every from_in_house line
+carries a verdict and a column) and the column named the class.
+W17-b (below) starts the search where the body can stand.
+
+### W16-i read: b2 +4 and +10 (the W2-b pair e6ce19724f; 08:33, 08:39)
+
++4 (hour 11): CLIMB BANNED (fetch) 1 (credit short_of_prev,
+rise_next Some(1), push chaser-settle), exhausted 19, arrivals
+324, p95 431. +10 (hour 14): bans 2, both short_of_prev on
+colonist 16 (prev two blocks off and one below, rise_next
+Some(1)), CLIMB BANNED (other) 4, FETCH STALLED 2, exhausted 40
+(30 on W15-c's +10), `same` 17, `start_unlabelled` 10, arrivals
+432 (485), p95 527, sleepers 0. No on_prev ban -- the jump class
+absent on b2 with W2-b aboard (it was 0-2 here before, so b1
+decides W2-b); the two short_of_prev bans are W16-b's class.
+
+## W17-b, registered 08:46 (keyed on the W16-b stage; the queue's end)
+
+THE SEARCH STARTS WHERE THE BODY CAN STAND. Defect: above.
+Mechanism: `search_start_stand(walkable, feet)` -- the feet when
+their cell is colonist-walkable, else the first cell one or two
+below that is, else the feet (identity), the xy kept; both
+enqueued searches (the approach search to the trunk's node 0 and
+the exact search) start from it; the detour search's start is a
+route node already; the mover drops the difference on its own. No
+new log line. Pin `the_search_starts_where_the_body_can_stand`
+(walkable feet: identity; one below; two below; three below not
+tried; nothing standable: identity); planted: the search below
+never tried, red. Prediction (b2 fresh after W16-b's day-1 block,
+b1 fresh after W16-b's night-1 block; `wait-w17b-b2.sh`,
+`wait-w17b-b1.sh`): on b2 unreachable deliveries for the day at
+most 5 (24 by hour 14 on this run; 12-39 on the days the class
+occurred), UNREACHABLE APPROACH from_in_house at most 5, meals >=
+70, sleepers <= 2, arrivals within 20%; on b1 no regression.
+Falsified if from_in_house unreachables hold with door_below (the
+bed's floor itself is sealed: a plot row) or a new verdict class
+appears. Rejected: a two-down move in the router (the descent
+note's branching cost, and drops planned for every walker); moving
+the body (a teleport); the fall-priced drop edge (the long fix for
+cliffs, not for beds). NOT evidenced: beds three or more above
+their floor (identity: still an island); the target side. The dry
+tree at 1377f60249 with W16-b applied first validated the anchors.
+
 ## W15-c, registered 06:01 (keyed on the W16-a stage; the queue's end; common/)
 
 THE DESTINATION'S BUILDING IS NOT A DETOUR. Defect: above (34 of
@@ -2625,6 +2682,44 @@ different houses (both free; the way between still priced through
 a third house); b1 (one replicate on b2 first). The dry tree at
 83e3666cb6 (W16-i2) with W2-b applied first validated every
 anchor.
+
+### W15-c-b landed (1377f60249, staged 08:50)
+
+Check clean, the common pin green (1 of 714), committed 08:37,
+both halves staged 08:50:38 with the client compiled fresh
+against common; shipped to lab-bin 08:50. The b2 reader restarts
+b2 after W2-b's day-1 block, the b1 reader after W2-b's night-1
+block. Falsifier at 08:54 (its own detached worktree): the
+start's plot dropped, the pin RED (0 passed, 1 failed of 714),
+restored clean. W16-b's chain fired at 08:55.
+
+### W16-i read: b1 hour 19 (the W16-i2 pair 83e3666cb6; 08:42)
+
+CLIMB BANNED (fetch) 8 (7 on_prev with rise_next Some(2): the jump
+ledge; 1 short_of_prev), CLIMB BANNED (other) 0, PROMISED CLIMB
+TAKEN 5, FETCH STALLED 19, FETCH BUDGET EXPIRED 18, STALL BLAMED 3;
+arrivals 727 (736, 601), stuck 5, sleepers 0; longest-tier steps
+5,777 (951 and 2,434 on the W15-c runs: run-to-run). The block's
+p95 sample read 2,237 us; the series over the run is 685-1,015 us
+with spikes (114 samples: 9 above 1,000, 5 above 2,000, max
+3,846) against the previous run's 93 samples with 6 and 5 and a
+max of 2,693 -- the same shape, the sample fell on a spike; no
+regression. The verdicts hold their partition (7:1) -- W2-b on
+b1 (after W16-i2's night) is the read that matters.
+
+### W16-i read: b1 night 1 (83e3666cb6; 08:59, hour 6 of day 1) -- the second replicate
+
+CLIMB BANNED (fetch) 8 (none new since hour 19): on_prev 7,
+short_of_prev 1, every push_site chaser-settle, every rise_next
+Some(2); CLIMB BANNED (other) 2, PROMISED CLIMB TAKEN 6, FETCH
+STALLED 20, FETCH BUDGET EXPIRED 21; arrivals 926 (933, 838, 788),
+stuck 10, starving sleepers 0, steps 7,235, p95 678 us. W16-i on
+b1, second replicate: PASSED as registered, the same partition as
+the first (19:5 on e7ad98977a, 7:1 here): the jump ledge is the
+class (W2-b), the slid-off step the residual (W16-b). The W16-i2
+b1 reader took b1 at 09:00 on the W15-c-b pair 1377f60249, which
+carries W2-b: b1's hour-19 read (~09:45) is W2-b's first day on
+the ledge arm.
 
 ### W15-c read: b1 hour 19 (on the W16-i pair e7ad98977a; 08:01)
 
@@ -2887,6 +2982,64 @@ the line prints without the frame. Rejected: allowing the assist
 for trunk walkers (W6-C measured it worse); fixing the ban rule
 before the frames are counted. NOT evidenced: the fix the frame
 names. The dry tree at e7ad98977a (W16-i) validated the anchors.
+
+### The mover's phase rule, read at 08:35 -- why every ban ends "chaser-settle"
+
+The chaser mover phases its move from `d` (target minus feet):
+a pure glide takes `d`; else a target more than 1.2 above ->
+(0, 0, dz), a VERTICAL push only; else a drop with horizontal
+distance -> horizontal; else horizontal; else settle. The
+vertical-only branch is a physics body's jump reflex. The
+kinematic mover cannot rise in place: its surface probe (dz 0,
++1, -1, -2 at the body's own column) finds the floor it stands
+on, the settle branch writes the same position, the fetch stalls
+with no displacement, and the ban rule fires on the head two up.
+That is one mechanism under both credit classes: the jump edge
+(on_prev, the head two up and one over: W2-b removed the edge)
+and the slid-off step (short_of_prev, the body two blocks short
+and below a credited stair node whose next column is standable
+one up: the body never walked to it because the rule pushed it
+straight up). W16-b (below) changes the rule for the second class.
+
+## W16-b, registered 08:38 (keyed on the W15-c-b stage; the queue's end)
+
+THE MOVER WALKS TO THE STEP IT SLID OFF. Defect: above (5 of 24
+bans on b1 short_of_prev with push_site chaser-settle and rise_next
+Some(1) or Some(2)). Mechanism: `glide_phase(d, pure_glide)` -- a
+pure glide is d; a target more than 1.2 above with no horizontal
+distance (<= 0.3) is pushed vertically as before (the lift case);
+a target more than 1.2 above WITH horizontal distance is walked
+toward (the surface probe at the next column lifts the body by
+one where a standable cell sits one up); a drop with distance, a
+flat target and an xy-arrived target as before; the mover asks it
+in place of the inline chain (the unused `horiz` binding goes).
+Identity for pure glides and for every target within 1.2 of the
+feet. Pin `the_mover_walks_to_the_step_it_slid_off` (six cases);
+planted: the old vertical-only push for any higher target, red.
+Prediction (b1 fresh after W15-c-b's night-1 block, b2 fresh after
+W15-c-b's day-1 block; `wait-w16b-b1.sh`, `wait-w16b-b2.sh`): on
+b1 short_of_prev bans 0 or 1 by the night (5) and CLIMB BANNED
+(fetch) <= 3 in total with W2-b aboard (24), FETCH STALLED <= 20
+(35-45), arrivals >= 700, sleepers <= 2, stuck <= 8; on b2 no
+regression (bans <= 2, arrivals within 20%). Falsified if
+short_of_prev holds (the surface probe refuses the one-up column:
+a probe row) or a new credit class appears (above_prev: a body
+pushed past its node). Rejected: lifting the body to the credited
+node (a teleport by another name; the W6-C oscillation); widening
+the completion window back (W16-a's class returns); treating the
+settle as the fault (the symptom of a vertical push with nowhere
+to go). NOT evidenced: bodies whose next column is not standable
+one up either (walked toward, stalled at the foot, banned as
+before); the pure-glide trunk legs. The dry tree at 1377f60249
+(W15-c-b) validated the anchors.
+
+The first chain (08:55) FAILED its check: E0425, the patch had
+removed the `horiz` binding as unused and a later branch (some
+two hundred lines on) still read it -- the dry tree validates
+anchors, not types (a law already filed). The chain exited with
+the patch in the tree; restored clean at 08:58 by `git checkout`
+of the one file; the patch now keeps the binding; the dry tree
+re-run; the chain relaunched at 08:59 and fires after its hold.
 
 ### The first W16-i2 frames: b1 (83e3666cb6, 08:29, hour 12 of day 0)
 
