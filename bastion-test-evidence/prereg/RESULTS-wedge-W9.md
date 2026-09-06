@@ -2405,6 +2405,16 @@ the original scan in place. NOT evidenced: how the walker got
 below its floor; b1. The dry tree at e6b5bc7e60 validated the
 anchors.
 
+### W17-i landed (ce3bec459e, staged 07:17)
+
+Check clean, the pin green (seven cases), committed 07:03, both
+halves staged 07:17:19; the binary verified by contents
+(door_dz_verdict and doors_any_z present). The b2 reader restarts
+b2 after W15-c's day-1 block and reads +4, +10 and day 1 with the
+door verdicts. Falsifier at 07:23: above and below swapped, the
+pin RED (0 passed, 1 failed), restored clean. Shipped to lab-bin
+07:18. W16-i's chain fired at 07:22.
+
 ## W15-c, registered 06:01 (keyed on the W16-a stage; the queue's end; common/)
 
 THE DESTINATION'S BUILDING IS NOT A DETOUR. Defect: above (34 of
@@ -2559,6 +2569,55 @@ day-1 read (~07:40) decides W16-a's bars; if the class holds, the
 next instrument (W16-i) prints at every CLIMB BANNED the previous
 node, the body's z against it, and the mover's rise probe at the
 next column -- why the body is not where its credit says.
+
+### W16-a read: b2 day 1 (cb7bea7543, 07:19, hour 0 of day 1)
+
+CLIMB BANNED (fetch) 2 for the whole day (bar <= 3; 6 on the
+W15-i4 run to its night read) -- PASSED; CLIMB BANNED (other) 0;
+PROMISED CLIMB TAKEN 0 (1); FETCH STALLED 9 (bar <= 12) --
+PASSED; FETCH BUDGET EXPIRED 8 (bar <= 6, half of 13) -- FAILED
+by two; starving sleepers 0 -- PASSED; arrivals 742 (560-603 on
+the two previous day-1 reads: +25%, above the band on the good
+side); ITEM 39 p95 567 us (520; within 2x) -- PASSED; stuck 0.
+Not registered and worse: exhausted searches 707 for the day (413
+and 366 on the two previous runs; +70%), the probes 51 cut_off / 14
+sealed with `same` 32 of the perimeter class as before; EMBED
+WATCH 8 (5 on W15-i4's day 1), writers pure-glide 5, hold 2,
+refused-rock 1; unreachable 17 (39). Reading: the stair class fell
+as registered (both remaining bans are colonist 103's two-step
+stair, above) and nobody starved, while the searches exhausted
+more -- a body that no longer takes credit for a step it has not
+climbed pushes at the step, stalls when the mover does not rise,
+and asks again; W15-c (staged 06:52, on b2 from this restart)
+prices the searches that flood, and its read says whether the
+exhaustion comes back down. Disposition on b2: PASSED on its
+primary bars, one secondary bar missed by two, and a cost
+(exhaustion +70%) to be read against W15-c. b1's hour-19 and
+night-1 reads follow.
+
+## W16-i, registered 07:08 (keyed on the W17-i stage; the queue's end)
+
+THE BAN NAMES THE STEP IT MISSED. Mechanism:
+`stair_credit_verdict(prev_dxy, prev_dz)` -> no_prev | above_prev
+| short_of_prev (two or more blocks away in xy, not above) |
+below_prev (within one block, lower) | on_prev; at CLIMB BANNED
+(fetch) the line gains `prev` (the chaser's previous node),
+`prev_dxy`, `prev_dz`, `credit`, `rise_next` (the first standable
+dz in feet-1..feet+2 in the next column toward the head) and
+`push_site` (the last mover push site). No behaviour changes. Pin
+`the_ban_names_the_step_it_missed` (eight cases; colonist 103's
+two west and one below is short_of_prev); planted: short and
+below swapped, red. Prediction (b2 fresh after W17-i's day-1
+block, b1 fresh after W15-c's night-1 block; `wait-w16i-b2.sh`,
+`wait-w16i-b1.sh`): every ban carries a verdict and they
+partition -- short_of_prev with push_site chaser-settle: the
+mover's settle displaces bodies off credited steps (a mover row);
+below_prev: a credit path other than the z-window (a chaser row);
+on_prev with rise_next None: a real two-block ledge (the router's
+jump). Falsified only if the line prints without a verdict.
+Rejected: fixing the settle or the index before the verdicts are
+counted. NOT evidenced: the fix the verdict names. The dry tree
+at ce3bec459e (W17-i) validated the anchors.
 
 ## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
 

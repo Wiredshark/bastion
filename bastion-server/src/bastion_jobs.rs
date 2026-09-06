@@ -9461,6 +9461,22 @@ pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
     head.is_some_and(|h| h.z - feet.z >= 2)
 }
 
+/// ★ W16-i pinned: THE BAN NAMES THE STEP IT MISSED -- where the body stands
+/// against the route's PREVIOUS node (the one the chaser credited) when a
+/// climb is banned: no_prev; on_prev (within one block in xy and at its
+/// height); below_prev (within one block in xy, lower: credited from below,
+/// or settled down); short_of_prev (two or more blocks away in xy, not
+/// above: never reached it); above_prev (higher than the node).
+pub fn stair_credit_verdict(prev_dxy: Option<i32>, prev_dz: Option<i32>) -> &'static str {
+    match (prev_dxy, prev_dz) {
+        (None, _) | (_, None) => "no_prev",
+        (_, Some(dz)) if dz >= 1 => "above_prev",
+        (Some(dxy), Some(_)) if dxy >= 2 => "short_of_prev",
+        (_, Some(dz)) if dz <= -1 => "below_prev",
+        _ => "on_prev",
+    }
+}
+
 /// ★ AN UNREACHABLE STORE IS WITHDRAWN ON THE SEARCH'S WORD (W1,
 /// 2026-09-02). True when a search was made for the target (a route
 /// target exists), found NO path (`PathState::None`), and left no route
@@ -33503,12 +33519,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 false
                                             };
                                             let tier_after_drop = agent.as_deref().map(|a| a.chaser.path_length());
+                                            // ★ W16-i: the previous node, the body's offset from it,
+                                            // and whether the mover could rise into the next column
+                                            // toward the head (a standable cell within feet-1..feet+2).
+                                            let prev_dxy = sn.route_prev.map(|p| (p.xy() - f.xy()).map(|e| e.abs()).reduce_max());
+                                            let prev_dz = sn.route_prev.map(|p| f.z - p.z);
+                                            let rise_next = sn.route_head.and_then(|h| {
+                                                let d = (h.xy() - f.xy()).map(|e| e.signum());
+                                                if d == Vec2::zero() {
+                                                    return None;
+                                                }
+                                                let col = f.xy() + d;
+                                                let standable = |q: Vec3<i32>| {
+                                                    let solid = |c: Vec3<i32>| terrain.get(c).ok().is_some_and(|b| b.is_filled());
+                                                    solid(q - Vec3::unit_z()) && !solid(q) && !solid(q + Vec3::unit_z())
+                                                };
+                                                (-1..=2).find(|dz| standable(Vec3::new(col.x, col.y, f.z + *dz)))
+                                            });
                                             info!(
                                                 job = active.job,
                                                 colonist = uids.get(entity).map(|u| u.0.get()),
                                                 feet = ?f,
                                                 head = ?sn.route_head,
                                                 ahead = ?sn.route_ahead,
+                                                prev = ?sn.route_prev,
+                                                prev_dxy = ?prev_dxy,
+                                                prev_dz = ?prev_dz,
+                                                credit = stair_credit_verdict(prev_dxy, prev_dz),
+                                                rise_next = ?rise_next,
+                                                push_site = ?uids.get(entity).and_then(|u| board.last_push_site.get(u)),
                                                 route_dropped,
                                                 tier_after_drop = ?tier_after_drop,
                                                 "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the route is dropped and the next search goes another way, one tier up"
@@ -56232,6 +56271,22 @@ mod tests {
         assert_eq!(memo_near_miss(memo, feet + Vec3::new(0, 4, 0), target, 1000), Some("start"), "the start off by four");
         assert_eq!(memo_near_miss(memo, feet, target + Vec3::unit_x(), 1000), Some("target"), "the target off");
         assert_eq!(memo_near_miss(memo, feet, target, 1900), Some("expired"), "the window past");
+    }
+
+    /// ★ W16-i pinned: no previous node: no_prev; higher than it: above_prev;
+    /// two or more blocks away and not above: short_of_prev; within one
+    /// block and lower: below_prev; within one block at its height: on_prev.
+    /// Planted defect: short and below swapped -> red.
+    #[test]
+    fn the_ban_names_the_step_it_missed() {
+        assert_eq!(stair_credit_verdict(None, None), "no_prev");
+        assert_eq!(stair_credit_verdict(Some(0), Some(1)), "above_prev");
+        assert_eq!(stair_credit_verdict(Some(2), Some(-1)), "short_of_prev", "colonist 103: two west, one below");
+        assert_eq!(stair_credit_verdict(Some(3), Some(0)), "short_of_prev");
+        assert_eq!(stair_credit_verdict(Some(1), Some(-1)), "below_prev", "credited from below");
+        assert_eq!(stair_credit_verdict(Some(0), Some(-2)), "below_prev");
+        assert_eq!(stair_credit_verdict(Some(1), Some(0)), "on_prev");
+        assert_eq!(stair_credit_verdict(Some(0), Some(0)), "on_prev");
     }
 
     /// ★ E2-s pinned: a cell inside a store keys on the store, a loose cell
