@@ -9559,44 +9559,68 @@ pub(crate) static SUPPER_YIELDS: core::sync::atomic::AtomicU64 = core::sync::ato
 
 pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
 
-/// ★ W18-b pinned: THE BODY DOES NOT DROP INTO A CELL IT CANNOT LEAVE. A
-/// two-block drop is taken only when its landing has a way up: a walk over
-/// standable cells, one block up or down per step, within
-/// `DROP_EXIT_RADIUS` blocks, reaches a cell as high as the edge dropped
-/// from. A two-deep pit whose floor meets only its own rim two above has
-/// none, and a body that dropped in bobbed there through an evening at
-/// hunger 0.00 (colonist 16, (7712,6306), 39 drops) and went to bed
-/// starving.
-pub(crate) const DROP_EXIT_RADIUS: i32 = 4;
+/// ★ W18-b / W18-b2 pinned: THE BODY DOES NOT DROP INTO A CELL IT CANNOT
+/// LEAVE -- AND THE DROP INTO THE OPEN IS ALLOWED. A two-block drop is
+/// refused only when its landing is a CLOSED basin: the walk over standable
+/// cells (one block up or down per step) from the landing reaches neither
+/// a cell as high as the edge dropped from (a way up) nor
+/// `OPEN_BASIN_CELLS` cells (the town). W18-b asked for a way up within
+/// four blocks and so refused the farm terrace's ledge, whose landing is
+/// the whole lower town: three farmers stalled at that edge on their way
+/// to supper and slept at hunger 0.00 (b2, dfa366b6db, night 0). The pit
+/// (colonist 16, (7712,6306), 39 drops, an evening at hunger 0.00) is a
+/// nine-cell floor under a rim two above: closed, still refused.
+pub(crate) const OPEN_BASIN_CELLS: usize = 64;
 
 pub(crate) static DROPS_REFUSED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub(crate) static DROPS_OPENED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-pub(crate) fn drop_has_way_up(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DropVerdict {
+    /// The walk reached a cell as high as the edge.
+    WayUp,
+    /// The walk reached `OPEN_BASIN_CELLS` cells with no way up: the
+    /// landing opens onto the town.
+    Open { cells: usize },
+    /// The walk ran out of cells: a closed basin.
+    Closed { cells: usize },
+}
+
+pub(crate) fn drop_verdict(
     standable: impl Fn(Vec3<i32>) -> bool,
     landing: Vec3<i32>,
     edge_z: i32,
-) -> bool {
+) -> DropVerdict {
     let mut seen = std::collections::HashSet::new();
     let mut queue = std::collections::VecDeque::new();
     seen.insert(landing);
     queue.push_back(landing);
     while let Some(c) = queue.pop_front() {
         if c.z >= edge_z {
-            return true;
+            return DropVerdict::WayUp;
+        }
+        if seen.len() >= OPEN_BASIN_CELLS {
+            return DropVerdict::Open { cells: seen.len() };
         }
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             for dz in [1, 0, -1] {
                 let n = c + Vec3::new(dx, dy, dz);
-                if (n.x - landing.x).abs() > DROP_EXIT_RADIUS || (n.y - landing.y).abs() > DROP_EXIT_RADIUS {
-                    continue;
-                }
                 if standable(n) && seen.insert(n) {
                     queue.push_back(n);
                 }
             }
         }
     }
-    false
+    DropVerdict::Closed { cells: seen.len() }
+}
+
+/// The drop is taken unless its landing is a closed basin.
+pub(crate) fn drop_is_safe(
+    standable: impl Fn(Vec3<i32>) -> bool,
+    landing: Vec3<i32>,
+    edge_z: i32,
+) -> bool {
+    !matches!(drop_verdict(standable, landing, edge_z), DropVerdict::Closed { .. })
 }
 
 pub(crate) fn bob_repeats(prev: Option<(Vec2<i32>, u64)>, cell: Vec2<i32>, now: u64) -> bool {
@@ -37184,27 +37208,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 && !solid(feet)
                                                 && !solid(head)
                                             {
-                                                // ★ W18-b: a two-block drop only where the
-                                                // landing has a way up.
-                                                if dz == -2
-                                                    && !drop_has_way_up(
+                                                // ★ W18-b / W18-b2: a two-block drop is refused only into a
+                                                // closed basin; a landing that opens onto the town is taken.
+                                                if dz == -2 {
+                                                    match drop_verdict(
                                                         |c| common::path::colonist_walkable(&*terrain, c),
                                                         feet,
                                                         fz,
-                                                    )
-                                                {
-                                                    let n = DROPS_REFUSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-                                                    if n.is_power_of_two() {
-                                                        info!(
-                                                            uid = uids.get(entity).map(|u| u.0.get()),
-                                                            landing = ?feet,
-                                                            edge_z = fz,
-                                                            refused = n,
-                                                            site = "bridge",
-                                                            "bastion: THE DROP HAS NO WAY UP — a two-block step refused; the body holds at the edge (W18-b)"
-                                                        );
+                                                    ) {
+                                                        DropVerdict::Closed { cells } => {
+                                                            let n = DROPS_REFUSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                            if n.is_power_of_two() {
+                                                                info!(
+                                                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                                                    landing = ?feet,
+                                                                    edge_z = fz,
+                                                                    cells,
+                                                                    refused = n,
+                                                                    site = "bridge",
+                                                                    "bastion: THE DROP HAS NO WAY UP — a two-block step refused; the body holds at the edge (W18-b)"
+                                                                );
+                                                            }
+                                                            continue;
+                                                        },
+                                                        DropVerdict::Open { cells } => {
+                                                            let n = DROPS_OPENED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                            if n <= 8 || n.is_power_of_two() {
+                                                                info!(
+                                                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                                                    landing = ?feet,
+                                                                    edge_z = fz,
+                                                                    cells,
+                                                                    opened = n,
+                                                                    site = "bridge",
+                                                                    "bastion: THE DROP INTO THE OPEN IS ALLOWED — the landing opens onto the town, no way up needed (W18-b2)"
+                                                                );
+                                                            }
+                                                        },
+                                                        DropVerdict::WayUp => {},
                                                     }
-                                                    continue;
                                                 }
                                                 return Some((fz + dz) as f32);
                                             }
@@ -37690,27 +37732,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             && !solid(feet)
                                             && !solid(head_c)
                                         {
-                                            // ★ W18-b: a two-block drop only where the
-                                            // landing has a way up.
-                                            if dz == -2
-                                                && !drop_has_way_up(
+                                            // ★ W18-b / W18-b2: a two-block drop is refused only into a
+                                            // closed basin; a landing that opens onto the town is taken.
+                                            if dz == -2 {
+                                                match drop_verdict(
                                                     |c| common::path::colonist_walkable(&*terrain, c),
                                                     feet,
                                                     fz,
-                                                )
-                                            {
-                                                let n = DROPS_REFUSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-                                                if n.is_power_of_two() {
-                                                    info!(
-                                                        uid = uids.get(entity).map(|u| u.0.get()),
-                                                        landing = ?feet,
-                                                        edge_z = fz,
-                                                        refused = n,
-                                                        site = "walk",
-                                                        "bastion: THE DROP HAS NO WAY UP — a two-block step refused; the body holds at the edge (W18-b)"
-                                                    );
+                                                ) {
+                                                    DropVerdict::Closed { cells } => {
+                                                        let n = DROPS_REFUSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                        if n.is_power_of_two() {
+                                                            info!(
+                                                                uid = uids.get(entity).map(|u| u.0.get()),
+                                                                landing = ?feet,
+                                                                edge_z = fz,
+                                                                cells,
+                                                                refused = n,
+                                                                site = "walk",
+                                                                "bastion: THE DROP HAS NO WAY UP — a two-block step refused; the body holds at the edge (W18-b)"
+                                                            );
+                                                        }
+                                                        continue;
+                                                    },
+                                                    DropVerdict::Open { cells } => {
+                                                        let n = DROPS_OPENED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                        if n <= 8 || n.is_power_of_two() {
+                                                            info!(
+                                                                uid = uids.get(entity).map(|u| u.0.get()),
+                                                                landing = ?feet,
+                                                                edge_z = fz,
+                                                                cells,
+                                                                opened = n,
+                                                                site = "walk",
+                                                                "bastion: THE DROP INTO THE OPEN IS ALLOWED — the landing opens onto the town, no way up needed (W18-b2)"
+                                                            );
+                                                        }
+                                                    },
+                                                    DropVerdict::WayUp => {},
                                                 }
-                                                continue;
                                             }
                                             landed = Some((fz + dz) as f32);
                                             break;
@@ -56716,10 +56776,12 @@ mod tests {
         );
     }
 
-    /// ★ W18-b pinned: a two-deep pit whose floor meets only its rim two
-    /// above has no way up; a ramp cell one up beside the floor gives one;
-    /// a one-block edge is always climbable. Planted defect: the walk's
-    /// radius zeroed -> red on the ramp.
+    /// ★ W18-b / W18-b2 pinned: a two-deep pit whose nine-cell floor meets
+    /// only its rim two above is closed; a ramp cell one up beside the
+    /// floor gives a way up; a one-block edge is always climbable; a ledge
+    /// onto a 40x40 lower floor with no way up anywhere is OPEN and the
+    /// drop is taken. Planted defect: the open-basin cap raised to a
+    /// million -> the ledge reads closed -> red.
     #[test]
     fn the_body_does_not_drop_into_a_cell_it_cannot_leave() {
         let o = Vec3::new(10, 10, 179);
@@ -56728,11 +56790,16 @@ mod tests {
             let dy = (c.y - 10).abs();
             (c.z == 179 && dx <= 1 && dy <= 1) || (c.z == 181 && dx.max(dy) == 2)
         };
-        assert!(!drop_has_way_up(pit, o, 181), "a two-deep pit: no way up");
+        assert!(!drop_is_safe(pit, o, 181), "a two-deep pit: no way up, closed");
+        assert_eq!(drop_verdict(pit, o, 181), DropVerdict::Closed { cells: 9 }, "the pit's nine cells");
         let ramp = |c: Vec3<i32>| pit(c) || c == Vec3::new(12, 10, 180);
-        assert!(drop_has_way_up(ramp, o, 181), "a ramp cell one up beside the floor: a way up");
+        assert!(drop_is_safe(ramp, o, 181), "a ramp cell one up beside the floor: a way up");
+        assert_eq!(drop_verdict(ramp, o, 181), DropVerdict::WayUp, "named as a way up");
         let step = |c: Vec3<i32>| c.z == 179 || c == Vec3::new(11, 10, 180);
-        assert!(drop_has_way_up(step, o, 180), "a one-block edge with a cell one up beside it: a way up");
+        assert!(drop_is_safe(step, o, 180), "a one-block edge with a cell one up beside it: a way up");
+        let town = |c: Vec3<i32>| c.z == 180 && (0..40).contains(&c.x) && (0..40).contains(&c.y);
+        assert!(drop_is_safe(town, Vec3::new(20, 20, 180), 182), "a ledge onto the lower town: taken, no way up needed");
+        assert!(matches!(drop_verdict(town, Vec3::new(20, 20, 180), 182), DropVerdict::Open { .. }), "named as open");
     }
 
     /// ★ E2-t pinned: an unclaimed haul's reservation yields; a claimed

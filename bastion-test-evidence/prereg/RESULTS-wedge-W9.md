@@ -2940,6 +2940,195 @@ is the next candidate -- THE BOB IS NOT PROGRESS (the stuck clock
 measured on xy, or a bob counted as no displacement, so the stall's
 consumers act) -- registered after W18-b's first read.
 
+### W18-c on b1, first half-day (15:07; 5346279326 since 14:54): the bobs are gone, the ledge reads as stalls
+
+Bob lines 2, peak bobs=1 (128 on the day before, colonist 117).
+FETCH STALLED 23 by about hour 12 (12-13 for a whole day before):
+21 are Designated(Farm) walks with feet at (7642,6439,182) -- the
+farm terrace's ledge, b1's copy of the one that starved b2's farmers
+-- "no displacement, expiring early", 15 s each, 24 shuns, no stuck
+timeouts, no benches. The chain of causes: W18-b refuses the step
+down (refused=2048 by then), the body holds at the edge, and W18-c's
+x-y clock now sees the hold (the old 3-D clock saw the probe's
+jitter as progress). So the stalls bar W18-c registered (<= 2x the
+day before) will read as W18-b's cost until W18-b2 lands; the honest
+disposal waits for W18-b2's b1 day, where the same walk steps down
+and neither bobs nor stalls. Arrivals 533 by hour ~12 (374-499 at
+hour 12 on earlier days).
+
+### W14-i6 registered (15:05): THE PROOF WAS FALSE (instrument)
+
+Job 440 was benched by three "found no way" approach searches and
+its walker arrived 100 s later (above). The router has no two-block
+step down; the mover takes one. Before the router is changed, the
+rate: proof_was_false(strikes) = strikes >= UNREACHABLE_STRIKES; the
+B5 arrival line carries strikes= and benched= for every arrival, and
+an arrival on three or more strikes prints "THE PROOF WAS FALSE --
+the body arrived at a job the search had struck three times" (job,
+colonist, kind, job_pos, body, strikes, benched). Pin
+the_proof_was_false (0, 2: not; 3, 9: yes); falsifier plants the
+bound off by one. Bar: every B5 line carries the fields; the rate
+(false proofs / distinct benched jobs) on the next b1 day; falsified
+as an instrument if a false-proof line names a job with no bench
+witness that day (the strikes came from another arm -- the join must
+go to the route-proof label). Queued behind W14-w (bastion-server
+only). NOT evidenced: which arm struck (the next instrument carries
+the source if the join is ambiguous).
+
+### W14-w registered (15:00): THE BENCH IS WITNESSED ONCE (instrument honesty)
+
+The 101 route-proof bench lines were 18 jobs: job_strike saturates
+(next >= 3 stays true) and the four older bench sites (route proof,
+fill exhaust, banned climb, terminal chaser) printed on every
+bench=true, benched or not -- job 440 printed 39 times in 2.5 min.
+W14-e2's site already gated on !job.unreachable. Mechanism:
+bench_is_new(bench, already_benched) = bench && !already_benched at
+all five sites; state unchanged (the assignment was idempotent, the
+strikes keep counting, the latch re-arms the bench). Pin
+the_bench_is_witnessed_once; falsifier drops the already-benched
+test -> red on the re-fire. No new string (verified by pin,
+falsifier and the next b1 day's count: lines == distinct benched
+jobs). Queued behind W14-i5 (bastion-server only, a short build).
+
+### Observation (14:55): the router cannot plan the step the mover takes
+
+b1 day 0 (dfa366b6db): 101 "three failed route proofs" bench lines
+are 18 jobs; 17 were never reached (a TradeMission to (7280,7824),
+1,500 blocks out, leads them); ONE was reached anyway -- job 440, a
+DepositRun to zone 87 at (7742,6143,182): colonist 120's exact
+approach search "found no way" three times (18:10:15-18:11:52), the
+job was benched 39 times over 2.5 minutes while the body kept
+walking, and the body ARRIVED at 18:13:38 and deposited. The
+search's world and the mover's disagree, and the neighbour generator
+says how (path.rs 1795-1850): the move set is DIRS (lateral, lateral
++-1, straight down 1), JUMPS (+2, reach-gated) and SCRAMBLES (+3);
+every move's target cell must be walkable; there is NO two-block
+step down. The mover (pre-W18-b) dropped two blocks freely by the
+pre-path glide and the probes' dz -2 arm; W18-b2 keeps that for open
+landings. So a target below a two-block ledge is "unreachable" to
+the search and walked to by the body: false proofs, long detours,
+and the benches, shuns and strikes that hang off them -- GENERATOR
+AND CONSUMER MUST AGREE. Candidate after the queue and W14-i5's
+read: THE ROUTER PLANS THE STEP DOWN (a dz -2 lateral edge for
+colony walkers, admitted by the same open-basin verdict the mover
+uses, priced as a hazard). Also: the bench witness re-fires per
+re-bench (39 lines for one job) -- a witness defect, parked.
+
+### W18-c landed (5346279326, staged 14:52:43)
+
+Chain bkkum6y3n: check ok, pin the_bob_is_not_progress green (1
+passed), committed 5346279326, both halves built from one commit
+("compiled fresh", server exe 14:52). No string marker: the row adds
+no log line and its helper's name does not survive in the release
+exe (grep 0), so the binary is verified by the chain's fresh compile
+from HEAD after the commit and by the falsifier: RED at 14:57 (the
+three-dimensional distance planted back in its own worktree: 0
+passed, 1 failed; restored, 0 dirty). The live read is the bob
+line's stuck_time on b1, which took this pair at 14:54. The pair still
+carries the E2-t and W18-b witness strings (grep 1 each). Readers:
+b1 fresh after E2-t's night-1 block, b2 fresh after E2-t's day-1
+block (each takes the latest staged pair at that moment).
+
+### b1 night 0 on dfa366b6db (14:46): the night watch's supper, again
+
+STARVING 1 at tick 41100: colonist 112, the NIGHT WATCH (took post
+(7722,6320) at 18:38:19 UTC, released by "Personal entry releases
+the held work job" at 18:41:00, a hunger preempt to an EatFrom at a
+store at (7725,6368,186), Traveling at hunger 0.00). Not E2-t's class
+(no shelf refusal) and not a new one: the open judgement item "should
+the night watch carry its own supper" -- its witness on the ledge
+arm. Recorded, not rowed.
+
+### b1 day 0 on dfa366b6db, read at day 1 hour 0 (14:41): W6-D's first bench; W14-e2's first b1 bench; the flood 567
+
+Arrivals 991 (bar >= 950: PASSED), starving 0, fetch bans 0, other
+bans 19 (bar <= 20: PASSED by one; colonist 117 nine of them),
+stalls 12, benches: route proofs 101, W6-D "three banned climbs" 1
+(job 1162, colonist 112 -- W6-D's consumer fired for the first time
+since it landed at 11:17), W14-e2 "three exhausted Longest searches"
+1 (job 1431 -- its first b1 witness), terminal 0. LONGEST-EXHAUST 567
+for the day (bar <= 60: FAILED), all whole-town, top ends 33x
+(7679,6203,181), 26x (7702,6453,182), 26x (7609,6263,181) -- the
+closest_dist=0 class, W14-i5's subject. Bobs: colonist 117 bobs=128
+at (7700,6303) with stuck_time 0.033 s at 64 and 128 -- W18-c's case,
+now on the ledge arm too (the same clock blindness; the pair W18-c
+builds on carries it). Drops refused 8,192, 13 of 14 sampled lines
+"bridge"; no starver on b1 from the rule -- its refused bodies
+re-routed, unlike b2's farmers.
+
+### W18-b FAILED its starving bar on b2's night 0 (14:38) -- W18-b2 registered (14:45): THE DROP INTO THE OPEN IS ALLOWED
+
+b2, dfa366b6db, tick 33000 (the Sleep block): STARVING 3 -- colonists
+17, 20 and 49, all Farm, all RestAt Traveling at hunger 0.00. Each
+evening reads the same: a hunger preempt to an EatFrom at the stores
+north of the farm (items at (7675,6394) / (7644,6394), z 181) from
+feet on the terrace at (7644-7648, 6440-6447, z 182); THE WALKER
+SHUNS ITS STALL on it; a second pick under the shun, stalled and
+shunned too; NIGHT SHELF EMPTY x6 / x6 / x2 (their own shelves held
+nothing); bed. The day's stalls cluster at the terrace's edge
+((7640,6436):8, (7644,6436):3, (7652,6440):2), FETCH STALLED 19 by
+hour 17 against 1 on the W18-i day, and THE DROP HAS NO WAY UP fired
+4,096 times at that edge (landings (7635,6439..6447,180), edge_z
+182). Before W18-b those bodies glided off the ledge to supper; the
+landing is the whole lower town and nobody needs a way back up THERE.
+W18-b asked for a way up within four blocks of the landing. A GUARD
+CAN STARVE ITS PROTECTEE: the guard built for a nine-cell pit refused
+the town's own step down. (b1: the same rule fired 8,192 times by
+hour 16, no starver -- its refused bodies re-routed.) W18-b's pit bar
+PASSED (0 drops at (7712,6306) on both arms); its starving bar
+FAILED; the rule is superseded, not reverted.
+
+W18-b2 MECHANISM: drop_verdict(standable, landing, edge_z) walks the
+standable cells from the landing (one up or down per step) and
+answers WayUp / Open { cells } (OPEN_BASIN_CELLS = 64 reached with
+no way up: the landing opens onto the town) / Closed { cells } (the
+walk ran out first). A two-block drop is refused only on Closed;
+Open is witnessed at the first eight and powers of two ("THE DROP
+INTO THE OPEN IS ALLOWED", uid, landing, edge_z, cells, opened,
+site); the radius cap is gone, the cell cap bounds the walk. The
+pit (nine cells under a rim two above) is Closed, still refused.
+Pin: the pit Closed with nine cells; the ramp WayUp; the step safe;
+a ledge onto a 40x40 lower floor with no way up anywhere Open and
+taken. Falsifier plants the cap at a million -> the 1,600-cell floor
+reads Closed -> red.
+
+PREDICTION (the W18-c readers' blocks read it; the arms take the
+pair at their next restarts): b2 starving sleepers 0 (3 tonight),
+FETCH STALLED <= 6 for the day (19 by hour 17 today), the Open
+witness >= 1 at the terrace ledge, the pit's rim still refused (>= 1
+whenever a body reaches it), POS-WRITE drops at (7712,6306) 0,
+arrivals >= 720; b1 starving <= 1, arrivals >= 900. FALSIFIED if a
+body drops into the pit again (a basin over 64 cells with no way up:
+the cap is the wrong instrument) or a sleeper starves with the Open
+witness at its ledge (the stall was not the drop's).
+
+Rejected: reverting W18-b (colonist 16's pit comes back); a larger
+way-up radius (the ledge's way up is a stair across the town);
+routing the trunk around the ledge (the ramp plot row is the town's
+answer; until then the step down is how the town walks -- MOVEMENT
+LENIENCY). Queue: W18-c (building) -> W18-b2 -> W14-i5.
+
+### W14-i5 registered (14:40): THE EXHAUST NAMES ITS END'S COST (instrument)
+
+The closest_dist=0 flood class (above) needs its end's g before a
+fix is chosen. Astar::visited_cost(node) exposes the recorded g;
+end_cost_summary(states) -> (the cheapest g among the end's states,
+their count, the dearest g anywhere) is pinned
+(the_exhaust_names_its_ends_cost; falsifier plants the dearest end
+state reported as the cheapest); the Longest exhaust diag prints
+end_g / end_states / max_g / direct_edge (the neighbour generator
+asked once from the start node for the end: None = the edge is
+refused, a number = its price) / flee. Plus an experiment test
+(flee_experiment_prints: a 60x60 slab, the end two blocks east, open
+and behind a wall with one gap 39 rows away, with and without the
+flee term) whose four expansion counts the chain prints. Bar (the
+instrument's own): every exhaust line carries the fields; for the
+closest_dist=0 class end_g is Some and above the popped set's max_g,
+and direct_edge is None for the one-block ends (or a number, which
+names the price). Falsified as an instrument if those lines carry
+end_g=None. No readers: b1 reads it at its next restart (the floods
+recur every 15 s).
+
 ### E2-t landed (a86bb23715, staged 14:28:43; shipped to lab-bin 14:29)
 
 Chain btaa424v0: check ok, pin the_supper_outranks_the_posted_haul
