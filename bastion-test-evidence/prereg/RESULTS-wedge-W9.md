@@ -2444,6 +2444,17 @@ evidenced: routes whose start is inside a surcharged building; the
 inline chaser searches; b1's stores. The dry tree at e6b5bc7e60
 with W16-a applied first validated every anchor.
 
+### W15-c landed (be2258bba6, staged 06:52)
+
+Check clean, the common pin green (1 of 712), committed 06:43,
+both halves staged 06:52:23 with the client compiled fresh
+against common; shipped to lab-bin 06:53. The b2 reader restarts
+b2 after W16-a's (second-run) day-1 block; the b1 reader after
+W16-a's night-1 block. Falsifier at 06:56 (its own detached
+worktree): the surcharge paid inside the destination, the pin RED
+(0 passed, 1 failed of 712), restored clean. W17-i's chain fired
+at 06:57.
+
 ## W16-a, registered 05:40 (keyed on the E2-s-i stage; the queue's end; common/)
 
 A COLONIST DOES NOT COMPLETE A NODE FROM BELOW -- the ★★★ mover
@@ -2495,6 +2506,59 @@ detached worktree, so the W15-c chain patching path.rs in the main
 worktree at the same time was untouched): the colony floor back at
 -1.0, the pin RED (0 passed, 1 failed of 711), restored clean.
 W15-c's chain fired at 06:31.
+
+### W16-a on b2: the first restart was REFUSED; the first blocks are void
+
+The b2 reader stopped the W15-i4 server (pid 10760) at 06:29 and
+the restart script refused to boot the new pair ("port still held
+after stop -- refusing", a safety check that failed loudly and
+correctly); the reader then read the DEAD W15-i4 log and printed
+"+4", "+10" and "day 1" blocks stamped `pair a1dc121908`, `hour=12
+game_day=1` -- not W16-a, not a run. Those blocks are void (a
+reader's restart takes the latest staged pair: name the pair
+actually run). Repair at 06:43: every b2 reader (W16-a, W15-c,
+W17-i) now checks the restart's output, waits a minute and retries
+once on "refusing", aborts on a second refusal, and does not read
+until the NEW log's first schedule line shows game_day=0 (the b1
+readers had that guard; the b2 readers did not). The W16-a b2
+reader was relaunched at 06:44 writing to a second file; the
+W15-c b2 reader is keyed on that file's day-1 block. The W16-a b2
+read follows from the relaunch.
+
+### W16-a read: b2 +4 and +10 (cb7bea7543, booted 06:46; read 06:51 and 06:57)
+
++4 (hour 10): CLIMB BANNED (fetch) 2, FETCH STALLED 2, FETCH
+BUDGET EXPIRED 1, probes 30, arrivals 181, sleepers 0; ITEM 39
+p95 3,370 us with spiky samples (742, 624, 2,106, 3,370, 492; the
+three previous runs sat at 412-432 at +4). +10 (hour 13): p95 494
+and every sample since 10:56 between 471 and 527 (458-463 on the
+previous runs at +10: within noise) -- the +4 spikes were boot
+transients (this boot seeded a different store, (7698,6446), and
+loaded different chunks first). CLIMB BANNED (fetch) still 2,
+FETCH STALLED 2, probes 64 (48 cut_off, 14 sealed), exhausted 66
+(61-87 before), arrivals 425, unreachable 4 (from inside houses:
+the W17-i class), sleepers 0, pump pending 36 (18-26 before; the
+oldest wait 114 ticks). The same eleven minutes of W15-i4's run:
+CLIMB BANNED (fetch) 1, FETCH STALLED 1. Both of this run's bans
+are colonist 103 at (7671,6437,181) with the route head at
+(7674,6437,183): three blocks east and two UP. Its wedge probe
+(job 157, a Craft fetch, route_next_idx 55): route_prev
+(7673,6437,182), head (7674,6437,183), ahead (7674,6436,183) -- a
+two-step stair up onto a wall top (the blocks: solid at (7673,181)
+and (7674,181..182)), one up per node, W16-a's own class; the
+chaser's index had passed the first step while the body stood two
+blocks WEST of it and one below, `last_push_site=chaser-settle`,
+`assist_why=head_far` (the PROMISED CLIMB assist needs the head
+within one block in xy). The skip rule ("the next-next node is
+closer") does not fire here (the head is farther than the step,
+and walls make the chase precise), and W16-a's floor refuses a
+credit from one below -- so either the body stood on the step
+when it was credited and was then settled back down and west
+(the mover), or the index advanced by a path not yet read. The
+day-1 read (~07:40) decides W16-a's bars; if the class holds, the
+next instrument (W16-i) prints at every CLIMB BANNED the previous
+node, the body's z against it, and the mover's rise probe at the
+next column -- why the body is not where its credit says.
 
 ## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
 

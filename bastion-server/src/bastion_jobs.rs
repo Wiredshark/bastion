@@ -406,6 +406,20 @@ pub(crate) fn exhaust_components(
     }
 }
 
+/// ★ W17-i pinned: THE SEALED WALKER NAMES ITS FLOOR -- where the house's
+/// nearest door stands against the walker's feet: no_door (none in the
+/// house's whole box), level (within one block of the feet: a door the
+/// search still could not use), door_above (two or more up: the walker is
+/// below its own floor), door_below (two or more down).
+pub(crate) fn door_dz_verdict(door_dz: Option<i32>) -> &'static str {
+    match door_dz {
+        None => "no_door",
+        Some(dz) if dz >= 2 => "door_above",
+        Some(dz) if dz <= -2 => "door_below",
+        Some(_) => "level",
+    }
+}
+
 /// ★ W15-i3 pinned: THE FRONTIER NAMES WHAT STOPPED IT -- one glyph per
 /// ring cell: '#' solid, 'D' a door sprite (walkable or not), '.' walkable,
 /// '~' neither solid nor walkable nor a door (a rail, a post top, a sprite
@@ -43604,6 +43618,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 let (w_at, w_below, w_above) = door
                                                     .map(|d| (walk(d), walk(d - Vec3::unit_z()), walk(d + Vec3::unit_z())))
                                                     .unwrap_or((false, false, false));
+                                                // ★ W17-i: every door in the house's whole box, the
+                                                // nearest by Manhattan distance including height, and
+                                                // the walker's own column.
+                                                let mut doors_all: Vec<Vec3<i32>> = Vec::new();
+                                                for x in h.min.x..=h.max.x {
+                                                    for y in h.min.y..=h.max.y {
+                                                        for z in h.min.z..=h.max.z {
+                                                            let q = Vec3::new(x, y, z);
+                                                            if is_door(q) {
+                                                                doors_all.push(q);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                doors_all.sort_by_key(|d| {
+                                                    ((d.x - feet.x).abs() + (d.y - feet.y).abs() + (d.z - feet.z).abs(), d.x, d.y, d.z)
+                                                });
+                                                let door_any = doors_all.first().copied();
+                                                let door_dz = door_any.map(|d| d.z - feet.z);
+                                                let solid = |q: Vec3<i32>| terrain.get(q).ok().is_some_and(|b| b.is_filled());
+                                                let column: String = (-3..=6)
+                                                    .map(|dz| {
+                                                        let q = feet + Vec3::new(0, 0, dz);
+                                                        frontier_glyph(solid(q), is_door(q), walk(q))
+                                                    })
+                                                    .collect();
                                                 info!(
                                                     uid = u.0.get(),
                                                     from = ?feet,
@@ -43615,6 +43655,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     door_walkable_at = w_at,
                                                     door_walkable_below = w_below,
                                                     door_walkable_above = w_above,
+                                                    doors_any_z = doors_all.len(),
+                                                    door_any = ?door_any,
+                                                    door_dz = ?door_dz,
+                                                    door_dz_verdict = door_dz_verdict(door_dz),
+                                                    house_z = ?(h.min.z, h.max.z),
+                                                    column = %column,
                                                     "bastion: UNREACHABLE APPROACH DOOR PROBE — a second search from the same feet to the house's nearest door"
                                                 );
                                             }
@@ -56245,6 +56291,20 @@ mod tests {
         assert_eq!(exhaust_components(Some(&idx), prev, s, t).0, "target_unlabelled");
         idx.labels.remove(&s);
         assert_eq!(exhaust_components(Some(&idx), prev, s, t).0, "start_unlabelled");
+    }
+
+    /// ★ W17-i pinned: no door: no_door; two up: door_above; two down:
+    /// door_below; within one: level. Planted defect: above and below
+    /// swapped -> red.
+    #[test]
+    fn the_sealed_walker_names_its_floor() {
+        assert_eq!(door_dz_verdict(None), "no_door");
+        assert_eq!(door_dz_verdict(Some(3)), "door_above", "the walker is below its floor");
+        assert_eq!(door_dz_verdict(Some(2)), "door_above");
+        assert_eq!(door_dz_verdict(Some(-2)), "door_below");
+        assert_eq!(door_dz_verdict(Some(1)), "level");
+        assert_eq!(door_dz_verdict(Some(0)), "level");
+        assert_eq!(door_dz_verdict(Some(-1)), "level");
     }
 
     /// ★ W15-i3 pinned: solid '#', door 'D', walkable '.', neither '~';

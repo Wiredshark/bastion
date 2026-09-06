@@ -1634,6 +1634,24 @@ falsifier. The b1 reader restarts b1 after W14-b2's night-1 block
 and reads the E2 night set with the fell-through count. W16-a's
 chain fires five minutes after this stage.
 
+### E2-s-i read: night 1 on b1 (e6b5bc7e60, 06:59, hour 6 of day 1)
+
+THE PICK WENT ELSEWHERE 7 lines, every one fail_open=false; the
+census walker_shun_steered 7, walker_shun_fell_through 0 -- the
+fail-open admitted no shunned key this night, every pick under a
+live shun was steered. Re-picks under a live shun 0 of 65 (the
+bounded clock). Shun writes 10, STALLED TARGET SHUNNED 10 (all
+enabled=false). Starving sleepers 0 (the replicates now 3, 2, 3,
+0, 0, 2, 0, 1 on b2, 0). Meals 76, no_food_found 0. Swept 13 (7
+never_free, 6 claimed; the sweep swings 5-19 across nights), 2 the
+watch's, 0 refused by the hour, watch carried home 0. PASSED as
+registered (fell_through small, steered = the fail_open=false
+lines). Disposition: E2-s's Store key costs nothing on this night
+either; E2-s-b (eat stalls only) is not needed on this evidence.
+The never_free class (7 of 13 swept) remains the eater busy all
+evening -- the stair (W16-a) and the exhaustion (W15-c) are its
+rows now. The W16-a b1 reader took b1 at 07:00.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the
