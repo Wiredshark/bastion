@@ -7242,6 +7242,9 @@ pub(crate) fn walker_shun_blocks(
 
 pub static WALKER_SHUNS_WRITTEN: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 pub static WALKER_SHUN_STEERED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// ★ E2-s-i: picks that fell through the fail-open onto a key the walker's
+/// own live shun blocks (nothing else was admissible).
+pub static WALKER_SHUN_FELL_THROUGH: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 /// ★ A STORE THE TOWN CANNOT ENTER IS CLOSED (flat arms b1 and b2 on
 /// a900163959: the fourth general store took deposits nobody could draw --
@@ -26653,6 +26656,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 targets_shunned = TARGETS_SHUNNED.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 walker_shuns_written = WALKER_SHUNS_WRITTEN.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 walker_shun_steered = WALKER_SHUN_STEERED.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                walker_shun_fell_through = WALKER_SHUN_FELL_THROUGH.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 skips = %skips.join(" "),
                                 "bastion: EAT CENSUS — why a hungry colonist did not get a meal today (skip reasons are per scan pass, any need)"
                             );
@@ -32429,11 +32433,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .count();
                                 if live_shuns > 0 {
                                     let n = WALKER_SHUN_STEERED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-                                    if n <= 32 || n.is_power_of_two() {
+                                    // ★ E2-s-i: did the fail-open admit a shunned key?
+                                    let pick_key = walker_shun_key_at(&board.stockpiles, ipos);
+                                    let fail_open = walker_shun_blocks(&board.walker_shuns, *uid, pick_key, tick.0);
+                                    if fail_open {
+                                        WALKER_SHUN_FELL_THROUGH.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    if n <= 32 || n.is_power_of_two() || fail_open {
                                         info!(
                                             colonist = %uid,
                                             item = %item,
-                                            pick_key = ?walker_shun_key_at(&board.stockpiles, ipos),
+                                            pick_key = ?pick_key,
+                                            fail_open,
                                             live_shuns,
                                             steered = n,
                                             "bastion: THE PICK WENT ELSEWHERE — this walker holds a live shun and picked under it (E2-s)"

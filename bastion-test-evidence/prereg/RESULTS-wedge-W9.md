@@ -2294,6 +2294,54 @@ walkable ring); printing the open set's size. NOT evidenced: the
 door the verdict points at; b1. The dry tree at de3c397aa6 with
 W14-b2 applied first validated every anchor.
 
+### W15-i4 landed (a1dc121908, staged 05:35)
+
+Check clean, the pin green (seven cases), committed 05:27, both
+halves staged 05:35:42; the binary verified by contents
+(start_unlabelled present). The b2 reader restarts b2 at this
+stage (E2-s's b2 night block already read) and reads +10 and day 1
+with the component verdicts. Falsifier at 05:40: same and
+different swapped, the pin RED (0 passed, 1 failed), restored to
+0 dirty files. Shipped to lab-bin 05:36. E2-s-i's chain fired at
+05:40; W16-a (the stair) is registered behind it.
+
+## W16-a, registered 05:40 (keyed on the E2-s-i stage; the queue's end; common/)
+
+A COLONIST DOES NOT COMPLETE A NODE FROM BELOW -- the ★★★ mover
+row's first cut. Defect: both of the night's starving cases (28 on
+b1, a meal five up a one-up-one-over stair; 149 on b2, its own
+shelf four up) end FETCH STALLED with no displacement and CLIMB
+BANNED "the route's next node was a climb the body never makes":
+the route head two above the feet. The chaser's node-completed
+test (common/src/path.rs) accepts `pos.z - node.z` in -1.0..=2.25,
+so a body at the FOOT of a one-up stair node completes it without
+rising (vanilla bodies jump; the credited step is carried by the
+jump), and on a staircase the next node is then two up, which the
+gliding colony body never takes. Baselines to the night-1 read:
+CLIMB BANNED (fetch) 12 (b1) and 6 (b2), PROMISED CLIMB TAKEN 9
+and 1, FETCH STALLED 24 and 12, FETCH BUDGET EXPIRED 15 and 13.
+Mechanism: `node_z_completed(dz, in_liquid, scramble_reach)` --
+floor -0.5 when `scramble_reach > 0` (colony workers only:
+bastion_path.rs gives colonists 2 or 3, every vanilla NPC 0), -1.0
+otherwise; ceiling and liquid clause unchanged; the chaser calls
+it. No new log line. Pin (veloren-common, bastion_vertical_tests)
+`a_colonist_does_not_complete_a_node_from_below` (nine asserts);
+planted: the colony floor back at -1.0, red. Prediction (b1 fresh
+after E2-s-i's night-1 block, b2 fresh after W15-i4's day-1 block;
+`wait-w16a-b1.sh`, `wait-w16a-b2.sh`; hour 19 and night 1 / +10
+and day 1): CLIMB BANNED (fetch) <= half the baseline (<= 6, <= 3);
+FETCH STALLED <= baseline; starving sleepers <= 2 on b1; arrivals
+within 20% of the previous run; stuck census <= 2; FETCH BUDGET
+EXPIRED <= half (<= 7, <= 6). Falsified if CLIMB BANNED holds or
+FETCH STALLED rises (the glide does not take a one-up either: the
+mover's step is the row) or arrivals fall by more than 20% (the
+stricter completion stalls walkers on slopes). Rejected: a new
+TraversalConfig field (thirty-odd construction sites for one bit
+`scramble_reach > 0` already carries); a two-block lift in the
+mover (the PROMISED CLIMB assist exists and did not fire for 28);
+a wider xy tolerance. NOT evidenced: descents; ladders; the 3-up
+scramble edges. The dry tree at a1dc121908 validated the anchors.
+
 ## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
 
 THE MEMO NAMES ITS NEAR MISSES. SEARCH_MEMO_WRITES counts the

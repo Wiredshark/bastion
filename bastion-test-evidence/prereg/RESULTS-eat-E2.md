@@ -1548,6 +1548,84 @@ store cell keyed on the cell, the pin RED (0 passed, 1 failed),
 restored to 0 dirty files. Shipped to lab-bin 04:50. The W14-b2
 chain fired at 04:55 behind it.
 
+### E2-s read: night 1 on b1 (de3c397aa6, 05:23, hour 6 of day 1)
+
+Bars: re-picks under a live shun 0 of 68 preempts -- PASSED (the
+reader printed "1 of 68, colonist 25 at Store(34)"; its clock
+regex had lost its word boundary in a nested heredoc and read
+`until_tick=` values as the tick; re-run with the boundary on the
+same log: 0. Colonist 25's shun on Store(34) expired at tick
+20,513 and its pick there came at 28,825). Starving sleepers 0
+(bar <= 2; the replicates 3, 2, 3, 0, 0, 2, 0) -- PASSED. Meals
+79 (bar >= 70) and no_food_found 0 (bar <= 424; 212 on the E2-p
+night) -- PASSED. THE WALKER SHUNS ITS STALL 15 writes by the
+day-1 census (10 from Designated(Build) stalls, 5 from EatFrom;
+keys Store(34) 9, Store(2) 3, Store(60) 2, Cell 1), THE PICK WENT
+ELSEWHERE 9 (a pick made while any shun of the walker's was live);
+STALLED TARGET SHUNNED 14, every one `enabled=false` (the gate now
+printed). Starving samples at hours 19-20 (five each, EatFrom
+Traveling) resolved before sleep: no sleeper starved. The sweep:
+5 swept (4 never_free, 1 claimed), none the watch's; supper
+carried home 10 lines at hours 13, 14, 18. Disposition on b1:
+PASSED on every registered bar; b2's replicate follows. Watch:
+the Store key is written by non-eat stalls (10 of 15) and steers
+meals away from a store a build stall touched -- no cost shown on
+this night (no_food_found 0); E2-s-i queued to make THE PICK WENT
+ELSEWHERE say whether the pick fell through the fail-open onto a
+shunned key, so the next read separates "steered" from "admitted
+anyway".
+
+### E2-s read: night 1 on b2 (de3c397aa6, 05:26, hour 6 of day 1)
+
+Starving sleepers 1 (bar <= 2) -- PASSED; meals 72 (>= 70) and
+no_food_found 0 -- PASSED; THE WALKER SHUNS ITS STALL 9 by the
+day-1 census, THE PICK WENT ELSEWHERE 7, STALLED TARGET SHUNNED 8
+(all `enabled=false`). Re-picks under a live shun 2 of 68 (the
+bounded clock agrees with the reader here), both colonist 149 at
+Store(79): its OWN private shelf (one cell, at (7824,6242,187),
+its bed at (7826,6242,186)). At 09:23:29 its EatFrom on item 1254
+stalled with its feet at (7821,6238,183), four blocks below the
+shelf; the shun was written; one second later the need preempt
+picked the same item, and again at 09:25:05 -- at hours 2-3 of the
+Sleep block, when NIGHT HUNGER IS MET AT HOME confines the scan to
+the colonist's own house, so the verdict pass had nothing left and
+the fail-open admitted the shunned shelf, as designed (refusal
+never starves). At 09:27:05, hour 4.9 and the Sleep block over,
+the scan widened and it picked Store(80) instead. The night watch
+on b2: 2 watch loads swept AND 2 SUPPER CARRIED HOME with
+night_watch=true -- E2-p's outcome bar met on this arm. Disposition
+of E2-s: PASSED on both arms on every registered bar; the two
+fall-throughs are named and are the fail-open at night. The
+starving cases on both arms (28's meal five up a stair, 149's own
+shelf four up) are one class: THE MOVER DOES NOT CLIMB THE STAIR
+(CLIMB BANNED: "a climb the body never makes"); that is the ★★★
+mover row, W16, to be sized after the instruments land.
+
+## E2-s-i, registered 05:38 (keyed on the W15-i4 stage; the queue's end)
+
+THE PICK SAYS WHETHER IT FELL THROUGH. An instrument row from
+E2-s's two reads: THE PICK WENT ELSEWHERE fires for any pick made
+while the walker holds a live shun, steered or admitted through
+the fail-open alike, and the reader had to reconstruct the
+difference from the log's clock (its first attempt read
+`until_tick=` as the tick). Mechanism: at the witness, `fail_open
+= walker_shun_blocks(shuns, uid, walker_shun_key_at(stockpiles,
+ipos), tick)`; printed on every fall-through (not only the head
+sample); counted in WALKER_SHUN_FELL_THROUGH and the EAT CENSUS
+(`walker_shun_fell_through`). No behaviour changes; no new
+predicate, so no new pin and no falsifier (wiring, read live;
+the chain's gate runs E2-s's pin). Prediction (b1 fresh after
+W14-b2's night-1 block, `wait-e2si-b1.sh`, night 1): fell_through
+small and every fell-through line a walker whose admissible food
+was only in the shunned store (the night's own-house scan, as on
+b2); steered = the fail_open=false lines. Falsified if
+fell_through approaches steered (the fail-open is the common path
+and the shun refuses nothing in practice). Rejected: reader-side
+reconstruction; restricting the writes to EatFrom stalls before
+the count exists. NOT evidenced: the cost of the Store key on
+non-eat stalls (this count decides it). The dry tree at
+a1dc121908 (W15-i4) validated the anchors.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the
