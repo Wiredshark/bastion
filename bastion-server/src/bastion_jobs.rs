@@ -9509,6 +9509,21 @@ pub(crate) fn banned_climb_strike(climbing: bool, strikes: u8) -> Option<(u8, bo
     climbing.then(|| job_strike(strikes))
 }
 
+/// ★ W14-d pinned: THE TERMINAL CHASER SEARCH STRIKES THE JOB. The chaser
+/// climbs its tiers to Longest and, exhausted there with its last target at
+/// the job, asks again from a flee point -- the whole-town floods (60,696
+/// cells per ask, one pair asked 1,675 times on b1). Its goal verdict and
+/// its claim penalty have no reader while their gates are OFF; the terminal
+/// streak's sixth observation lifts the body and nothing strikes the job.
+/// That sixth observation is one terminal EPISODE: it strikes the held job
+/// through `job_strike`, and three episodes bench it. Below the streak
+/// threshold: None.
+pub(crate) const TERMINAL_STREAK_STRIKE: u8 = 6;
+
+pub(crate) fn chaser_terminal_strike(streak: u8, strikes: u8) -> Option<(u8, bool)> {
+    (streak >= TERMINAL_STREAK_STRIKE).then(|| job_strike(strikes))
+}
+
 /// ★ W2-b-r pinned: THE TRUNK PLANS THE JUMP AGAIN. W2-b set the trunk's
 /// reach to 1 (no two-up jump edge for a gliding body); on the ledge arm
 /// the town is not connected at one-up steps, so every search to a plot
@@ -37868,13 +37883,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let st =
                                         board.terminal_streak.entry(u).or_insert(0);
                                     *st = st.saturating_add(1);
-                                    if *st >= 6 {
+                                    let streak_now = *st;
+                                    if streak_now >= TERMINAL_STREAK_STRIKE {
                                         *st = 0; // one-shot; re-arms if it continues
                                         terminal_trapped.push((
                                             u,
                                             pos.0.map(|e| e.floor() as i32),
                                             2,
                                         ));
+                                    }
+                                    // ★ W14-d: the terminal episode strikes the held job
+                                    // (the goal verdict and the claim penalty have no
+                                    // reader while their gates are OFF).
+                                    if let Some((next, bench)) =
+                                        chaser_terminal_strike(streak_now, job.stuck_strikes)
+                                    {
+                                        job.stuck_strikes = next;
+                                        if bench {
+                                            job.unreachable = true;
+                                            info!(
+                                                job = active.job,
+                                                colonist = u.0.get(),
+                                                job_pos = ?job.pos,
+                                                "bastion: UNREACHABLE PROVEN — job benched off the board (three terminal chaser searches)"
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -56432,6 +56465,17 @@ mod tests {
             common::path::jumps_admitted(TRUNK_SCRAMBLE_REACH, true, true, false),
             "the trunk plans the two-up jump edge"
         );
+    }
+
+    /// ★ W14-d pinned: the sixth terminal observation is an episode and
+    /// strikes (the third episode benches); below six, nothing. Planted
+    /// defect: the streak threshold at 60 -> red.
+    #[test]
+    fn the_terminal_chaser_search_strikes_the_job() {
+        assert_eq!(chaser_terminal_strike(6, 0), Some((1, false)), "first episode: struck, not benched");
+        assert_eq!(chaser_terminal_strike(6, 2), Some((3, true)), "third episode: benched");
+        assert_eq!(chaser_terminal_strike(5, 2), None, "below the streak: nothing");
+        assert_eq!(chaser_terminal_strike(0, 0), None, "no streak: nothing");
     }
 
     /// ★ W6-D pinned: a banned climb strikes (the first two do not bench,

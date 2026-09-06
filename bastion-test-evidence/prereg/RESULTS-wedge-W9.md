@@ -2855,6 +2855,129 @@ at 10:34. The readers restart b1 after W2-b-r's
 night block and b2 after W2-b-r's day-1 block; the shipper moves
 the pair to lab-bin when Ben's server is down.
 
+### W2-b-r replicate 2, early (b1, 5f785e2a5a, hour 13; 11:16) -- THE FLOOD IS BACK AT REACH 2
+
+LONGEST-EXHAUST 166 by hour 13 (19 by hour 20 on replicate 1;
+617 for the W2-b day; 13-33 on the other days), LONGEST-TIER lines
+14,927, top ends 23x(7615,6271,182), 18x(7631,6280,182),
+14x(7679,6203,181) -- three ends re-asked 14-23 times each by
+midday; fetch bans 3, other bans 2 (154 yesterday: the loop class
+is the day's mix), stalls 16, arrivals 539 at hour 13, route-proof
+benches 2. The trunk witness reads reach=2. So the whole-town
+flood is NOT what W2-b's reach 1 did to the town: it recurs with
+the jump edges planned, on a second replicate, at the same order
+of magnitude, and W2-b-r's own bar (LONGEST-EXHAUST <= 30 by hour
+19) will fail today. The attribution in W2-b-r's DEFECT ("reach 1
+disconnects the town") is falsified; what the two flood days share
+is the chaser's terminal re-ask loop -- a target the chaser cannot
+reach at any reach (behind a wall, above a ledge, or simply farther
+than 75,000 iterations find), asked again from a flee point without
+a consumer. W14-d (registered above, chained behind W6-D) is that
+consumer. W2-b-r's revert stands on its other ground (the fetch
+bans have a witness and a shun; the trunk's reach is now a named,
+witnessed constant), and the trunk's reach is re-judged once both
+consumers (W6-D for loops, W14-d for floods) are aboard, per the
+registered decision rule. The memory that named reach 1 as the
+flood's cause is corrected.
+
+### W14-d registered (11:17): THE TERMINAL CHASER SEARCH STRIKES THE JOB
+
+The flood's real consumer. The chaser climbs Small -> Medium ->
+Long -> Longest and, exhausted at Longest from the same start, sets
+flee_from and asks again (the 60,696-cell exhausts; colonist 55's
+1,675 asks). The jobs system already recognises that state
+(chaser_terminal: (Longest, Exhausted) with the last search target
+at the job) and answers it with a goal verdict (reader gated OFF), a
+claim penalty at the release (reader gated OFF) and a per-colonist
+terminal streak whose sixth observation lifts the body two blocks;
+nothing strikes the job. Mechanism: `chaser_terminal_strike(streak,
+strikes)` = `job_strike` at `TERMINAL_STREAK_STRIKE` (6, the
+existing one-shot edge), None below; the third episode benches with
+"three terminal chaser searches". Pin
+`the_terminal_chaser_search_strikes_the_job`; falsifier plants the
+threshold at 60. Bars: b1 top exhaust end <= 4/day, LONGEST-TIER
+lines <= 1,500 by hour 19, benches >= 1 when an end repeats 3x and
+<= 15/day, arrivals >= 900, starving <= 1; b2 benches <= 15,
+arrivals >= 720, exhausted <= 900. Falsified if the top end repeats
+>= 10 with zero benches or benches exceed 15. W14-c's dead gate
+stays in place, named. The strikes tally now counts all four bench
+kinds; the W2-b-r b1 day already had 83 route-proof benches (the
+approach arm's existing consumer, recorded). Chain behind W6-D;
+readers behind the W6-D readers. The first chain failed its check
+(the streak is a `HashMap<Uid, u8>`, the const was typed u32: the
+dry tree validates anchors, not types); the tree was restored,
+the const and the rule retyped to u8, the running falsifier killed
+by its pid file before its plant strings were edited, and both
+relaunched at 11:28 (stage ~11:55).
+
+### W14-c and W2-b-r read: b2 day 1 (5f785e2a5a under the W16-b reader; 11:09)
+
+Exhausted 844 for the day (1,043 on the W16-b day and 758 on the
+W17-b day, both with W2-b; 598 with W2-b and W15-c-b; 513 with
+W15-c alone). The reach-1 trunk is gone from this pair and the
+exhaustion stays high: the doubling was NOT W2-b's flood, and by
+the registered rule W16-b's walking bodies are re-examined for it.
+Components: `same` 44, start_unlabelled 11, untrusted 7,
+target_unlabelled 5 -- the exhausted searches now mostly join
+endpoints the 1-up labeller calls connected (W15-i5's question,
+sharpened). Arrivals 641 (808, 807, 846 on the three days before:
+-20%; the registered bar >= 760 FAILED on this replicate); CLIMB
+BANNED (fetch) 0, other 5 (colonist 55: 3), FETCH STALLED 6,
+budgets expired 15, unreachable 0 all day (W17-b's class 0 again,
+open 0), starving 1 at hour 0 (colonist 62, Traveling to eat),
+p95 497. W14-c: fill benches 0 with memo refusals at 16,384 (the
+saturating counter) -- 844 exhaustions and not one third strike is
+suspect: the strike is gated on PathLength::Longest, and if the
+fill lane enqueues at a lower tier the row has no consumer.
+
+### W14-c DISPOSED: FAILED AS A MECHANISM (11:16) -- its live arm is unreachable
+
+Checked: the pump's fill lane enqueues its approach search at
+PathLength::Small (500 iterations) and its exact search at Medium
+(5,000); it never runs Longest. A BudgetExhausted at 5,000
+iterations "says NOTHING about reachability" (the enum's own doc);
+the proof is FullPathOutcome::Unreachable (the frontier emptied),
+which the approach arm already strikes. So W14-c's strike, gated on
+Longest, cannot fire in the live population -- EVERY GATE ARM MUST
+BE REACHABLE, and this one is not; its pin holds a rule with no
+caller. The Longest-tier floods on b1 (colonist 55's 1,675 asks,
+the 60,696-cell exhausts) were not the pump's fill lane at all:
+they were the agent chaser's own escalated searches (path.rs, the
+Chaser climbs Small -> Medium -> Long -> Longest and asks again),
+and the "fill" attribution in W14-c's DEFECT was wrong -- a number
+without its producer. The pin and the shared `job_strike` rule stay
+(the approach arm uses it, identity); the dead gate is left in
+place and named here rather than churned; the flood's real consumer
+belongs at the chaser's exhausted Longest search, read next. W14-c's
+registered bars are void (the mechanism never ran), not failed.
+
+### W6-D landed (5fb1fc4aee, staged 11:17:58)
+
+Check and pin green on the chain (1 test passed), both halves built
+fresh, the binary verified by its contents ("three banned climbs"
+present once in stage-bin); shipped to lab-bin at 11:18. The
+falsifier planted the gate inverted at 11:19 and the pin went RED
+at 11:22, the tree restored clean (0 dirty); W14-d's chain fires
+five minutes after the stage. b1 boards this pair at the W17-b
+reader's restart after W16-b's night block (~11:55): the first day
+under the decision rule (other bans <= 20, benches <= 15, arrivals
+>= 950) reads at hour 19 ~12:25 and night ~12:45.
+
+### Observation, not a row (b2, 5f785e2a5a, hours 21-22): a two-deep pit, left again
+
+At hour 21 two colonists (33, 62) stood starving in a two-deep pit
+at (7712,6306,179) after the mover's surface probe (dz 0, 1, -1,
+-2) dropped one of them from z 181; the chaser's next node sat two
+up and the glide override walked at it. By hour 22 both had left
+the pit (62 at z 181, Traveling to eat; 33 fed) and starving read 1
+(the evening's hunger, E2's class). Named and not chased: the
+mover's -2/-3 drops run ~160 a day on b2 with W16-b aboard (1,312
+on the W2-b day without it: W16-b cut them eightfold), the router
+plans no two-down move (DIRS) and prices falls at 3.5 a block, and
+`TRUNK_REJECT_DZ` 2 lets the coarse trunk's ground-following hold
+a two-down step. `pit-tally.py` (a starver against its last mover
+drop) is the instrument if a night starver ever sits in one.
+
 ### W2-b-r read: b1 night 1 (d4760fa9fd; 11:01) -- the flood bars PASSED, and the climb loops are the cost
 
 Flood: LONGEST-EXHAUST 33 for the day (617 on the W2-b day, 21 on
