@@ -2855,6 +2855,119 @@ at 10:34. The readers restart b1 after W2-b-r's
 night block and b2 after W2-b-r's day-1 block; the shipper moves
 the pair to lab-bin when Ben's server is down.
 
+### W2-b-r replicate 2: b1 night 1 (5f785e2a5a; 11:44) -- the W2-b day's flood, at reach 2
+
+LONGEST-EXHAUST 558 for the day (whole-town 556), LONGEST-TIER
+lines 49,593, top ends 57x(7693,6457,182), 39x(7734,6404,181),
+35x(7736,6398,180): the W2-b day (617 / 51,798) reproduced with the
+jump edges planned. CLIMB BANNED (fetch) 3, other 42 (colonist 110:
+19, 137: 15), FETCH STALLED 20, budgets expired 18, PROMISED CLIMB
+TAKEN 1, arrivals 945 (977 on replicate 1; 1,013 on the reach-1 day
+with W16-b; 915 on the W2-b day), stuck 12, starving 0, p95 717,
+route-proof benches 42. The reach-2 + W16-b pair now has two full
+b1 replicates: floods 33 and 558, loops 154 and 42, arrivals 977
+and 945; the reach-1 + W16-b pair has one: flood 21, loops 7,
+arrivals 1,013. The flood is the chaser's re-ask loop and W14-d is
+its consumer; the loops are the wall-climb release loop and W6-D
+is theirs; the decision day (the first full b1 day with both
+aboard) is what the registered rule reads.
+
+### The shipped pair's second b2 day (5f785e2a5a under the W17-b reader; 11:40)
+
+Arrivals 835 (641 on replicate 1: that drop was the day's mix, not
+the pair; 807-846 on the three days before), exhausted 748 (844;
+513-598 before W16-b: W16-b's cost stays at roughly +40% on this
+counter, against its benefits on bans, stalls and starving), probes
+67 (55 cut_off, 12 sealed), components start_unlabelled 27 / same
+20 / untrusted 11 / target_unlabelled 7; CLIMB BANNED (fetch) 0,
+other 1, FETCH STALLED 3, budgets expired 6, unreachable 0 all day
+(W17-b's class 0 for the third day), starving 0 all day (no
+STARVING COLONISTS line), p95 484; benches 0 of every kind (W14-c
+dead as found; no route-proof bench either). The b2 arm is quiet on
+this pair; the trunk-reach question is the ledge arm's.
+
+### W2-b-r replicate 2: b1 hour 19 (5f785e2a5a under the W16-b reader; 11:28) -- its flood bar FAILED
+
+LONGEST-TIER steps 37,002 (2,674 on replicate 1; 40,932 on the W2-b
+day; 1,230 on W16-b's reach-1 day), LONGEST-EXHAUST 493 by hour 21
+(33 / 617 / 21), whole-town 491, top ends 34x(7734,6404,181),
+28x(7693,6457,182), 23x(7615,6271,182). The registered bar
+(LONGEST-EXHAUST <= 30 by hour 19) FAILED; the revert's flood
+attribution is falsified on this replicate, as recorded above.
+CLIMB BANNED (fetch) 3 (all trunk under a +2 edge, chaser-refused-
+rock), other 21 by hour 19 and 39 by hour 21 (colonist 110: 19,
+137: 15 -- the loop class again, smaller than replicate 1's 154),
+FETCH STALLED 19 (11 / 6), budgets expired 16, arrivals 728 (772 /
+790 / 733), stuck 2, starving 0, p95 647; ledge tally: stalls 20,
+clusters (7664,6432) 6, (7648,6388) 6. Two reach-2 replicates now
+stand against one reach-1 replicate with W16-b: reach 2 reads
+floods 33 and 493 and loops 154 and 39; reach 1 read flood 21 and
+loops 7 with arrivals 1,013. Both consumers (W6-D for the loops,
+W14-d for the floods) are aboard from the W14-d pair on; the
+decision rule's day is the first full b1 day on that pair.
+
+### W14-e registered (12:05): THE THIRD LONGEST EXHAUSTION STRIKES THE JOB
+
+The flood's consumer, placed where the re-ask lives. The Chaser
+(common/src/path.rs) keeps `longest_exhausts`: +1 in the Longest arm
+of its escalation (one whole-town search spent), reset to 0 at the
+three route-set sites, 0 by Default, exposed on
+ChaserDiagnosticSnapshot. The job loop reads it every tick before
+the progress check (not in the stuck branch), keeps
+`exhausts_struck` per walker (cleared with the terminal streak at
+the job's end), and strikes the held job once per fresh exhaustion
+through `job_strike`: `fresh_exhausts(count, struck)` = count -
+struck, saturating; the third strike benches with "three exhausted
+Longest searches" (job, colonist, job_pos, exhausts). Pin
+`the_third_longest_exhaustion_strikes_the_job`; falsifier plants
+the difference zeroed. Bars: b1 LONGEST-EXHAUST <= 60/day (33, 558,
+617, 21), top end <= 6 (15-57), benches >= 1 whenever a walker's
+count reaches 3 and <= 15/day, arrivals >= 900, starving <= 1; b2
+benches <= 15, arrivals >= 720, exhausted <= 900. Falsified if
+LONGEST-EXHAUST stays >= 100 with zero benches (the count does not
+reach the loop) or benches exceed 15. Rejected: striking in the
+Chaser or the scheduler (common/ knows no jobs; the scheduler's
+board is read-only); a per-tick strike without the struck mark.
+common/ changed: both halves rebuild. Chain behind W14-d (fires at
+once, stage ~12:35); readers behind the W14-d readers.
+
+### W14-d DISPOSED: FAILED AS A MECHANISM (12:00) -- its arm is unreachable too
+
+The decision day's log at hour 12 (89bc78af1d): LONGEST-EXHAUST
+158, LONGEST-TIER lines 13,824, three ends asked 15-26 times, and
+"three terminal chaser searches" benches 0; the CONN-SHADOW census
+reads chaser_terminal_releases=1 for the whole morning. The
+chaser_terminal branch sits inside the job loop's STUCK branch (no
+progress this tick), and a chaser that has exhausted Longest sets
+flee_from and re-asks while the body keeps gliding toward the
+target -- the body makes progress, the stuck branch is skipped, and
+the (Longest, Exhausted) state is observed once a day. So the
+terminal streak never reaches six, the lift never fires, and
+W14-d's strike has no live caller: EVERY GATE ARM MUST BE
+REACHABLE, and this is the second row today (after W14-c) whose
+arm was not. Its pin holds a rule with no caller; its bars are
+void. The producer is now certain (the chaser's own re-ask, seen
+in the scheduler), and the consumer must count the exhaustions
+where they happen: in the Chaser itself (common/src/path.rs), as
+a per-target count of consecutive Longest exhaustions exposed on
+its diagnostic snapshot, read by the job loop every tick and
+struck at three -- reachable by construction. Registered next as
+W14-e once the Chaser's fields are read.
+
+### W14-d landed (89bc78af1d, staged 11:47:22)
+
+Check and pin green on the relaunched chain (1 test passed), both
+halves built fresh, the binary verified by its contents ("three
+terminal chaser searches" present once in stage-bin); shipped to
+lab-bin at 11:47. The falsifier planted the threshold at 60 and the
+pin went RED at 11:52, the tree restored clean (0 dirty). The W17-b
+b1 reader restarted b1 onto this pair at 11:48 (witness reach=2):
+that day (hour 19 ~12:20, night ~12:40) is the decision day with
+both consumers aboard, read with `decision-tally.sh` since that
+reader predates the tallies. Six rows landed today with red
+falsifiers on their planted defects (W16-b, W17-b, W2-b-r, W14-c,
+W6-D, W14-d); W14-c's is red on a rule with no live caller.
+
 ### W2-b-r replicate 2, early (b1, 5f785e2a5a, hour 13; 11:16) -- THE FLOOD IS BACK AT REACH 2
 
 LONGEST-EXHAUST 166 by hour 13 (19 by hour 20 on replicate 1;

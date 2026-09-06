@@ -9520,6 +9520,16 @@ pub(crate) fn banned_climb_strike(climbing: bool, strikes: u8) -> Option<(u8, bo
 /// threshold: None.
 pub(crate) const TERMINAL_STREAK_STRIKE: u8 = 6;
 
+/// ★ W14-e pinned: THE THIRD LONGEST EXHAUSTION STRIKES THE JOB. The chaser
+/// counts its consecutive Longest-tier exhaustions for the current target;
+/// the job loop reads the count every tick and has already struck for
+/// `struck` of them. The fresh ones are struck now, one strike each, and
+/// the third strike benches the job (the whole-town floods: 158 exhausts
+/// by hour 12 with W14-d's stuck-branch consumer seeing one).
+pub(crate) fn fresh_exhausts(count: u8, struck: u8) -> u8 {
+    count.saturating_sub(struck)
+}
+
 pub(crate) fn chaser_terminal_strike(streak: u8, strikes: u8) -> Option<(u8, bool)> {
     (streak >= TERMINAL_STREAK_STRIKE).then(|| job_strike(strikes))
 }
@@ -14385,6 +14395,9 @@ pub struct JobBoard {
     /// own hopeless-verdicts can, wherever the body drifts. Reset on any
     /// arrival.
     pub terminal_streak: HashMap<Uid, u8>,
+    /// ★ W14-e: how many of the chaser's Longest exhaustions this walker's
+    /// held job has already been struck for (cleared with the streak).
+    pub exhausts_struck: HashMap<Uid, u8>,
     /// (refusals, admits-by-reason x5, same-component) shadow counters since
     /// the last census emit, so the fail-open ladder is provable from a log.
     pub shadow_conn: [u32; 7],
@@ -35334,6 +35347,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if let Some(u) = uids.get(entity).copied() {
                             board.claim_penalty.remove(&(u, active.job));
                             board.terminal_streak.remove(&u);
+                            board.exhausts_struck.remove(&u);
                         }
                         if let Some(agent) = agent.as_deref_mut() {
                             agent.rtsim_controller.activity = None;
@@ -37775,6 +37789,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .or_insert(f32::INFINITY);
                             if sdist < *closest {
                                 *closest = sdist;
+                            }
+                        }
+                        // ★ W14-e: THE THIRD LONGEST EXHAUSTION STRIKES THE JOB -- read
+                        // from the chaser every tick, not from the stuck branch (which
+                        // a gliding body's re-asks never enter).
+                        if let Some(u) = uids.get(entity).copied()
+                            && let Some(a) = agent.as_deref()
+                        {
+                            let count = a.chaser.diagnostic_snapshot().longest_exhausts;
+                            let struck = board.exhausts_struck.get(&u).copied().unwrap_or(0);
+                            let fresh = fresh_exhausts(count, struck);
+                            if fresh > 0 {
+                                board.exhausts_struck.insert(u, count);
+                                for _ in 0..fresh {
+                                    let (next, bench) = job_strike(job.stuck_strikes);
+                                    job.stuck_strikes = next;
+                                    if bench && !job.unreachable {
+                                        job.unreachable = true;
+                                        info!(
+                                            job = active.job,
+                                            colonist = u.0.get(),
+                                            job_pos = ?job.pos,
+                                            exhausts = count,
+                                            "bastion: UNREACHABLE PROVEN — job benched off the board (three exhausted Longest searches)"
+                                        );
+                                    }
+                                }
                             }
                         }
                         if sdist + STUCK_EPSILON < active.best_dist {
@@ -56465,6 +56506,17 @@ mod tests {
             common::path::jumps_admitted(TRUNK_SCRAMBLE_REACH, true, true, false),
             "the trunk plans the two-up jump edge"
         );
+    }
+
+    /// ★ W14-e pinned: the fresh exhaustions are the count less those already
+    /// struck; none when caught up; saturating when the count reset under
+    /// the struck mark. Planted defect: the difference zeroed -> red.
+    #[test]
+    fn the_third_longest_exhaustion_strikes_the_job() {
+        assert_eq!(fresh_exhausts(3, 0), 3, "three unstruck exhaustions: three strikes");
+        assert_eq!(fresh_exhausts(3, 3), 0, "caught up: nothing");
+        assert_eq!(fresh_exhausts(5, 3), 2, "two fresh since the last read");
+        assert_eq!(fresh_exhausts(0, 2), 0, "the count reset under the mark: nothing, saturating");
     }
 
     /// ★ W14-d pinned: the sixth terminal observation is an episode and

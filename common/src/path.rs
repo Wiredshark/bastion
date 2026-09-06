@@ -604,6 +604,8 @@ pub struct ChaserDiagnosticSnapshot {
     pub route_next4: Vec<Vec3<i32>>,
     pub path_state: PathState,
     pub recent_state_count: usize,
+    /// ★ W14-e: consecutive Longest-tier exhaustions for the current target.
+    pub longest_exhausts: u8,
 }
 
 /// A self-contained system that attempts to chase a moving target, only
@@ -747,6 +749,10 @@ pub struct Chaser {
     /// search step (poll delta), as opposed to the [`Self::planned_iters`]
     /// estimate. The PATH-0 scheduler debits this against its tick budget.
     last_search_consumed: u64,
+    /// ★ W14-e: consecutive Longest-tier exhaustions for the current target
+    /// (reset when a route is found). The jobs system reads it every tick
+    /// and strikes the held job at each fresh one.
+    longest_exhausts: u8,
     flee_from: Option<Vec3<f32>>,
     /// Whether to allow consideration of longer paths, npc will stand still
     /// while doing this.
@@ -988,6 +994,10 @@ impl Chaser {
                                         self.path_length = PathLength::Longest;
                                     },
                                     PathLength::Longest => {
+                                        // ★ W14-e: one whole-town search spent; counted
+                                        // where it happens.
+                                        self.longest_exhausts =
+                                            self.longest_exhausts.saturating_add(1);
                                         self.flee_from = Some(pos);
                                         self.astar = None;
                                     },
@@ -1074,16 +1084,19 @@ impl Chaser {
             },
             PathResult::None(path) => {
                 self.path_state = PathState::None;
+                self.longest_exhausts = 0; // ★ W14-e: a route was found
                 self.route = Some((Route { path, next_idx: 0 }, false, tgt));
             },
             PathResult::Exhausted(path) => {
                 self.path_state = PathState::Exhausted;
+                self.longest_exhausts = 0; // ★ W14-e: a route was found
                 self.route = Some((Route { path, next_idx: 0 }, false, tgt));
             },
             PathResult::Path(path, _) => {
                 self.flee_from = None;
                 self.path_state = PathState::Path;
                 self.path_length = Default::default();
+                self.longest_exhausts = 0; // ★ W14-e: a route was found
                 self.route = Some((Route { path, next_idx: 0 }, true, tgt));
             },
         }
@@ -1266,6 +1279,7 @@ impl Chaser {
                 .unwrap_or_default(),
             path_state: self.path_state,
             recent_state_count: self.recent_states.len(),
+            longest_exhausts: self.longest_exhausts,
         }
     }
 
