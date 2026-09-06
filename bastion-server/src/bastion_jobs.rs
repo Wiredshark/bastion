@@ -2058,23 +2058,6 @@ pub(crate) enum CommittedGlide {
     DropRoute,
 }
 
-/// ★ W13 pinned: THE GLIDE FOLLOWS THE SURFACE -- the committed glide's
-/// step takes the floor's z under the try cell when the floor is known,
-/// and the line's z when it is not (identity: a body never waits on a
-/// probe). On a step down the body stays on the upper floor until its xy
-/// crosses the edge; on a step up it climbs the riser as it reaches it.
-/// ★ W13-b: the snap only RAISES -- a line below the floor (the dip before
-/// a step-down edge, the lag under a riser) is lifted to it; a line above
-/// the floor keeps its z, as the old glide did (W13's lowering cost a third
-/// of the arrivals on three replicates).
-pub(crate) fn glide_snap_z(try_pos: Vec3<f32>, surface_z: Option<f32>) -> Vec3<f32> {
-    match surface_z {
-        Some(gz) => Vec3::new(try_pos.x, try_pos.y, try_pos.z.max(gz)),
-        None => try_pos,
-    }
-}
-pub(crate) static GLIDE_SNAPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 pub(crate) fn committed_glide_verdict(node_in_rock: bool) -> CommittedGlide {
     if node_in_rock {
         CommittedGlide::DropRoute
@@ -36364,25 +36347,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         );
                                         match committed_glide_verdict(node_in_rock) {
                                             CommittedGlide::Step => {
-                                                // ★ W13: THE GLIDE FOLLOWS THE
-                                                // SURFACE -- the line's z dipped
-                                                // into the upper floor before the
-                                                // edge (7 of 8 pure-glide embeds).
-                                                let snapped = glide_snap_z(try_pos, surface_at(try_pos));
-                                                if (snapped.z - try_pos.z).abs() > 0.05 {
-                                                    let n = GLIDE_SNAPS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-                                                    if n <= 8 || n.is_power_of_two() {
-                                                        info!(
-                                                            uid = uids.get(entity).map(|u| u.0.get()),
-                                                            line_z = try_pos.z,
-                                                            floor_z = snapped.z,
-                                                            node = ?steer_node,
-                                                            snaps = n,
-                                                            "bastion: THE GLIDE FOLLOWS THE SURFACE — the committed glide's z snapped to the floor under its step"
-                                                        );
-                                                    }
-                                                }
-                                                new_pos = Some(snapped);
+                                                // ★ W13-w: the snap (W13, W13-b) came
+                                                // out -- it cost a third of the
+                                                // arrivals on b2; the line as before.
+                                                new_pos = Some(try_pos);
                                             },
                                             CommittedGlide::DropRoute => {
                                                 if let Some(u) = uids.get(entity).copied() {
@@ -55285,17 +55253,6 @@ mod tests {
         let south_blocked = |c: Vec3<i32>| c != Vec3::new(2, 1, 6);
         assert_eq!(stockpile_drop_cell_spread(flat, centre_full, south_blocked, &zone), Vec3::new(1, 2, 6), "a cell no body stands in is skipped");
         assert_eq!(stockpile_drop_cell_spread(flat, centre_full, |_| false, &zone), Vec3::new(2, 1, 6), "nothing standable: the filter is void, the spread runs over the surface (W12-b-b)");
-    }
-
-    /// ★ W13 pinned: a known floor sets the step's z; an unknown floor
-    /// leaves the line's z (identity). Planted defect: the floor ignored ->
-    /// red.
-    #[test]
-    fn the_glide_follows_the_surface() {
-        let line = Vec3::new(10.5, 10.5, 181.4);
-        assert_eq!(glide_snap_z(line, Some(182.0)), Vec3::new(10.5, 10.5, 182.0), "a floor above the line: the body rises to it");
-        assert_eq!(glide_snap_z(line, Some(181.0)), line, "a floor below the line: the line keeps its z (W13-b)");
-        assert_eq!(glide_snap_z(line, None), line, "no floor known: the line as before");
     }
 
     /// ★ W12-b-b pinned: a filter that admits no cell is void -- the spread

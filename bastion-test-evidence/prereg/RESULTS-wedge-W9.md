@@ -1653,6 +1653,66 @@ clean. The b2 reader restarted b2 at 20:39 (after E2-j-b's night-1
 block) and reads +4, +10 and day 1 -- the decider for W13; E2-l's
 chain fired five minutes after this stage.
 
+W13-b +4 and +10 on b2 (read 20:43 and 20:49, hours 11 and 15 of
+day 0), against the bars: arrivals at +10 at least 450 -- 387 (W13
+301, W12-b-b 333, W12-a 502): FAILED, and the clause "arrivals stay
+under 400: W13 comes out whole" FIRED by thirteen; pure-glide embeds
+at most 2 -- 0 (+4 and +10), PASSED; pump mean wait under 70 -- 96
+at +4, 79 at +10, pending 32-34, worst 858: FAILED; GLIDE HELD 0;
+stuck 1; snaps 1,024 and 2,048 (the raises alone; W13's 2,048 and
+16,384). The raise-only snap gave back a sixth of the loss and kept
+the embeds off; the pre-registered clause names the disposition,
+and it is honoured: W13-w (the snap comes out) is written, dry-run
+and queued behind E2-l, with E2-m re-keyed behind it and the
+W12-a-b reader behind its day 1. If W13-w's +10 reads at least 450
+the cost was the snap's and the embed class is open again, owned by
+the next wedge row at the ROUTE (a node per step-down) rather than
+at the walk; if it stays under 400 the cost was never the snap's
+(W12-b's centre picker, or the world) and W13-b returns.
+
+W13-b day 1 on b2 (read 21:04, hour 0 of day 1): EMBED WATCH 0 the
+whole day (W12-a's day 18; W12-b's 9; W12-b-b's 0), STALL BLAMED 1,
+ROUTE FAULT 1; arrivals 586 by day 1 (W12-a 729, W12-b 675, W12-b-b
+497); unreachable 0 of 421; pump at midnight pending 4, mean wait
+38; stuck 0; starving 2 at midnight; panics 0. The trade is now
+plain on two b2 days: the raise-only snap keeps every embed off and
+costs a fifth of the arrivals against the no-snap pair. The
+pre-registered clause fired at +10 and W13-w runs; its read says
+what the arrivals are worth without the snap, and the middle -- the
+raise at step-down edges only, where the seven of eight embeds were
+-- is the candidate if the embeds return with the arrivals.
+
+## W13-w, registered 20:52 (keyed on the E2-l stage; ahead of E2-m and the rest)
+
+THE SNAP COMES OUT. The CommittedGlide::Step arm steps the line as
+before W13; glide_snap_z, GLIDE_SNAPS and the pin
+the_glide_follows_the_surface are removed (a helper nothing calls
+is a dead lane). No pin is added and no falsifier runs: the removal
+is the row and the live read is its falsifier. Prediction (b2 fresh
+after W13-b's day-1 block; +10): arrivals at least 450 (301-387 on
+the snap pairs); pump mean wait under 60 (79-105); EMBED WATCH by
++10 back to W12-a's order (12), the class OPEN; GLIDE HELD 0; stuck
+0. Falsified if arrivals stay under 400 with the snap gone (W13-b
+returns). The chain's green pin is `the_drop_cell_stands_on_the_
+floor` (the row removes its own).
+
+## W13-c, written 21:07 and HELD (launches only if W13-w's read shows the embeds returning with the arrivals)
+
+THE GLIDE NEVER SINKS BELOW THE FLOOR IT STANDS ON. The narrowest
+rule for the seven-of-eight signature (the line dipping under the
+body's own floor before a step-down edge): while the try cell's
+column is standable at the body's current floor level, the step's z
+is at least that floor; past the edge or at a riser, the line.
+Nothing beyond the floor the body is on is probed. Pin
+`the_glide_never_sinks_below_its_floor`; planted: the hold ignored,
+red; witness THE GLIDE HOLDS ITS FLOOR. Prediction (b2 after
+W13-w's day-1 block; +10 and day 1): arrivals at least 450;
+pure-glide embeds at most 3 by +10 and 6 by day 1 (W12-a 8, 12);
+pump mean wait under 60; GLIDE HELD 0. Falsified if arrivals fall
+under 400 (the embed class goes to the route) or the embeds stay
+at W12-a's order. Dry-run clean after W13-w; scripts derived; not
+launched.
+
 ## W15, written 20:24 and HELD (launches only if W15-i1's night count says the exhausted searches go up)
 
 THE TOP STEP UNDER THE SLAB. The house staircase

@@ -965,6 +965,29 @@ night (the W12-c pair carries E2-j-b), and if NIGHT MEAL AT HOME
 stays under 20 there with the shelves stocked, the bound gives the
 night back and comes out.
 
+### The W12-c pair's night 1 on b1 (8f1bd71ae6, read 20:50 at hour 6 of day 1; one-off, the first night with the larder out of the floor)
+
+SUPPER ROUND loads 56, skipped_no_small 0 (the W13 pair's one-cell
+store: 30 and 20), arrivals to private shelves 31 (E2-g-c 23, the
+W13 pair 27), SUPPER CARRIED HOME 16, SWEPT 35, NIGHT MEAL AT HOME 5,
+no_food_found 113 (the W13 pair 1,387; E2-g-c 241) -- the pick's
+failures fell by an order of magnitude with the larder reachable.
+The night itself is unchanged in kind: in-bed starving 7, 10, 21,
+38 at hours 0-3, RestAt/Waiting 4, 7, 8 at hours 1-3 (E2-m's bed
+queue), hour 4 sends 31 eaters out, distinct starving sleepers 7.
+The store is right; the shelves are not stocked; E2-l reads next on
+this arm.
+
+### E2-l landed (bbcbc5944e, staged 21:00)
+
+Check clean, the pin green, both halves staged 21:00; the binary
+verified by its witness string ("THE WALK HOME OPENS" present once),
+shipped to lab-bin 21:00. The falsifier (Leisure always open) went
+RED at 21:03, the tree restored clean. The b1 reader restarted the
+160-day arm at 21:01 (after W12-c's day-1 block; the store's
+biggest cell 96 at boot) and reads the walk home's claims by hour,
+the door, the shelves and night 1 (about 21:35).
+
 ## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
 
 THE QUEUE IS FOR THE SAME ANCHOR. The anchor queue (the eat queue's
