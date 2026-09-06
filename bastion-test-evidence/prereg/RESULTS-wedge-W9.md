@@ -1825,6 +1825,33 @@ days (the flat arm prints no longest-tier line; W15-i1 classifies
 them by direction, W14 damps the re-asks). The store's max cell
 918 is the wheat-seed stack (seeds merge by def), not the larder.
 
+### W12-a-b landed (b6b78b96d1, staged 00:17)
+
+Check clean, the pin (re-stated) green, both halves staged 00:17;
+the row adds no string of its own (one condition widened), the
+binary carries W12-a's and E2-i2's strings. Shipped to lab-bin
+00:17. The b2 reader restarts b2 at the stage (the W13-b-r pair's
+two days roll to /tmp/arm-b2) and reads +4, +10 and day 1: the
+on-top target's stand, and the unreachable deliveries that rose to
+48 by day 2 on the pair before.
+
+**THE PIN STAYED GREEN (00:20).** The falsifier planted the old
+line (`if standable(target) {`, the on-top rule removed) at
+b6b78b96d1 and `the_search_aims_at_the_stand_not_the_stone`
+PASSED. The W12-a-b assert -- one below standable, expect the
+target -- is vacuous: `search_stand`'s ring search skips the
+target's own column, so with only the cell below standable the
+ring finds nothing and the fallback returns the target, the same
+answer the rule gives. A pin that cannot tell the rule from its
+absence guards nothing, and the row landed and shipped on it.
+Reported here, in the handoff and to Ben. Fix: W12-a-b-p (the
+assert offers a competing ring cell, one east; the rule answers
+the target, the ring alone answers the east cell), queued at the
+queue's end after W14 with the same plant, expected RED. The live
+read on b2 (below) stands as W12-a-b's evidence regardless; the
+pattern to check on every "one condition widened" row is an
+assert that coincides with the fallback.
+
 ## W14, registered 22:12 (keyed on the W15-i1 stage; the queue's end)
 
 THE SEARCH IS NOT ASKED TWICE. Found while E2-m built, by mining

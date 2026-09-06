@@ -376,7 +376,17 @@ pub struct PumpCensus {
     pub unreachable_start_solid: u32,
     pub unreachable_boxed: u32,
     pub unreachable_open: u32,
+    /// ★ W15-i1: the exhausted deliveries by direction (the target at
+    /// least EXHAUST_BAND_DZ above the start, below it, or neither).
+    pub exhausted_up: u32,
+    pub exhausted_down: u32,
+    pub exhausted_flat: u32,
 }
+
+/// ★ W15-i1: how many blocks of rise or drop make an exhausted search a
+/// vertical one (a storey is five; three is past any step or hurdle).
+pub const EXHAUST_BAND_DZ: i32 = 3;
+pub(crate) static SEARCHES_EXHAUSTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl PumpCensus {
     pub fn note(&mut self, outcome: PumpOutcome, wait: u64) {
@@ -391,6 +401,18 @@ impl PumpCensus {
 
     pub fn delivered(&self) -> u32 {
         self.delivered_path + self.delivered_unreachable + self.delivered_exhausted
+    }
+
+    /// ★ W15-i1 pinned: an exhausted search is up, down or flat by the
+    /// target's rise over the start.
+    pub fn note_exhausted(&mut self, dz: i32) {
+        if dz >= EXHAUST_BAND_DZ {
+            self.exhausted_up += 1;
+        } else if dz <= -EXHAUST_BAND_DZ {
+            self.exhausted_down += 1;
+        } else {
+            self.exhausted_flat += 1;
+        }
     }
 
     pub fn mean_wait(&self) -> u64 {
@@ -43011,6 +43033,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     unreachable_start_solid = c.unreachable_start_solid,
                     unreachable_boxed = c.unreachable_boxed,
                     unreachable_open = c.unreachable_open,
+                    exhausted_up = c.exhausted_up,
+                    exhausted_down = c.exhausted_down,
+                    exhausted_flat = c.exhausted_flat,
                     "bastion: PUMP CENSUS — the search pump's last 300 ticks: what is pending \
                      and for how long, what was delivered and how long it waited"
                 );
@@ -43261,7 +43286,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                     }
                                 },
-                                (SearchLane::Fill, _) => {
+                                (SearchLane::Fill, o) => {
+                                    // ★ W15-i1: THE PUMP NAMES THE EXHAUSTED SEARCH.
+                                    if matches!(o, common::path::FullPathOutcome::BudgetExhausted) {
+                                        let dz = ps.target.z.floor() as i32 - ps.startf.z.floor() as i32;
+                                        board.pump_census.note_exhausted(dz);
+                                        let n = SEARCHES_EXHAUSTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                        if n <= 8 || n.is_power_of_two() {
+                                            info!(
+                                                uid = k,
+                                                from = ?ps.startf.map(|e| e.floor() as i32),
+                                                to = ?ps.target.map(|e| e.floor() as i32),
+                                                dz,
+                                                exhausted = n,
+                                                "bastion: THE SEARCH EXHAUSTED — the exact fill search spent its budget; the body keeps the trunk's tail"
+                                            );
+                                        }
+                                    }
                                     board.path_cache.remove(&u);
                                 },
                                 (
@@ -55555,6 +55596,19 @@ mod tests {
         assert!(!lounge_may_post(false, true), "both pending: the visit waits");
         assert_eq!(supper_interrupt(0.2, true), SUPPER_LINE, "supper hours: the supper line");
         assert_eq!(supper_interrupt(0.2, false), 0.2, "other hours: the base");
+    }
+
+    /// ★ W15-i1 pinned: five up is up, five down is down, two either way
+    /// is flat; the three sum to the exhausted count. Planted defect: every
+    /// exhaustion flat -> red.
+    #[test]
+    fn the_pump_names_the_exhausted_search() {
+        let mut c = PumpCensus::default();
+        for dz in [5, -5, 0, 2, -2] {
+            c.note_exhausted(dz);
+        }
+        assert_eq!((c.exhausted_up, c.exhausted_down, c.exhausted_flat), (1, 1, 3), "up, down, flat");
+        assert_eq!(c.exhausted_up + c.exhausted_down + c.exhausted_flat, 5, "the three sum to the count");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable
