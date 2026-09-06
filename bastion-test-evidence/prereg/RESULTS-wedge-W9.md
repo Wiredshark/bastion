@@ -2415,6 +2415,13 @@ door verdicts. Falsifier at 07:23: above and below swapped, the
 pin RED (0 passed, 1 failed), restored clean. Shipped to lab-bin
 07:18. W16-i's chain fired at 07:22.
 
+### W17-i read: b2 +10 (on the W16-i pair e7ad98977a, which contains W17-i; 08:04, hour 13)
+
+Unreachable deliveries 0, UNREACHABLE APPROACH 0, no door probe
+yet -- the sealed episodes on the earlier run came around the
+Sleep block (hours 22-4). Bans 0, stalls 0, sleepers 0, p95 542.
+The day-1 read (~08:45) carries the verdicts.
+
 ## W15-c, registered 06:01 (keyed on the W16-a stage; the queue's end; common/)
 
 THE DESTINATION'S BUILDING IS NOT A DETOUR. Defect: above (34 of
@@ -2474,6 +2481,132 @@ census. Reading: W15-c does what it registered -- the searches
 that flooded now finish -- and the b1 bans are not seen here: no
 ban at all in fourteen game hours on the arm whose store lies on
 flat ground. The day-1 read (~08:15) decides the day's bars.
+
+### W15-c read: b2 day 1 (ce3bec459e, 07:50, hour 1 of day 1) -- FAILED the day bar, on the class it named as its falsifier
+
+Exhausted 513 for the day (bar <= 354, half of W16-a's 707; 413
+and 366 on the earlier runs) -- FAILED; the perimeter class
+`same` 15 (bar <= 8) -- FAILED; `start_unlabelled` 38 of 66
+probes, now the largest class by far (18 at +10, 11 at +4). The
++10 read had passed both bars (30 exhausted, `same` 4); the day's
+483 further exhaustions came in the afternoon, evening and night
+-- the supper hauls to private shelves and the night's own-house
+meals, searched FROM inside a house: the start's building pays
+the interior surcharge and the wall band on the way out, exactly
+the clause W15-c registered as NOT evidenced and named as its
+falsification ("a surcharge outside the destination -- the
+walker's own start building -- and the next row prices that").
+Outcomes: arrivals 781 (742 on W16-a alone: +5%), CLIMB BANNED
+(fetch) 1, FETCH STALLED 8, FETCH BUDGET EXPIRED 13, STALL BLAMED
+3, starving sleepers 1, stuck 0, p95 527 us, unreachable 12.
+Disposition: W15-c PASSED on the class it priced (the store as a
+destination: the daytime flood is gone on both arms) and FAILED
+its day bar on the start's building; W15-c-b (below) prices both
+endpoints' plots. The W17-i b2 reader took b2 at 07:52.
+
+### The first W16-i verdicts: b1 (e7ad98977a, 07:47, hour 10 of day 0)
+
+Six CLIMB BANNED (fetch) by hour 10, five of them on_prev -- the
+body standing on the very node the chaser credited, (7647..7657,
+6433, 180) -- with the route head one block north and two up,
+(x, 6432, 182), prev_dz 0, rise_next Some(2), push_site
+chaser-settle: a real two-block ledge into the building at
+y=6432, a JUMP edge the router plans and the gliding body cannot
+take; the sixth short_of_prev (dxy 2, dz -2: colonist 103's
+two-step stair, the body two blocks short and two below the
+credited node). The credit verdicts name the class the b1 bans
+belong to: not a stair credited from below (W16-a's), not the
+settle (one case), but the router's jump edges. W2-b (below)
+removes them for gliding bodies.
+
+By hour 21 on b1 (08:06): 24 bans, credit on_prev 19 and
+short_of_prev 5, rise_next Some(2) 22 and Some(1) 2, push_site
+chaser-settle 23 and chaser-probed 1, head-feet (dz 2, dxy 1) 19,
+(2, 2) 3, (2, 3) 2; heads at (7673..7674, 6436..6437) -- colonist
+103's stair building -- and (7661..7664, 6431..6432) -- the y=6432
+ledge; FETCH STALLED 38, budgets expired 33, PROMISED CLIMB TAKEN
+1. The class is one class: a two-up edge the router plans and no
+mover takes. (The readers' credit tally had missed the quoted
+value; fixed and relaunched at 08:08 before any read.)
+
+## W2-b, registered 07:53 (keyed on the W16-i2 stage; the queue's end; common/)
+
+THE FETCH LEG PLANS NO JUMP. Defect: above. Mechanism:
+`jumps_admitted(scramble_reach, on_land, can_climb, can_fly)` --
+false at reach 1, otherwise the rule as it was (on land, or a
+climber, or a flyer); the neighbour closure asks it; reach 1 now
+names a colony body that glides (the stair floor and the ladders
+stay, the jump edges go, the scramble edges were never its); the
+scheduled colonist search (the one bastion-server config with
+reach 2) asks for reach 1; reach 0 (vanilla) and 2-3 (the inline
+chaser configs) plan exactly as before. Pin (veloren-common,
+bastion_vertical_tests) `the_fetch_leg_plans_no_jump` (six
+cases); planted: reach 1 admitting jumps, red. Prediction (b1
+fresh after W16-i2's night-1 block, b2 fresh after W16-i2's day-1
+block; `wait-w2b-b1.sh`, `wait-w2b-b2.sh`): on b1 CLIMB BANNED
+(fetch) <= 3 by hour 19 (15; 6 by hour 10), FETCH STALLED <= 24
+(40), FETCH BUDGET EXPIRED <= 15 (34), arrivals >= 550 (601),
+sleepers <= 2, unreachable at most 20 more than the previous run;
+on b2 no change (bans 0-2). Falsified if the bans hold on b1 (the
+two-up edges are not the jump set's) or unreachable rises by more
+than the bans fell (the ledge building has no other way in: a
+door or plot row). Rejected: the assist for trunk walkers (W6-C);
+a new config field; pricing jumps instead of removing them;
+removing jumps at reach 2-3 (the assist can lift those walkers,
+and Ben's climbing skill lives there). NOT evidenced: targets on
+a ledge with no stair (now honestly unreachable); the trained
+climber's scrambles; the trunk mover's own step. The dry tree at
+e7ad98977a with W16-i2 applied first validated every anchor.
+
+A stale `w2b-staged.txt` from 2026-09-02 (an older row of the
+same id) pre-satisfied this row's falsifier (it ran at once
+against the old hash and failed harmlessly) and both readers
+(they passed their MARK wait); caught at 07:54 within a minute,
+the marker moved aside, the readers killed by their pid files and
+all three relaunched. Filed: a stale stage marker pre-satisfies a
+reused row id.
+
+## W15-c-b, registered 07:59 (keyed on the W2-b stage; the queue's end; common/)
+
+THE START'S BUILDING IS NOT A DETOUR EITHER. Defect: W15-c's day
+on b2 (above): 513 exhausted with `start_unlabelled` the largest
+class -- the evening and night searches start indoors and the
+start's building pays the surcharge and the band on the way out
+(W15-c's own NOT-evidenced clause and falsification). Mechanism:
+`endpoint_plots(interior, start_xy, target_xy, cap)` -- the union
+of both endpoints' plots; the scheduled search keys its cached
+plot on (start, target); the one-shot search computes the union
+once; the surcharge rule unchanged. Pin (veloren-common)
+`the_starts_building_is_not_a_detour_either` (a start in one
+plot and a target in another: eleven columns; a start outside:
+nine; both outside: none; the same plot: nine once); planted: the
+start's plot dropped, red. Prediction (b2 fresh after W2-b's
+day-1 block, b1 fresh after W2-b's night-1 block;
+`wait-w15cb-b2.sh`, `wait-w15cb-b1.sh`): on b2 exhausted at most
+half of 513 for the day, `start_unlabelled` at most half of 38,
+`same` at most 8, arrivals within 20%, p95 at most double; on b1
+longest-tier steps under 5,000 by hour 19. Falsified if the
+evening exhaustion holds with `start_unlabelled` still the
+largest class (the indoor start's cost is not the surcharge: the
+component index or a sealed floor -- W17-i's class). Rejected:
+exempting every interior for indoor starts; raising the budget;
+an inadmissible heuristic. NOT evidenced: start and target in
+different houses (both free; the way between still priced through
+a third house); b1 (one replicate on b2 first). The dry tree at
+83e3666cb6 (W16-i2) with W2-b applied first validated every
+anchor.
+
+### W15-c read: b1 hour 19 (on the W16-i pair e7ad98977a; 08:01)
+
+Longest-tier steps 951 by hour 19 (55,255 and 8,950 on the runs
+before W15-c; 1,749 on its first b1 run): the flood is gone on
+b1's world too. Arrivals 736 (600-601 at hour 19 on every earlier
+b1 run: +22%), stuck census 1 (2-4), starving 0, p95 665 us
+(637-711), pump pending 21. The stair line: CLIMB BANNED (fetch)
+24, FETCH STALLED 35, FETCH BUDGET EXPIRED 33, PROMISED CLIMB
+TAKEN 1 -- the two-up-edge class W16-i named and W2-b removes.
+Reading: W15-c on b1 PASSED its route bar (the flood) and raised
+the arrivals a player would count; the bans are the next row's.
 
 ### W15-c landed (be2258bba6, staged 06:52)
 
@@ -2704,6 +2837,14 @@ the line prints without the frame. Rejected: allowing the assist
 for trunk walkers (W6-C measured it worse); fixing the ban rule
 before the frames are counted. NOT evidenced: the fix the frame
 names. The dry tree at e7ad98977a (W16-i) validated the anchors.
+
+### W16-i2 landed (83e3666cb6, staged 08:05)
+
+Check clean, the gate pin (W16-i's) green, committed 07:56, both
+halves staged 08:05:08; the binary verified by contents
+(trunk_dxy present). Wiring: no falsifier. The b2 reader restarts
+b2 after W16-i's day-1 block, the b1 reader after W16-i's night-1
+block. W2-b's chain fires five minutes after this stage.
 
 ## W16-i, registered 07:08 (keyed on the W17-i stage; the queue's end)
 

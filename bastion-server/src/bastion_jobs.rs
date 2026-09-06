@@ -35547,7 +35547,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // trained reach is a tunable the paired
                                     // A/B judges — FR15 lesson: no solo
                                     // tuning).
-                                    scramble_reach: 2,
+                                    // ★ W2-b: THE FETCH LEG PLANS NO JUMP -- a gliding
+                                    // body: the stair floor and ladders, no jump edges.
+                                    scramble_reach: 1, // ★ W2-b
                                     can_fly: false,
                                     vectored_propulsion: false,
                                     is_target_loaded: true,

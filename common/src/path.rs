@@ -104,7 +104,8 @@ pub struct TraversalConfig {
     pub can_climb: bool,
     /// bastion (B5.8): the tallest vertical face (blocks) this agent may
     /// path over beyond plain walking — 0 disables all bastion vertical
-    /// edges (vanilla NPCs), 2 = novice colonist (jump range anyway), 3 =
+    /// edges (vanilla NPCs), 1 = a colony body that GLIDES (the stair floor
+    /// and ladders, no jump edges: W2-b), 2 = novice colonist (jump range anyway), 3 =
     /// trained climber (unlocks the 3-up scramble edges). SKILL-DRIVEN:
     /// the agent system maps the colonist's `climbing` movement skill to
     /// this each tick, so reach GROWS with use (Ben's climbing-is-a-skill
@@ -660,6 +661,21 @@ pub fn destination_plot(
 /// The surcharge a walk edge pays: nothing inside the destination's plot.
 pub fn priced_outside_destination(in_destination: bool, surcharge: f32) -> f32 {
     if in_destination { 0.0 } else { surcharge }
+}
+
+/// ★ W2-b pinned: THE FETCH LEG PLANS NO JUMP. The router admits its JUMPS
+/// (two-up edges) for any walker standing on land, because vanilla bodies
+/// jump. A colony body glides one step at a time and its only lift, the
+/// stall-clock promised climb, is refused to trunk walkers by design (W6-C);
+/// fifteen bans a day stood at one two-block ledge the router kept planning.
+/// Reach 1 names a colony body that glides: it keeps the stair floor and the
+/// ladders (`scramble_reach > 0`) and plans no jump; reach 0 (vanilla) and
+/// reach 2 or 3 (the inline chaser configs) admit jumps exactly as before.
+pub fn jumps_admitted(scramble_reach: u8, on_land: bool, can_climb: bool, can_fly: bool) -> bool {
+    if scramble_reach == 1 {
+        return false;
+    }
+    on_land || can_climb || can_fly
 }
 
 impl TraversalConfig {
@@ -1746,12 +1762,18 @@ where
 
         DIRS.iter()
             .chain(
-                (vol.get(pos - Vec3::unit_z())
-                    .map(|b| !b.is_liquid())
-                    .unwrap_or(traversal_cfg.is_target_loaded)
-                    || traversal_cfg.can_climb
-                    || traversal_cfg.can_fly).then_some(JUMPS.iter())
-                    .into_iter().flatten()
+                // ★ W2-b: a gliding colony body (reach 1) plans no jump.
+                jumps_admitted(
+                    traversal_cfg.scramble_reach,
+                    vol.get(pos - Vec3::unit_z())
+                        .map(|b| !b.is_liquid())
+                        .unwrap_or(traversal_cfg.is_target_loaded),
+                    traversal_cfg.can_climb,
+                    traversal_cfg.can_fly,
+                )
+                .then_some(JUMPS.iter())
+                .into_iter()
+                .flatten()
             )
             .chain(
                 (traversal_cfg.scramble_reach >= 3)
@@ -2761,6 +2783,20 @@ where
 #[cfg(test)]
 mod bastion_vertical_tests {
     use super::*;
+
+    /// ★ W2-b pinned: reach 1 plans no jump on land, climbing or flying;
+    /// reach 0 on land does; reach 0 in liquid but climbing does; reach 0 in
+    /// liquid and neither does not; reach 2 and 3 on land do. Planted defect:
+    /// reach 1 admitting jumps -> red.
+    #[test]
+    fn the_fetch_leg_plans_no_jump() {
+        assert!(!jumps_admitted(1, true, true, false), "a gliding colony body on land: no jump");
+        assert!(!jumps_admitted(1, true, true, true), "even a flyer at reach 1: no jump");
+        assert!(jumps_admitted(0, true, false, false), "vanilla on land: jumps");
+        assert!(jumps_admitted(0, false, true, false), "vanilla in liquid but a climber: jumps");
+        assert!(!jumps_admitted(0, false, false, false), "vanilla in liquid, no climb, no fly: none");
+        assert!(jumps_admitted(2, true, true, false) && jumps_admitted(3, true, true, false), "reach 2 and 3: as before");
+    }
 
     /// ★ W15-c pinned: a target outside every building has no plot; a
     /// target inside a 3x3 plot gets its nine columns and not a plot five
