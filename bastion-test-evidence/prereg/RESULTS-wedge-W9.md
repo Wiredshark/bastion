@@ -2940,6 +2940,19 @@ is the next candidate -- THE BOB IS NOT PROGRESS (the stuck clock
 measured on xy, or a bob counted as no displacement, so the stall's
 consumers act) -- registered after W18-b's first read.
 
+### W14-i5 landed (c288d55479, staged 15:46:36; shipped to lab-bin 15:46:55)
+
+Chain bi37xumk0: check ok, pin the_exhaust_names_its_ends_cost green,
+the slab experiment printed (above), committed c288d55479, both
+halves from one commit, the server exe carries "W14-i5: end_g"
+(grep 3). Falsifier RED at 15:51 (the dearest end state planted as
+the cheapest in its own worktree: 0 passed, 1 failed; restored, 0
+dirty). The live read: b2 boards it at the W18-b reader's restart (~16:15) with
+the endpoint diag env now in its restart script; b1 at the W18-i
+reader's restart (~16:45) -- b1 booted 5c8285fb34 ten seconds before
+this stage. lab-bin is c288d55479 (playable; identical to W18-b2 in
+behaviour, plus the diag fields and the astar accessor).
+
 ### W18-c on b1, the full day (15:30; 5346279326, read at day 1 hour 0): the bob bar PASSED, the stalls bar FAILED, the arrivals clause TRIPPED -- one replicate, re-read on the W18-b2 day
 
 Bobs: 10 lines, peak bobs=1 (bar <= 16: PASSED; 128 yesterday). FETCH
@@ -2963,6 +2976,39 @@ class), and (7769,6401,186) is the very bed b2's colonist 136 was
 walking to when it bobbed 256 times. The jobbed half of b1's flood
 is the bed-at-z-186 class; the jobless half (the one-block ends)
 still has no name. W14-i5 prints end_g and direct_edge for both.
+
+THE NIGHT (reader's block at day 1 hour 6, 15:43): STARVING
+SLEEPERS 4 (bar <= 1: FAILED) -- colonist 141 (44 samples at 0.00
+in bed, ~7 min), 148 (15; the bed-at-z-186 flooder: it never reached
+its bed and starved on the way), 149 (14), 37 (10); colonist 26
+eating at dawn. Arrivals 889 by hour 6 (bar >= 900). Flood 812 by
+dawn, top end 285x (7721,6335,188) -- another upper-floor target,
+z 188. Yesterday under W18-b alone b1 had 0 starving sleepers; the
+day before (W14-e) 2. So the W18-c + W18-b pair starved four on the
+ledge arm: the held bodies that used to jitter through now stall,
+shun and lose their suppers, and the bed floods take the rest of
+the night. W18-b2 boards b1 at 15:46; if its night reads starving
+<= 1 with the bob peak still <= 16, the cause was the hold (W18-b)
+and W18-c stands; if it starves again, W18-c is reconsidered.
+
+Attribution (15:48), each starver traced: 148 = the bed flood (a
+RestAt to the z-186 bed it could never reach, hunger falling as it
+walked all night). 141, 149 and 37 = the E2 night-shelf class: all
+three took a hunger preempt at 19:41:24 UTC (hour ~22) toward the
+general store's food (Store 39 / a cell), and a rest preempt a
+minute later sent each to bed unfed (141: NIGHT SHELF EMPTY x15,
+0 stalls, 0 refusals; 149: 0 stalls; 37: 0 stalls) -- the curfew's
+empty shelf (E2), not the ledge, not the clock. So W18-c's night
+bar failed on two classes it does not touch, both older than it:
+the sealed bed's flood (W17-c / the router row) and the night
+shelf (E2's open half: the supper carried home). Neither is an
+argument against W18-c; the W18-b2 day still reads its cost.
+Candidate from the three (not rowed): THE REST PREEMPT WAITS FOR
+THE SUPPER -- a hunger walk begun before the curfew is not
+overridden by the rest need a minute later; the sleeper eats first
+or the store is closed. It sits beside the open judgement item (the
+night watch's supper) and E2's carried-home half; Ben's call on the
+night rule comes first.
 
 Disposal, honestly: W18-c did what it claimed (the bob class is gone
 from the ledge arm) and its registered costs came due -- the bodies
@@ -3067,6 +3113,37 @@ day before) will read as W18-b's cost until W18-b2 lands; the honest
 disposal waits for W18-b2's b1 day, where the same walk steps down
 and neither bobs nor stalls. Arrivals 533 by hour ~12 (374-499 at
 hour 12 on earlier days).
+
+### W14-i5's slab experiment: PRINTED (15:34) -- the flee term is not the flood; a dear end is
+
+    open   / no-flee       : Path(len=3,  cost=6.01)   consumed=5
+    open   / flee-at-start : Path(len=3,  cost=6.01)   consumed=272
+    walled / no-flee       : Path(len=81, cost=254.83) consumed=2717
+    walled / flee-at-start : Path(len=81, cost=254.83) consumed=3516
+
+Against the prediction below: OPEN/FLEE printed 272 -- neither "under
+100" nor "thousands": the flee term inflates a 5-expansion search
+54x but does NOT flood the slab (the negative-h region is local, as
+the arithmetic said). WALLED/NO-FLEE 2,717 of ~3,540 walkable cells:
+the ordinary price of a Euclidean heuristic against a long detour.
+WALLED/FLEE 3,516: the whole slab -- the flee term turns "most of
+it" into "all of it". So on the live town (61k cells, 75k budget): a
+target reached only by a long detour floods most of the component
+by itself, and the flee term after the first exhaust saturates it
+and (with the duplicates) tips it past the budget into "Exhausted"
+instead of a Path -- the fixed point. W14-f (the flee term clamped)
+would buy ~25% on the slab and not remove the flood; the fix must
+remove the DETOUR or PROVE the unreachability cheaply. W14-i5's
+live fields (end_g, direct_edge) name which: a refused one-block
+edge, a price, or a genuinely unreachable end (the bed at z 186
+class). Pin the_exhaust_names_its_ends_cost green; committed
+c288d55479 (building both; stage ~16:00). The live read: b1 boards
+it at the W18-i reader's restart (~16:40); b2 sooner: its restart
+script now exports BASTION_PATH_ENDPOINT_DIAG=1 (15:35), so b2's
+next boot (the W18-b reader's restart, ~16:15) prints the exhaust
+diag too -- a new instrument on b2, not a behaviour change; b2's
+flood tally reads nonzero from then on and is not comparable with
+its earlier zeros.
 
 ### W14-i5's slab experiment, predicted before it prints (15:28)
 

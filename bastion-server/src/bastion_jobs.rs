@@ -9507,6 +9507,16 @@ pub(crate) fn job_strike(strikes: u8) -> (u8, bool) {
     (next, next >= UNREACHABLE_STRIKES)
 }
 
+/// ★ W14-w pinned: THE BENCH IS WITNESSED ONCE. `job_strike` saturates on
+/// purpose (the strikes keep counting after the third), so a verdict after
+/// the bench would re-bench and re-print: job 440 printed "three failed
+/// route proofs" 39 times in 2.5 minutes while its walker kept walking and
+/// arrived. A bench is new only when the job is not already benched; the
+/// arbitration latch's clearing re-arms it.
+pub(crate) fn bench_is_new(bench: bool, already_benched: bool) -> bool {
+    bench && !already_benched
+}
+
 /// ★ W6-D pinned: A BANNED CLIMB STRIKES THE JOB. The stuck-timeout release
 /// of a non-self job with the body on a wall bans the column (300 s) and
 /// writes a claim penalty whose reader is gated OFF; the same colonist
@@ -38045,7 +38055,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 for _ in 0..fresh {
                                     let (next, bench) = job_strike(job.stuck_strikes);
                                     job.stuck_strikes = next;
-                                    if bench && !job.unreachable {
+                                    if bench_is_new(bench, job.unreachable) {
                                         job.unreachable = true;
                                         info!(
                                             job = active.job,
@@ -38180,7 +38190,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         chaser_terminal_strike(streak_now, job.stuck_strikes)
                                     {
                                         job.stuck_strikes = next;
-                                        if bench {
+                                        if bench_is_new(bench, job.unreachable) {
                                             job.unreachable = true;
                                             info!(
                                                 job = active.job,
@@ -38779,7 +38789,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // penalty above has no reader while its gate is OFF).
                                         if let Some((next, bench)) = banned_climb_strike(climbing, job.stuck_strikes) {
                                             job.stuck_strikes = next;
-                                            if bench {
+                                            if bench_is_new(bench, job.unreachable) {
                                                 job.unreachable = true;
                                                 info!(
                                                     job = active.job,
@@ -44201,7 +44211,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     {
                                         let (next, bench) = job_strike(job.stuck_strikes);
                                         job.stuck_strikes = next;
-                                        if bench {
+                                        if bench_is_new(bench, job.unreachable) {
                                             job.unreachable = true;
                                             info!(
                                                 job = j,
@@ -44325,7 +44335,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             {
                                                 let (next, bench) = job_strike(job.stuck_strikes);
                                                 job.stuck_strikes = next;
-                                                if bench {
+                                                if bench_is_new(bench, job.unreachable) {
                                                     job.unreachable = true;
                                                     info!(
                                                         job = j,
@@ -56858,6 +56868,16 @@ mod tests {
         assert_eq!(chaser_terminal_strike(6, 2), Some((3, true)), "third episode: benched");
         assert_eq!(chaser_terminal_strike(5, 2), None, "below the streak: nothing");
         assert_eq!(chaser_terminal_strike(0, 0), None, "no streak: nothing");
+    }
+
+    /// ★ W14-w pinned: a bench is new only when the job is not already
+    /// benched; no bench is never new. Planted defect: the already-benched
+    /// test dropped -> red on the re-fire.
+    #[test]
+    fn the_bench_is_witnessed_once() {
+        assert!(bench_is_new(true, false), "the third strike on a claimable job: a bench");
+        assert!(!bench_is_new(true, true), "the fourth strike on a benched job: the same bench, not a new one");
+        assert!(!bench_is_new(false, false) && !bench_is_new(false, true), "no bench is never new");
     }
 
     /// ★ W6-D pinned: a banned climb strikes (the first two do not bench,
