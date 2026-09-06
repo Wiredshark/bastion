@@ -2980,6 +2980,99 @@ W2-b's original class and the open judgement item (climbing as a
 skill vs a mover that cannot jump), not W18-b2's. The down-direction
 holds are gone. Desktop probe at 16:00: 0x0 (the eighth; locked).
 
+### CORRECTION (16:41): my "pit drops 0" hand reads were blind; the pit bar reads differently
+
+POS-WRITE prints float positions (x: 7712.77, y: 6306.13); my hand
+pattern matched integers (x: 7712, y: 6306) and returned a silent
+zero on every read today. Float-aware, b2's second W18-b2 day had
+TWO mover drops into the pit cell -- uid 125 at 20:34:56 UTC and uid
+137 at 20:40:15, z 181 -> 179 at (7712.8, 6306.1) -- and one assist
+lift out (uid 129, z 179 -> 181). W18-b2 did not refuse them: by the
+rule the landing is not a Closed basin (Open or WayUp), which the
+pin's nine-cell pit never was. Outcome: uid 125's next logged write
+came 47 s later 45 blocks away at (7755,6343) -- it walked out; no
+bob (peak 1), no starving. So W18-b2's REGISTERED pit bar ("drops 0")
+FAILED as a mechanism bar on b2's second day, while its outcome bars
+(no bob, no starver, no held body) held; and every earlier "pit
+drops 0" I wrote for W18-b and W18-b2 was the instrument's zero, not
+the town's -- the readers' own DROPS line ("mover drops at the pit
+cell 7712/7713,6306") is float-aware and is the number of record
+(it read 1 at 16:38, before the second drop). The pit as a trap is
+closed by W18-c (a bobbing body stalls) more than by W18-b2 (which
+refuses only basins the walk cannot leave); the pit itself is not
+such a basin. Lesson filed under the silent-zero memories.
+
+W14-i6's falsifier: RED at 16:41 (the bound off by one in its own
+worktree: 0 passed, 1 failed; restored, 0 dirty).
+
+### W18-b2 on b2, the second day (c288d55479 since 16:05; read by hand 16:38 at day 1 hour 0): PASSED again
+
+Arrivals 946 (736 the first day; bar >= 720), STARVING lines 0,
+starving sleepers 0, FETCH STALLED 1 (3), bobs peak 1, Open 512,
+Closed 4, POS-WRITE drops at (7712,6306) 0, NIGHT SHELF EMPTY 0,
+supper yields 0 (E2-t's case did not arise), W14-e2 benches 1 job,
+LONGEST-EXHAUST 644 (far 524, touched 120 -- the flood is the day's
+only bad number and is W14-g's and the plot geometry's). Two b2
+days and one b1 day under W18-b2, every bar held; the arrivals
+swing 736 -> 946 on the same rule is the 2-3x variance the law
+names, not a mechanism.
+
+### The far class measured (16:37; b2 with the diag, hour 23): 502 far, 120 touched
+
+end_z minus closest_z over the 502 far exhausts: +2 in 184 (37%),
+0 in 121 (24%), -1 in 108 (22%), +1 in 81 (16%), -2 in 5. Far ends'
+z: 182 in 417, 183 in 42, 181 in 23, 180 in 17. House sprites
+(chair, table, bed, door, window, bench) on the closest node's
+blocked neighbours in 118 of 502. So "an upper floor two above the
+reach" is the plurality, not the class: a quarter are on the SAME
+level three cells away and never entered, and a third one level
+off. All share one property -- the end is walkable, its lateral
+neighbours are walkable, and no admitted edge leads from the
+reachable set into it -- which is the graph being cut at the last
+one to three cells: a held door (DOORS HOLD LONGER: 60 s a wall to
+the router), a fence or window band, or the interior jump's
+headroom. The frontier's own blocks and sprites (16:37): Air/Empty
+663 (no floor: the reach ends at a drop or a rise -- F1 fall marks
+144, F2 6, F3 3), Grass 283, Wood 194, Rock 138, Earth 57;
+sprites ChairWoodWoodland2 184, FenceWoodWoodland 123, Lantern 4,
+Window1 1; DOORS 0 of 508. So the cuts are (a) a fence line the
+town rule refuses to cross (a fenced plot whose target sits inside
+and whose gate the router does not admit), (b) furnished rooms
+(chairs on the frontier: a table's far side, an upper floor), and
+(c) a floor edge one or two blocks up. Not doors. W14-i7 names the
+walkers and their jobs; the plot rows (gates in fences, stairs
+routable) are Ben's roadmap. Rate: 622 whole-town exhausts in 32
+minutes on b2 -- the largest CPU cost in the town.
+
+### W14-i6 landed (e4351e2457, staged 16:35:49)
+
+Chain bla01mpua: check ok, pin the_proof_was_false green, committed
+e4351e2457, both halves from one commit, the server exe carries
+"THE PROOF WAS FALSE" (grep 1). Falsifier at +90 s (verdict below
+when it prints). The live read: the B5 arrival line's strikes= and
+benched= fields and the false-proof witness on the arms' next
+restarts (b1 boarded W14-w ten seconds before this stage; b2 boards
+the latest pair at ~17:00). W14-g's chain fires at +300 s.
+
+### W14-i7 registered (16:25): THE FLOOD NAMES ITS WALKER (instrument)
+
+No log line ties an exhaust to its walker (the search has no uid;
+the job loop's consumer sees only active jobs; no job, bed, spot or
+item line names the far ends). Mechanism: exhaust_rose(seen, now)
+= now != seen && now > 0; the board keeps exhausts_seen per walker;
+at the mover's position write (every walker passes it) the chaser
+snapshot's longest_exhausts is compared with the last seen and each
+rise prints "THE FLOOD NAMES ITS WALKER" (uid, job or none, kind,
+job_pos, the search's last target, route target, count, feet) at
+the first sixteen and powers of two. Pin the_flood_names_its_walker
+(0->1, 2->3, 2->1 named; 1->1 and resets not); falsifier plants a
+plain greater-than -> red on 2->1. Bar: named within 10% of b2's
+LONGEST-EXHAUST count; the far and touched ends' producers named;
+the jobless share a number. Falsified as an instrument if named
+runs far below the exhaust count (the flooders never take a mover
+write: vanilla NPCs or held bodies -- then the agent system is the
+place). Queued behind W14-g (bastion-server only).
+
 ### W18-c's replicate on b1 (W18-b2 + W18-c), the full day (16:20, read at day 1 hour 0): W18-c STANDS; the arrivals bar stays open
 
 Starving sleepers 0 (4 the night before under W18-c + W18-b; bar <=
@@ -2999,6 +3092,17 @@ W18-c stands. The one open cost is b1's arrivals, two days below
 COUNTS VARY 2-3x: the third replicate is b1's next day (the W14-i6
 pair); if it reads under 900 again with b2 flat, the x-y window is
 costing the ledge arm real walks and W18-c is reconsidered.
+
+The reader's own night block (16:29, read at day 1 HOUR 6 -- the
+registered frame): arrivals 916 (889 at the same frame on the
+W18-c-only day; bar >= 900 by night: PASSED at the registered
+frame; my hour-0 hand read of 863 is the other frame -- TWO FRAMES,
+kept apart), starving sleepers 0, FETCH STALLED 16, STUCK CENSUS
+13 distinct, other bans 3, terminal bench 1 (job 628, colonist
+131), W14-e2 benches 0, flood 604 (58x (7705,6393,180), 35x
+(7615,6271,182), 30x (7609,6265,181)), panics 0. So W18-c's
+arrivals clause, read at its own frame, passed on the replicate;
+the third day remains the tie-break for the hour-0 frame.
 
 ### W14-i5 on b2, the second read (16:18; 262 exhaust lines in 13 minutes)
 

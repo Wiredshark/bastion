@@ -162,6 +162,9 @@ pub struct Astar<S, Hasher> {
     /// Next insertion sequence number for the frontier's total-order
     /// tie-break (item 177). Monotone; never reused.
     next_seq: u64,
+    /// ★ W14-g: the goal this search was built for (0 = untagged). A retained
+    /// search whose goal moves is restarted by its caller.
+    goal_tag: u64,
 }
 
 /// NOTE: Must manually derive since Hasher doesn't implement it.
@@ -205,6 +208,7 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
             },
             closest_node: None,
             next_seq: 1,
+            goal_tag: 0,
         }
     }
 
@@ -212,6 +216,15 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
         self.max_cost = max_cost;
         self
     }
+
+    /// ★ W14-g: tag the search with its goal.
+    pub(crate) fn tagged(mut self, tag: u64) -> Self {
+        self.goal_tag = tag;
+        self
+    }
+
+    /// ★ W14-g: the goal tag this search was built for (0 = untagged).
+    pub(crate) fn goal_tag(&self) -> u64 { self.goal_tag }
 
     pub fn set_max_iters(&mut self, max_iters: usize) { self.max_iters = max_iters; }
 

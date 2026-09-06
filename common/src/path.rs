@@ -696,6 +696,29 @@ pub fn priced_outside_destination(in_destination: bool, surcharge: f32) -> f32 {
 /// zeroed the count each time it was earned (one end asked eighteen times,
 /// no strike). The count survives a partial route and resets on a complete
 /// one only.
+/// ★ W14-g pinned: THE SEARCH RESTARTS WHEN ITS END MOVES. A retained
+/// search keeps its heap across polls and tiers; if its goal cell changes
+/// to a cell the search already popped as an ordinary node, that cell is
+/// never pushed again and `satisfied` never fires: the search floods the
+/// whole component and reads Exhausted (b2, W14-i5's read: 23 of 61
+/// exhausts had visited their end at a cost of 10-13 and never popped it).
+/// A tagged search whose tag differs from the current goal's is restarted;
+/// an untagged search (another creator) is left alone.
+pub fn search_end_moved(retained_tag: u64, end_tag: u64) -> bool {
+    retained_tag != 0 && retained_tag != end_tag
+}
+
+/// The goal's tag: a nonzero hash of the resolved end cell.
+pub fn search_end_tag(end: Vec3<i32>) -> u64 {
+    use core::hash::{Hash, Hasher};
+    let mut h = fxhash::FxHasher64::default();
+    end.hash(&mut h);
+    h.finish() | 1
+}
+
+/// ★ W14-g: restarts of retained searches whose goal moved (the witness).
+pub static END_MOVED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W14-i5 pinned: THE EXHAUST NAMES ITS END'S COST. Over the visited
 /// states (at_end, g): the cheapest g among the states at the end, how many
 /// states sit at the end, and the dearest g visited anywhere. An end visited
@@ -2183,6 +2206,25 @@ where
 
     let satisfied = |node: &Node| node.pos == end;
 
+    // ★ W14-g: THE SEARCH RESTARTS WHEN ITS END MOVES (see search_end_moved).
+    let end_tag = search_end_tag(end);
+    if astar
+        .as_ref()
+        .is_some_and(|(a, _)| search_end_moved(a.goal_tag(), end_tag))
+    {
+        let n = END_MOVED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        if n <= 8 || n.is_power_of_two() {
+            tracing::info!(
+                ?start,
+                ?end,
+                ?path_length,
+                iters_spent = astar.as_ref().map(|(a, _)| a.iters_consumed()),
+                moved = n,
+                "bastion: THE END MOVED UNDER THE SEARCH — the retained search is restarted (W14-g)"
+            );
+        }
+        *astar = None;
+    }
     if astar
         .as_ref()
         .is_some_and(|(_, start)| start.distance_squared(startf) > 4.0)
@@ -2206,7 +2248,8 @@ where
                     last_dir_count: 0,
                 },
                 FxBuildHasher::default(),
-            ),
+            )
+            .tagged(end_tag),
             startf,
         )
     });
@@ -2917,6 +2960,61 @@ mod bastion_vertical_tests {
         assert_eq!(n, 2, "two states at the end");
         assert_eq!(m, 20.0, "the dearest g anywhere");
         assert_eq!(end_cost_summary(std::iter::empty()), (None, 0, 0.0), "nothing visited: nothing named");
+    }
+
+    /// ★ W14-g pinned: a search left Pending toward a far goal A, then
+    /// asked for goal B -- the cell one block behind the start that the first
+    /// poll popped as an ordinary node -- finds B in a fresh search's few
+    /// expansions; asked again for A it continues (its spent iterations
+    /// stay). Planted defect: the tag test always false -> the B poll
+    /// continues A's heap, B is never pushed again, no Path -> red.
+    #[test]
+    fn the_search_restarts_when_its_end_moves() {
+        assert!(search_end_moved(7, 9) && !search_end_moved(7, 7) && !search_end_moved(0, 9), "moved only when tagged and different");
+        assert_ne!(search_end_tag(Vec3::new(1, 2, 3)), 0, "a tag is never zero");
+        assert_ne!(search_end_tag(Vec3::new(1, 2, 3)), search_end_tag(Vec3::new(2, 2, 3)), "neighbouring cells differ");
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let cfg = TraversalConfig {
+            node_tolerance: 1.5,
+            slow_factor: 0.0,
+            on_ground: true,
+            in_liquid: false,
+            min_tgt_dist: 1.0,
+            can_climb: false,
+            scramble_reach: 2,
+            can_fly: false,
+            vectored_propulsion: false,
+            is_target_loaded: true,
+            search_allowed: true,
+            climb_ban: Vec::new(),
+            road_cells: Default::default(),
+            route_jitter_seed: 0,
+            wall_margin_cells: Default::default(),
+            interior_cells: Default::default(),
+        };
+        let mut blocks = StdHashMap::new();
+        for x in 0..120 {
+            for y in 0..40 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        let vol = MockVol::from_parts(blocks, Block::empty());
+        let startf = Vec3::new(5.5, 20.5, 1.0);
+        let far = Vec3::new(115.5, 20.5, 1.0);
+        let behind = Vec3::new(4.5, 20.5, 1.0);
+        let mut astar = None;
+        let (r1, c1) = find_path_priced(&mut astar, &vol, startf, far, &cfg, PathLength::Small, None, None);
+        assert!(matches!(r1, PathResult::Pending), "the far goal is still pending after one small poll (consumed {c1})");
+        let spent = astar.as_ref().map(|(a, _)| a.iters_consumed()).unwrap_or(0);
+        assert!(spent >= 200, "the first poll spent its budget: {spent}");
+        let (r2, c2) = find_path_priced(&mut astar, &vol, startf, behind, &cfg, PathLength::Small, None, None);
+        assert!(matches!(r2, PathResult::Path(..)), "the moved goal is found by a fresh search (got {})", match r2 { PathResult::Path(..) => "Path", PathResult::Pending => "Pending", PathResult::Exhausted(_) => "Exhausted", PathResult::None(_) => "None" });
+        assert!(c2 < 50, "found in a few expansions, not the old heap's: {c2}");
+        let mut astar2 = None;
+        let _ = find_path_priced(&mut astar2, &vol, startf, far, &cfg, PathLength::Small, None, None);
+        let _ = find_path_priced(&mut astar2, &vol, startf, far, &cfg, PathLength::Small, None, None);
+        let spent2 = astar2.as_ref().map(|(a, _)| a.iters_consumed()).unwrap_or(0);
+        assert!(spent2 > 250, "the same goal continues the retained search: {spent2}");
     }
 
     /// W14-i5 EXPERIMENT (prints, asserts nothing): an end two blocks east
