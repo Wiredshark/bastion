@@ -33522,6 +33522,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // ★ W16-i: the previous node, the body's offset from it,
                                             // and whether the mover could rise into the next column
                                             // toward the head (a standable cell within feet-1..feet+2).
+                                            let trunk_next: Option<Vec3<i32>> = uids
+                                                .get(entity)
+                                                .and_then(|u| board.path_cache.get(u))
+                                                .and_then(|(wps, i, _)| wps.get(*i).copied());
                                             let prev_dxy = sn.route_prev.map(|p| (p.xy() - f.xy()).map(|e| e.abs()).reduce_max());
                                             let prev_dz = sn.route_prev.map(|p| f.z - p.z);
                                             let rise_next = sn.route_head.and_then(|h| {
@@ -33548,6 +33552,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 credit = stair_credit_verdict(prev_dxy, prev_dz),
                                                 rise_next = ?rise_next,
                                                 push_site = ?uids.get(entity).and_then(|u| board.last_push_site.get(u)),
+                                                // ★ W16-i2: the TRUNK's frame -- its next waypoint and
+                                                // the body's offset from it; "trunk" when the body was
+                                                // the trunk mover's (path_cache), else "chaser".
+                                                frame = if uids.get(entity).is_some_and(|u| board.path_cache.contains_key(u)) { "trunk" } else { "chaser" },
+                                                trunk_next = ?trunk_next,
+                                                trunk_dxy = ?trunk_next.map(|w| (w.xy() - f.xy()).map(|e| e.abs()).reduce_max()),
+                                                trunk_dz = ?trunk_next.map(|w| w.z - f.z),
+                                                trunk_idx = ?uids.get(entity).and_then(|u| board.path_cache.get(u)).map(|(wps, i, _)| (*i, wps.len())),
                                                 route_dropped,
                                                 tier_after_drop = ?tier_after_drop,
                                                 "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the route is dropped and the next search goes another way, one tier up"

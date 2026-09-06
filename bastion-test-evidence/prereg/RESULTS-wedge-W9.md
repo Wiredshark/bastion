@@ -2454,6 +2454,27 @@ evidenced: routes whose start is inside a surcharged building; the
 inline chaser searches; b1's stores. The dry tree at e6b5bc7e60
 with W16-a applied first validated every anchor.
 
+### W15-c read: b2 +4 and +10 (on the W17-i pair ce3bec459e, which contains W15-c and W16-a; 07:28 and 07:34)
+
++4 (hour 11): exhausted 22, probes 22 (14 sealed, 7 cut_off), the
+perimeter class `same` 3, `start_unlabelled` 11, `untrusted` 7;
+CLIMB BANNED (fetch) 0, FETCH STALLED 0, arrivals 363, p95 445 us.
++10 (hour 14): exhausted 30 (bar <= 30, half of 61; 61-87 on the
+three previous runs at +10) -- PASSED at the edge; the perimeter
+class `same` 4 (bar <= 8, a quarter of 34) -- PASSED;
+`start_unlabelled` 18 now the largest class (the remaining
+exhaustions start from cells the index has not labelled:
+colonists indoors, the W17-i class); CLIMB BANNED (fetch) 0 (2 on
+W16-a alone at +10), FETCH STALLED 1 (2), PROMISED CLIMB 1, FETCH
+BUDGET EXPIRED 4 (1); arrivals 485 (425 on W16-a alone, 394 on
+W15-i3 at +10: +14% to +23%); ITEM 39 p95 420 us (494, 460-463:
+the lowest of any run; the flood was the tick's cost); starving 0;
+stuck 0; the pump pending 31, delivered_exhausted 0 in the last
+census. Reading: W15-c does what it registered -- the searches
+that flooded now finish -- and the b1 bans are not seen here: no
+ban at all in fourteen game hours on the arm whose store lies on
+flat ground. The day-1 read (~08:15) decides the day's bars.
+
 ### W15-c landed (be2258bba6, staged 06:52)
 
 Check clean, the common pin green (1 of 712), committed 06:43,
@@ -2595,6 +2616,95 @@ primary bars, one secondary bar missed by two, and a cost
 (exhaustion +70%) to be read against W15-c. b1's hour-19 and
 night-1 reads follow.
 
+### W16-a read: b1 hour 19 (07:22) -- ON THE W15-c PAIR be2258bba6, both rows aboard
+
+The b1 restart at 07:01 took the latest staged pair, W15-c's,
+which contains W16-a; this read is of both rows together. CLIMB
+BANNED (fetch) 15 by hour 19 (bar <= 6 to the night; 12 to the
+night on the E2-s run) -- FAILED; FETCH STALLED 40 (bar <= 24) --
+FAILED; FETCH BUDGET EXPIRED 34 (bar <= 7) -- FAILED; PROMISED
+CLIMB TAKEN 14 (9); STALL BLAMED 5; starving sleepers 0; arrivals
+601 (600-601 at hour 19 on the two previous runs: unchanged);
+stuck census 4; p95 711 us (637-710: unchanged). Longest-tier
+steps 1,749 (55,255 and 8,950 at hour 19 on the two previous
+runs): W15-c removed the flood on b1 -- the exhausted probes 65 by
+hour 19, the last pump census delivered_path 3, exhausted 6. The
+fifteen bans, from their own lines: every one head one block away
+in xy and TWO up (dz 2, dxy 1: a true two-block climb, not a
+stair credited from below), eight colonists (46, 20, 65 three
+each; 68 two; 76, 22, 58, 61 one), and all but one at ONE place:
+heads at (7657..7665, 6431..6432, 182), the edge of one building
+north of the store, its floor two above the ground -- a ledge the
+router's JUMP edges admit and the gliding body cannot take, and
+where the PROMISED CLIMB assist (one block over, two up: its own
+case) did not fire on these fifteen though it fired fourteen
+times elsewhere. Reading: on b1 the W16-a bars fail, but not on
+W16-a's class -- W15-c's routes now ENTER buildings that the flood
+never reached, and one of them is entered over a two-block edge.
+The confound is the pair; b2's W15-c read (ce3bec459e against
+cb7bea7543, W16-a alone) separates the two rows, and W16-i (the
+ban names the step it missed: prev, credit, rise_next, push_site)
+lands on b1 after W15-c's night and names why the assist stood
+down. Candidate rows: W16-b THE ASSIST TAKES THE PROMISED CLIMB
+IT REFUSED (if the standable test or the committed-walker rule
+refused it), or W2-b THE FETCH LEG PLANS NO JUMP (scramble_reach
+0 for the fetch search, so the router takes the stair or gives
+the honest "unreachable").
+
+The wedge probes for those fifteen stalls (07:34): assist_why
+"committed_walker" on thirteen, "eligible_climb" on one,
+last_push_site "chaser-settle" on fourteen. The assist is refused
+to a trunk-committed walker BY DESIGN (W6-C, in `assist_allowed_for`:
+"the trunk is this body's mover and the assist's head is the
+CHASER's -- two frames; the W6 boot measured the oscillation: step
+assists 3 -> 185, embeds 1,034 -> 2,036"), so W16-b as first
+written is the rejected design. The ban itself is judged on the
+CHASER's route head (`route_head_is_a_climb(feet, sn.route_head)`)
+while thirteen of the fifteen bodies were moving in the TRUNK's
+frame (path_cache: waypoints, index, target): TWO FRAMES COMPARED
+AS ONE. Whether the body stalled under the trunk's next waypoint
+(a two-up waypoint the trunk router's profile should reject) or
+with the trunk spent and the chaser's head the true next step, the
+line cannot say.
+
+### W16-a read: b1 night 1 (the W15-c pair be2258bba6; 07:40, hour 6 of day 1)
+
+CLIMB BANNED (fetch) 15 (none new since hour 19), PROMISED CLIMB
+TAKEN 19, FETCH STALLED 45, FETCH BUDGET EXPIRED 37, STALL BLAMED
+5; starving sleepers 0; arrivals 791 (788 and 838 on the two
+previous night reads: unchanged); stuck census 8 (8, 11); p95 764
+us (710, 745: unchanged); longest-tier steps 2,073 (66,001 and
+10,802: the flood gone under W15-c); refusals 65,536 (the memo,
+the sleepers' still feet). Disposition of W16-a on b1: its three
+stair bars FAILED on this pair, on a class it did not claim (the
+two-up edge of one building, fourteen of fifteen, judged in the
+chaser's frame while the trunk moved the body -- W16-i2 names it);
+the outcomes a player sees (arrivals, stuck, sleepers) are
+unchanged, and the search cost fell thirtyfold. W16-a stands as
+landed on both arms: PASSED its bars where its class was the class
+(b2), FAILED them where another class filled the count (b1). The
+W15-c b1 reader took b1 at 07:41.
+
+## W16-i2, registered 07:36 (keyed on the W16-i stage; the queue's end)
+
+THE BAN NAMES ITS FRAME. Mechanism: at CLIMB BANNED (fetch) the
+line gains `frame` ("trunk" when path_cache holds the walker,
+else "chaser"), `trunk_next` (the trunk's waypoint at its index),
+`trunk_dxy`, `trunk_dz` (against the feet), `trunk_idx` (index,
+length). No behaviour changes; wiring, no new pin, no falsifier
+(the chain's gate runs W16-i's pin). Prediction (b1 fresh after
+W16-i's night-1 block, b2 fresh after W16-i's day-1 block;
+`wait-w16i2-b1.sh`, `wait-w16i2-b2.sh`): the bans partition by
+frame; for the trunk frame either trunk_dz >= 2 (the trunk router
+emitted a two-up waypoint: a trunk-router row) or trunk_dz <= 1
+with the chaser's head two up (the ban judged the wrong frame: a
+ban-rule row -- judge a trunk walker on its trunk waypoint, and
+the promised climb belongs to the trunk mover). Falsified only if
+the line prints without the frame. Rejected: allowing the assist
+for trunk walkers (W6-C measured it worse); fixing the ban rule
+before the frames are counted. NOT evidenced: the fix the frame
+names. The dry tree at e7ad98977a (W16-i) validated the anchors.
+
 ## W16-i, registered 07:08 (keyed on the W17-i stage; the queue's end)
 
 THE BAN NAMES THE STEP IT MISSED. Mechanism:
@@ -2618,6 +2728,18 @@ jump). Falsified only if the line prints without a verdict.
 Rejected: fixing the settle or the index before the verdicts are
 counted. NOT evidenced: the fix the verdict names. The dry tree
 at ce3bec459e (W17-i) validated the anchors.
+
+### W16-i landed (e7ad98977a, staged 07:41)
+
+Check clean, the pin green (eight cases), committed 07:31, both
+halves staged 07:41:38; the binary verified by contents
+(stair_credit_verdict and rise_next present). The b2 reader
+restarts b2 after W17-i's day-1 block, the b1 reader after W15-c's
+night-1 block. Falsifier at 07:46: short and below swapped, the
+pin RED (0 passed, 1 failed), restored clean. Shipped to lab-bin
+07:42. W16-i2's chain fired at 07:46. b1's restart at 07:45 (for
+the W15-c read) took this pair, so W16-i's credit verdicts are in
+b1's log from that boot.
 
 ## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
 
