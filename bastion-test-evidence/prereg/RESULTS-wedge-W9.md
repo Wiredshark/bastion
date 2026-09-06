@@ -2024,6 +2024,14 @@ key (two keys for one search); a memo on the start cell alone.
 NOT evidenced: the rescue (W14-b); b2. Dry tree from HEAD
 a6fa8fe2ee (W15-i2).
 
+### W14-b1 landed (dd2cc43cf2, staged 02:27)
+
+Check clean, W14's pin green, both halves staged 02:27; the row
+adds no string (the key is wiring), the binary carries W14's. No
+falsifier by design (stated above). The b1 reader restarts b1
+after W15-i2's night-1 block and reads W14's bars again; E2-p's
+chain fires five minutes after this stage.
+
 ### W12-a-b-p landed (9a2925e522, staged 01:41)
 
 Check clean, the re-stated pin green (the on-top assert now offers

@@ -1347,6 +1347,70 @@ never-opened door named by a verdict planted at d6c5a6c2d8, the
 pin RED at 01:08, the tree restored clean. Shipped to lab-bin
 01:05.
 
+### E2-l-i read (b1, the W14 pair 0b5c172d15, after its night-1 block, read 02:15): the sweep names seven eaters, four of them the night watch
+
+Against its bars: 54 loads, SWEPT 7 (19, 18, 11, 16, 15 on the
+five pairs before -- the fewest yet), named 7, no eater missing,
+opened_not_scanned 0 (the instrument agrees with itself: PASSED);
+the night watch 4 of 7 (bar at most 4: PASSED, at the line).
+The verdicts: walk_home_hour_false 2 -- uid 45 (Cook, night
+watch, the door opened 259 times, 259 passes) and uid 129 (Guard,
+night watch, 300 and 300): the door opened all evening and the
+priority line refused the load every pass, because
+`supper_walk_home_hour` walks back from a Leisure hour to the
+nearest non-Leisure block and requires Work, and a watchman's
+evening follows his Sleep, not his Work; never_free 4 -- uid 110
+(Farm, night watch, two loads), 111 (Craft), 116 (Mine): the door
+never opened, the eater was never job-free with a pending load in
+its leisure hours (for the watchman, the town's evening is not
+his Leisure at all); claimed 1 -- uid 47 (Craft): the load was
+the best on its last pass, so it was claimed and later released
+unclaimed before the sweep (a preempt or a release drops the
+claim). By profession: Craft 2, Farm 2, Cook 1, Guard 1, Mine 1.
+The night on this pair: meals 76, no_food_found 0, distinct
+starving sleepers 0 -- the best night of the run, one replicate.
+Disposition: the instrument PASSED and the classes are sized: the
+night watch is the walk home's largest leak (its door opens, its
+lounge yields, its priority line refuses -- three consumers, one
+predicate wrong for one schedule), then the claimed-then-released
+load, then the never-free non-watch eater. E2-p (the watch's
+walk-home hour in his own frame) is the next behaviour row; a
+second sweep read on W15-i2's pair is armed for the replicate.
+
+## E2-p, registered 02:20 (keyed on the W14-b1 stage; the queue's end)
+
+THE WATCH CARRIES ITS SUPPER BEFORE THE SHIFT. From E2-l-i's
+read: four of the seven swept loads were the night watch's, two of
+them refused every pass with walk_home_hour_false after the door
+opened 259 and 300 times. The watch runs the rotated day (offset
+14): Work at the town's 22-05, Sleep at 12-19, Leisure at 6-11 and
+20-21; `supper_walk_home_hour` walked back from a Leisure hour to
+the nearest non-Leisure block and required Work, so at 20-21 the
+watchman's walk finds his Sleep and refuses; the round mints at 12
+and sweeps at 22, so 20-21 is his only window, and three consumers
+disagreed about it (the door opened, the lounge yielded, the
+priority line refused). Now a Leisure hour is the walk home when
+the nearest non-Leisure block on EITHER side is Work: the backward
+walk as before, then a forward one (the pre-shift leisure). On the
+default day 6-7 becomes true and no load exists then; the watch's
+20-21 becomes true, his 16-19 and 12 stay false. SUPPER CARRIED
+HOME names night_watch. The judgement item of reports #9 and #10
+is answered mechanically at its measured size (four of seven); the
+design alternatives (no load for the watch; a load spared from the
+sweep) are rejected in the message. Pin
+`the_eater_carries_supper_on_the_way_home`, re-stated (default
+14-15, 16-21, 6-7 yes; 12-13, 22, 3 no; the watch's 20-21 yes,
+16, 19, 12 no); planted: the forward walk refused, red on the
+watch's 20-21. Prediction (b1 fresh after W14-b1's night-1 block,
+`wait-e2p-b1.sh`; the day-0 sweep and night 1): walk_home_hour_false
+0 for watch eaters (2); watch loads swept at most 1 (4); SUPPER
+CARRIED HOME with night_watch at least 2 (0); swept at most 7 (7);
+starving sleepers at most 2. Falsified if the hour still refuses
+a watchman, or his loads sweep as never_free with the hour fixed
+(he is not job-free at 20-21), or the total swept rises above 12.
+NOT evidenced: uid 110's never_free loads; the claimed-then-
+released load; night 2; b2.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the

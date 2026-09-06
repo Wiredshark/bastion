@@ -8527,10 +8527,25 @@ pub(crate) fn supper_walk_home_hour(
     }
     // A Leisure hour after the day's last Work hour: walk back to the
     // nearest earlier hour whose block is not Leisure; it must be Work.
+    // ★ E2-p: or the nearest LATER one -- the pre-shift leisure. The night
+    // watch (offset 14) has its leisure at the town's 20-21, after its Sleep
+    // and before its Work; the round mints at 12 and sweeps at 22, so that
+    // hour is its only walk home, and the backward walk alone refused it
+    // 259 and 300 times on one evening. On the default day this admits 6-7
+    // as well; no supper load exists then, so nothing changes but the watch.
     if matches!(block(hour), ScheduleBlock::Leisure) {
         let mut h = hour;
         for _ in 0..24 {
             h = (h + 23) % 24;
+            match block(h) {
+                ScheduleBlock::Leisure => continue,
+                ScheduleBlock::Work => return true,
+                _ => break,
+            }
+        }
+        let mut h = hour;
+        for _ in 0..24 {
+            h = (h + 1) % 24;
             match block(h) {
                 ScheduleBlock::Leisure => continue,
                 ScheduleBlock::Work => return true,
@@ -48946,7 +48961,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             job = job_id,
                             colonist = %uid,
                             own_supper_claims = n,
-                            "bastion: SUPPER CARRIED HOME — the eater claimed the load bound for its own shelf"
+                            night_watch = board.night_watch.contains(uid),
+                        "bastion: SUPPER CARRIED HOME — the eater claimed the load bound for its own shelf"
                         );
                     }
                 }
@@ -56104,19 +56120,31 @@ mod tests {
         assert_eq!(night_shelf_verdict(true, 3, 0), Refused, "food on the shelf, all refused");
     }
 
-    /// ★ E2-g-b pinned, E2-g-c re-stated: on the default schedule the walk
-    /// home is 14 and 15 (the last two Work hours) and 16-21 (the evening
-    /// Leisure); 12 and 13 (the work day), 6 and 7 (the morning Leisure),
-    /// 22 and 3 (Sleep) are not. Planted defect: the walk home from noon
-    /// (four hours) -> red.
+    /// ★ E2-g-b pinned, E2-g-c re-stated, E2-p re-stated: on the default
+    /// schedule the walk home is 14 and 15 (the last two Work hours), 16-21
+    /// (the evening Leisure) and now 6-7 (the pre-shift leisure, where no
+    /// load exists); 12 and 13 (the work day), 22 and 3 (Sleep) are not.
+    /// For the night watch (offset 14) the town's 20-21 is the pre-shift
+    /// leisure and IS the walk home; the town's 16-19 is its Sleep and is
+    /// not; the town's 12 is its Sleep and is not. Planted defect: the
+    /// pre-shift leisure refused -> red on the watch's 20-21.
     #[test]
     fn the_eater_carries_supper_on_the_way_home() {
         let nw: HashSet<common::uid::Uid> = HashSet::new();
-        for h in [14u32, 15, 16, 17, 20, 21] {
+        for h in [14u32, 15, 16, 17, 20, 21, 6, 7] {
             assert!(supper_walk_home_hour(&nw, None, h), "hour {h}: the walk home");
         }
-        for h in [12u32, 13, 6, 7, 22, 3] {
+        for h in [12u32, 13, 22, 3] {
             assert!(!supper_walk_home_hour(&nw, None, h), "hour {h}: not the walk home");
+        }
+        let watch = common::uid::Uid(std::num::NonZeroU64::new(7).expect("nonzero"));
+        let mut nw2: HashSet<common::uid::Uid> = HashSet::new();
+        nw2.insert(watch);
+        for h in [20u32, 21] {
+            assert!(supper_walk_home_hour(&nw2, Some(&watch), h), "watch, town hour {h}: the pre-shift leisure is the walk home");
+        }
+        for h in [16u32, 19, 12] {
+            assert!(!supper_walk_home_hour(&nw2, Some(&watch), h), "watch, town hour {h}: asleep, not the walk home");
         }
     }
 
