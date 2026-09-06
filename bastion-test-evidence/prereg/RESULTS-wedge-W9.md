@@ -2683,6 +2683,17 @@ a third house); b1 (one replicate on b2 first). The dry tree at
 83e3666cb6 (W16-i2) with W2-b applied first validated every
 anchor.
 
+### W15-c-b and W2-b read: b2 +10 (1377f60249 under the W16-i2 reader; 09:10, hour 15)
+
+Exhausted 47 by +10 (30 on W15-c's +10, 40 on W2-b's, 61-87
+before them), `start_unlabelled` 24 (18, 10), `same` 13 (4, 17);
+unreachable 0; CLIMB BANNED (fetch) 0 and (other) 0, FETCH STALLED
+0, budgets expired 3; arrivals 536 (485, 432, 425 at +10 on the
+three runs before: the highest); p95 444 us; starving 0; no door
+probe, no credit, no frame (nothing to name by hour 15). The
+day-1 read (~09:50) carries W15-c-b's bars (the day's exhaustion,
+the indoor-start class) and W2-b's on b2.
+
 ### W15-c-b landed (1377f60249, staged 08:50)
 
 Check clean, the common pin green (1 of 714), committed 08:37,

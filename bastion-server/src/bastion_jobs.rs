@@ -406,6 +406,27 @@ pub(crate) fn exhaust_components(
     }
 }
 
+/// ★ W17-b pinned: THE SEARCH STARTS WHERE THE BODY CAN STAND. A body on a
+/// bed sprite stands two blocks above its floor in a cell no route may use
+/// (no solid directly below); a search from there is an island and the
+/// router answers "unreachable" at once (W17-i: door_below, the column
+/// '#~~~~~~~~~'). The start is the feet cell when the body can stand there,
+/// else the first cell it can stand in one or two below, else the feet
+/// (identity). The mover drops the difference on its own.
+pub(crate) fn search_start_stand(walkable: impl Fn(Vec3<i32>) -> bool, feet: Vec3<f32>) -> Vec3<f32> {
+    let cell = feet.map(|e| e.floor() as i32);
+    if walkable(cell) {
+        return feet;
+    }
+    for dz in 1..=2 {
+        let below = cell - Vec3::new(0, 0, dz);
+        if walkable(below) {
+            return Vec3::new(feet.x, feet.y, below.z as f32);
+        }
+    }
+    feet
+}
+
 /// ★ W17-i pinned: THE SEALED WALKER NAMES ITS FLOOR -- where the house's
 /// nearest door stands against the walker's feet: no_door (none in the
 /// house's whole box), level (within one block of the feet: a door the
@@ -36127,7 +36148,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 search: common::path::FullPathSearch::new(
                                                     common::path::PathLength::Small,
                                                 ),
-                                                startf: pos.0,
+                                                // ★ W17-b: from a cell the body can stand in.
+                                                startf: search_start_stand(|c| common::path::colonist_walkable(&*terrain, c), pos.0),
                                                 target: n0.map(|e| e as f32)
                                                     + Vec3::new(0.5, 0.5, 0.0),
                                                 cfg,
@@ -36172,7 +36194,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             search: common::path::FullPathSearch::new(
                                                 common::path::PathLength::Medium,
                                             ),
-                                            startf: pos.0,
+                                            // ★ W17-b: from a cell the body can stand in.
+                                            startf: search_start_stand(|c| common::path::colonist_walkable(&*terrain, c), pos.0),
                                             target: search_target,
                                             cfg,
                                             lane: SearchLane::Fill,
@@ -56397,6 +56420,21 @@ mod tests {
         assert_eq!(exhaust_components(Some(&idx), prev, s, t).0, "target_unlabelled");
         idx.labels.remove(&s);
         assert_eq!(exhaust_components(Some(&idx), prev, s, t).0, "start_unlabelled");
+    }
+
+    /// ★ W17-b pinned: a walkable feet cell is its own start; an unwalkable
+    /// one with a standable cell one below starts one below; two below,
+    /// two below; nothing standable within two: the feet (identity); the xy
+    /// is kept. Planted defect: the search below never tried -> red.
+    #[test]
+    fn the_search_starts_where_the_body_can_stand() {
+        let feet = Vec3::new(7706.4, 6310.6, 183.0);
+        let at = |z: i32| move |c: Vec3<i32>| c.z == z;
+        assert_eq!(search_start_stand(at(183), feet), feet, "walkable feet: identity");
+        assert_eq!(search_start_stand(at(182), feet), Vec3::new(7706.4, 6310.6, 182.0), "one below");
+        assert_eq!(search_start_stand(at(181), feet), Vec3::new(7706.4, 6310.6, 181.0), "two below (the bed's floor)");
+        assert_eq!(search_start_stand(at(180), feet), feet, "three below is not tried: identity");
+        assert_eq!(search_start_stand(|_| false, feet), feet, "nothing standable: identity");
     }
 
     /// ★ W17-i pinned: no door: no_door; two up: door_above; two down:
