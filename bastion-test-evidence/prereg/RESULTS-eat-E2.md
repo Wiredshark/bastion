@@ -937,6 +937,34 @@ an hour each; hour 4 sends 15 eaters out. The same shape as E2-g-c's
 night 2, on the pair that also carries W12-a, W12-b and W13; the
 wedge rows did not change the night. E2-l and E2-m read next on b1.
 
+### E2-j-b night 1 on b2 (pair 230257dddd, read 20:34 at hour 6 of day 1): THE EVENING PASSED, THE NIGHT IS CONFOUNDED
+
+Against the bars: EatFrom/Traveling at 18-20 at most 12 an hour --
+0, 10, 10 (E2-j: 20, 22, 28), PASSED; EatFrom/Waiting at 16-20 at
+most 4 -- 1, 2, 7, 8, 2 at 16-20 (E2-j 0-2; before E2-j 11): FAILED
+at 18-19 and at the clause's edge ("returns above 8": 8); Waiting at
+21-3 at most 6 -- 0, 0, 0, 3, 8, 2, 0 (E2-j 12-19), PASSED but hour
+1; in-bed starving at 0-3 at most 16 -- 7, 17, 35, 46 (E2-j 5, 17,
+21, 24), FAILED; distinct starving sleepers at most 3 -- 7 (5),
+FAILED; NIGHT MEAL AT HOME at least 25 -- 12 (33), FAILED and the
+clause "under 20: the night's gain was the unbounded spread's"
+fired as written; meals day 1 at least 45 -- 44. NIGHT SHELF EMPTY
+17: Empty 16, Refused 1 (E2-j: 3 and 14) -- the shelves are BARE,
+not locked; arrivals to private shelves before the sweep 32 (E2-j
+50, E2-i1 45), SWEPT 32; no_food_found 821 (414).
+
+The confound: this pair carries W12-b-b (the store spread over
+cells whose standable test fails) and not W12-c (the plank floor);
+the supper loads' pickups sit inside the plank (W12-c's read: every
+store cell one block under the floor until 20:15), and the round's
+arrivals fell from 50 to 32 -- the bare shelves are the plank's,
+not the spread's. So E2-j-b PASSED the evening bars it was built
+for and its night bars are not readable on this pair. Disposition:
+E2-j-b stands for the evening; the night is re-read on b1's E2-l
+night (the W12-c pair carries E2-j-b), and if NIGHT MEAL AT HOME
+stays under 20 there with the shelves stocked, the bound gives the
+night back and comes out.
+
 ## E2-m, registered 19:27 (keyed on the E2-l stage; ahead of E2-k and E2-i2)
 
 THE QUEUE IS FOR THE SAME ANCHOR. The anchor queue (the eat queue's

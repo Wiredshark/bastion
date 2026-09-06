@@ -1587,6 +1587,38 @@ plank was the pump's cost; arrivals 279 (b1 baseline 209-335 at
 the store now read z 183 (the on-top convention over the lifted
 cell; W12-a moves them one down until W12-a-b lands).
 
+W12-c +10 on b1 (read 20:26, hour 15 of day 0): the general store's
+void 0 (the eight void lines are one 1x1 private shelf, region min
+(7640, 6317, 181), surface 1 standable 0 -- a shelf whose cell is not
+standable, E2-k's class); DELIVERED z 182 (25), DepositRun job_pos z
+182 (87 distinct); store-row embeds 0; general_max_cell 144;
+unreachable 0 of 236; arrivals 490 (b1 baseline 527-617; W13's b1
++10: 471); pump mean wait 70, pending 32 (41 and 14 at +4: the
+pump's load grows through the day on every pair); stuck 0; panics
+0. EMBED WATCH 5, all chaser-pure-glide and all of one shape --
+entry z 180.09 -> embedded 180.003, a body snapped down to an
+integer z and read as inside the block -- W13's lowering, the half
+W13-b removes; none at the store rows. The five sit on one line:
+(7648..7656, 6417, 180.09), bodies bound north for (7621..7648,
+6461..6513, 181..182) -- a floor at 180 whose block the snap's
+`surface_at` reads as standable (not solid) and the watch reads as
+terrain (filled): the snapped body is held at 180.0 step after step
+and persists a second; the old line rose through it. W13-b's
+max(line, floor) leaves the line's z there. W12-c's bars all hold
+at +10; the day-1 read follows.
+
+W12-c day 1 on b1 (read 20:42, hour 0 of day 1): the general store's
+void 0 all day (the nine void lines are the one 1x1 shelf); lifted
+698 of 1,005; DELIVERED z 182 (25); DepositRun job_pos z 182 (129
+distinct); general_max_cell 417 (bar under 600); embeds at the store
+rows 0; EMBED WATCH 5 in all -- the five snapped bodies at (7648..
+7656, 6417, 180.09) from +10 and none since (W13-b's) -- PASSED
+(bar under 8); unreachable 0 of 401; FIRST LEG GATE 54 of 60;
+arrivals 710 by day 1 (W13's b1 day 772; W12-a's b2 day 729); STALL
+BLAMED 3; ROUTE FAULT 4; stuck 0; starving 1 at midnight; panics 0.
+W12-c STANDS: every bar it registered held at +4, +10 and day 1,
+and the pump's wait at +4 fell from 73 to 41 with it.
+
 ## W13-b, registered 19:48 (keyed on the W12-c stage; ahead of E2-l and the rest)
 
 THE GLIDE RISES TO THE FLOOR AND NEVER SINKS TO IT. W13's snap set z
@@ -1609,6 +1641,17 @@ NOT evidenced: b1; day 2. The E2-l chain was re-keyed behind this
 row and the W12-a-b reader behind its day 1; the dry tree was
 rebuilt in the order E2-j-b, W12-c, W13-b, E2-l, E2-m, E2-k, E2-i2,
 W12-a-b, W15-i1.
+
+### W13-b landed (b9d05905ca, staged 20:37)
+
+Check clean, the pin green, both halves staged 20:37. The row has no
+witness string of its own (one expression changed); the binary
+carries W13's and W12-c's strings and the pair's lineage, and the
+behaviour is read live; shipped to lab-bin 20:38. The falsifier
+(the snap lowering again) went RED at 20:41, the tree restored
+clean. The b2 reader restarted b2 at 20:39 (after E2-j-b's night-1
+block) and reads +4, +10 and day 1 -- the decider for W13; E2-l's
+chain fired five minutes after this stage.
 
 ## W15, written 20:24 and HELD (launches only if W15-i1's night count says the exhausted searches go up)
 

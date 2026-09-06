@@ -8779,6 +8779,19 @@ pub(crate) fn work_claims_open(block: ScheduleBlock) -> bool {
     matches!(block, ScheduleBlock::Work)
 }
 
+/// ★ E2-l pinned: THE WALK HOME IS NOT WORK -- the claim door opens in
+/// Work; in Leisure only for a colonist with a supper load bound for their
+/// own shelf still unclaimed (the E2-g windows' Leisure hours produced no
+/// claim at all: the door was shut before the scorer ran); never in Sleep.
+pub(crate) fn claims_admit(block: ScheduleBlock, own_supper_pending: bool) -> bool {
+    match block {
+        ScheduleBlock::Work => true,
+        ScheduleBlock::Leisure => own_supper_pending,
+        _ => false,
+    }
+}
+pub(crate) static LEISURE_SUPPER_DOORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub fn farm_season(time_of_day: f64) -> common::time::Season {
     use common::time::Season as S;
     static PIN: std::sync::OnceLock<Option<S>> = std::sync::OnceLock::new();
@@ -47452,15 +47465,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // ROW 27: the door opens by the COLONIST'S schedule — a night
             // watchman's work block is the town's night, so his Guard
             // claims open at 22:00 while everyone else's door is shut.
-            if !work_claims_open(colonist_schedule_block(
+            // ★ E2-l: THE WALK HOME IS NOT WORK -- in Leisure the door
+            // opens for the eater's own unclaimed supper load, and for
+            // nothing else (the zero below).
+            let block_now = colonist_schedule_block(
                 &board.night_watch,
                 Some(&uid),
                 hour_of_day(rtsim.rt_state().data().time_of_day.0),
-            )) && !owns_emergency_access
-                && !rescue_open
-            {
+            );
+            let off_hours = !work_claims_open(block_now);
+            let own_supper_pending = off_hours
+                && board.supper_eaters.iter().any(|(j, v)| {
+                    v.contains(&uid) && board.jobs.get(j).is_some_and(|jb| jb.claimed_by.is_none())
+                });
+            if !claims_admit(block_now, own_supper_pending) && !owns_emergency_access && !rescue_open {
                 census.colonist_off_hours += 1;
                 continue;
+            }
+            if off_hours && own_supper_pending {
+                let n = LEISURE_SUPPER_DOORS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                if n <= 8 || n.is_power_of_two() {
+                    info!(
+                        colonist = uid.0.get(),
+                        hour = hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                        opened = n,
+                        "bastion: THE WALK HOME OPENS — a leisure-hour claim door for the eater's own supper load"
+                    );
+                }
             }
             if emergency_route_owner.is_some() && emergency_next_job.is_none() {
                 // Keep route members available to climb or take the next
@@ -47932,6 +47963,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let own_supper = board.supper_eaters.get(&id).is_some_and(|v| v.contains(uid))
                     && supper_walk_home_hour(&board.night_watch, Some(uid), hour_claim);
                 let priority = own_supper_priority(priority, own_supper);
+                // ★ E2-l: through the leisure door, only the own supper load.
+                let priority = if off_hours && !own_supper { 0 } else { priority };
                 let priority = if job.work == common::bastion::WorkType::Haul
                     && priority > 0
                     && !own_supper
@@ -55294,6 +55327,19 @@ mod tests {
         assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, plank, &zone), Vec3::new(2, 2, 7), "a plank floor: the cell above it");
         assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, |_| true, &zone), Vec3::new(2, 2, 6), "bare ground: surface + 1");
         assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, |_| false, &zone), Vec3::new(2, 2, 6), "nothing standable: surface + 1 as before");
+    }
+
+    /// ★ E2-l pinned: the claim door: Work always; Leisure only with an own
+    /// supper load pending; Sleep never. Planted defect: Leisure always
+    /// open -> red.
+    #[test]
+    fn the_walk_home_is_not_work() {
+        assert!(claims_admit(ScheduleBlock::Work, false), "work: open");
+        assert!(claims_admit(ScheduleBlock::Work, true), "work: open with a load too");
+        assert!(!claims_admit(ScheduleBlock::Leisure, false), "leisure without a load: shut");
+        assert!(claims_admit(ScheduleBlock::Leisure, true), "leisure with the own supper load: open");
+        assert!(!claims_admit(ScheduleBlock::Sleep, true), "sleep: shut whatever the load");
+        assert!(!claims_admit(ScheduleBlock::Sleep, false), "sleep: shut");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable
