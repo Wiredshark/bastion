@@ -2100,6 +2100,32 @@ router does not open while the trunk (which recognises doors)
 and the glide do. The probe read the target's ring; W15-i3 reads
 the frontier's.
 
+W12-a-c at day 1 on b2 (read 03:39, hour 0 of day 1): exhausted
+deliveries 135 by day 1 (bar at most 200; 572 a day under
+W12-a-b): PASSED; probes 65, none target_unwalkable (bar at most
+5%): PASSED -- 44 cut_off, 21 sealed, every target a standing
+cell; unreachable deliveries 0 (bar at most 3): PASSED; stuck 0:
+PASSED; arrivals 543 by day 1 (bar at least 550; 641 under
+W12-a-b, 591 and 535 on the pairs before): FAILED by seven, in the
+band; pump mean wait 89 at midnight, pending 13 (bar under 40; 50
+and 55 before): FAILED, one replicate (the pump's wait swings
+between boots: 5 at +10 on this pair). No falsification clause
+fired (the on-top class is 0, exhausted under 400, arrivals over
+500). Disposition: PASSED on the claim it made -- the on-top
+class is closed and the exhausted searches fell four times -- the
+two peripheral bars missed. The 135 that remain are the perimeter
+class W15-i3 reads next.
+
+### W14-i landed (c6536a2d4b, staged 03:46)
+
+Check clean, the pin green, both halves staged 03:46; the binary
+verified by contents (THE MEMO DID NOT MATCH present). The b1
+reader restarts b1 after E2-p's night-1 block and reads W14's
+bars with the memo's writes and near misses. Falsifier at 03:51:
+start and target swapped in memo_near_miss, the pin went RED
+(0 passed, 1 failed), restored to 0 dirty files. W15-i3's chain
+fired at 03:51.
+
 ## W15-i3, registered 03:34 (keyed on the W14-i stage; the queue's end)
 
 THE FRONTIER NAMES WHAT STOPPED IT. At the exhausted delivery the

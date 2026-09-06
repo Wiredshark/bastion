@@ -360,6 +360,22 @@ pub(crate) fn exhaust_probe_class(closest_xy: Option<f32>, target_walkable: bool
 }
 pub(crate) static EXHAUST_PROBES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// ★ W15-i3 pinned: THE FRONTIER NAMES WHAT STOPPED IT -- one glyph per
+/// ring cell: '#' solid, 'D' a door sprite (walkable or not), '.' walkable,
+/// '~' neither solid nor walkable nor a door (a rail, a post top, a sprite
+/// the router refuses). Solid wins over door; door over walkable.
+pub(crate) fn frontier_glyph(solid: bool, door: bool, walkable: bool) -> char {
+    if solid {
+        '#'
+    } else if door {
+        'D'
+    } else if walkable {
+        '.'
+    } else {
+        '~'
+    }
+}
+
 pub struct PendingSearch {
     pub search: common::path::FullPathSearch,
     pub startf: Vec3<f32>,
@@ -43521,6 +43537,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                         ring.push(if solid(q) { '#' } else if walk(q) { '.' } else { '~' });
                                                     }
                                                 }
+                                                // ★ W15-i3: the FRONTIER's ring and the sprites
+                                                // that stopped it.
+                                                let is_door = |q: Vec3<i32>| {
+                                                    terrain.get(q).ok().and_then(|b| b.get_sprite()).is_some_and(|sp| {
+                                                        format!("{:?}", sp).contains("Door")
+                                                    })
+                                                };
+                                                let mut fring = String::with_capacity(9);
+                                                let mut fsprites = String::new();
+                                                if let Some(c) = closest {
+                                                    for dy in [1i32, 0, -1] {
+                                                        for dx in [-1i32, 0, 1] {
+                                                            let q = c + Vec3::new(dx, dy, 0);
+                                                            let g = frontier_glyph(solid(q), is_door(q), walk(q));
+                                                            fring.push(g);
+                                                            if g == '~' || g == 'D' {
+                                                                if let Some(sp) = terrain.get(q).ok().and_then(|b| b.get_sprite()) {
+                                                                    fsprites.push_str(&format!("{}:{:?} ", dx + dy * 3, sp));
+                                                                } else if let Ok(b) = terrain.get(q) {
+                                                                    fsprites.push_str(&format!("{}:{:?} ", dx + dy * 3, b.kind()));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                                 info!(
                                                     uid = k,
                                                     target = ?tc,
@@ -43530,6 +43571,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     target_walk = ?(walk(tc), walk(tc - Vec3::unit_z()), walk(tc + Vec3::unit_z())),
                                                     start_walk = walk(sc),
                                                     ring = %ring,
+                                                    frontier_ring = %fring,
+                                                    frontier_sprites = %fsprites,
                                                     class = exhaust_probe_class(closest_xy, walk(tc)),
                                                     probes = m,
                                                     "bastion: THE EXHAUSTED SEARCH NAMES ITS TARGET — where the frontier stopped, and what the target's cell is (ring: # solid . walkable ~ neither, north row first)"
@@ -55969,6 +56012,19 @@ mod tests {
         assert_eq!(memo_near_miss(memo, feet + Vec3::unit_y(), target, 1000), Some("start"), "the start off");
         assert_eq!(memo_near_miss(memo, feet, target + Vec3::unit_x(), 1000), Some("target"), "the target off");
         assert_eq!(memo_near_miss(memo, feet, target, 1900), Some("expired"), "the window past");
+    }
+
+    /// ★ W15-i3 pinned: solid '#', door 'D', walkable '.', neither '~';
+    /// solid wins over door, door over walkable. Planted defect: a door
+    /// drawn as neither -> red.
+    #[test]
+    fn the_frontier_names_what_stopped_it() {
+        assert_eq!(frontier_glyph(true, false, false), '#', "solid");
+        assert_eq!(frontier_glyph(true, true, true), '#', "solid wins");
+        assert_eq!(frontier_glyph(false, true, false), 'D', "a door sprite");
+        assert_eq!(frontier_glyph(false, true, true), 'D', "a walkable door is still a door");
+        assert_eq!(frontier_glyph(false, false, true), '.', "walkable");
+        assert_eq!(frontier_glyph(false, false, false), '~', "neither");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable
