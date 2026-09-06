@@ -313,6 +313,30 @@ pub(crate) fn search_memo_refuses(
 }
 pub(crate) static SEARCHES_REFUSED_MEMO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// ★ W14-i pinned: THE MEMO NAMES ITS NEAR MISSES -- for a colonist that HAS
+/// a memo which does not refuse it, which field failed: the start cell, the
+/// target cell, or the window (expired). None when the memo refuses (all
+/// three hold) or when there is no memo.
+pub(crate) fn memo_near_miss(
+    memo: Option<(Vec3<i32>, Vec3<i32>, u64)>,
+    feet: Vec3<i32>,
+    target: Vec3<i32>,
+    now: u64,
+) -> Option<&'static str> {
+    let (s, t, until) = memo?;
+    if s != feet {
+        Some("start")
+    } else if t != target {
+        Some("target")
+    } else if now >= until {
+        Some("expired")
+    } else {
+        None
+    }
+}
+pub(crate) static SEARCH_MEMO_WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static SEARCH_MEMO_MISSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// ★ W15-i2: how near the frontier must come, in xy blocks, for an
 /// exhausted search to count as sealed at its target rather than cut off.
 pub(crate) const EXHAUST_SEALED_XY: f32 = 3.0;
@@ -35229,6 +35253,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     target.map(|e| e.floor() as i32),
                                     tick.0,
                                 );
+                            // ★ W14-i: a memo that does not refuse names why.
+                            if stale && fill_ok && !memo_refused {
+                                let memo = board.search_memo.get(&u.0.get()).copied();
+                                if let Some(why) = memo_near_miss(
+                                    memo,
+                                    pos.0.map(|e| e.floor() as i32),
+                                    target.map(|e| e.floor() as i32),
+                                    tick.0,
+                                ) {
+                                    let m = SEARCH_MEMO_MISSES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                    if m <= 32 || m.is_power_of_two() {
+                                        info!(
+                                            uid = u.0.get(),
+                                            why,
+                                            stored = ?memo,
+                                            feet = ?pos.0.map(|e| e.floor() as i32),
+                                            target = ?target.map(|e| e.floor() as i32),
+                                            now = tick.0,
+                                            writes = SEARCH_MEMO_WRITES.load(core::sync::atomic::Ordering::Relaxed),
+                                            misses = m,
+                                            "bastion: THE MEMO DID NOT MATCH — a colonist with a memo asked again and was not refused; the field that failed"
+                                        );
+                                    }
+                                }
+                            }
                             if memo_refused {
                                 let n = SEARCHES_REFUSED_MEMO.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                 if n <= 8 || n.is_power_of_two() {
@@ -43489,6 +43538,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                         // ★ W14: remembered, so the fill does
                                         // not ask it again from this cell.
+                                        SEARCH_MEMO_WRITES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                                         board.search_memo.insert(
                                             k,
                                             (
@@ -55903,6 +55953,22 @@ mod tests {
         assert_eq!(exhaust_probe_class(Some(18.0), true), "cut_off", "the frontier never came near");
         assert_eq!(exhaust_probe_class(Some(1.5), false), "target_unwalkable", "the target itself is not a stand");
         assert_eq!(exhaust_probe_class(None, true), "unknown", "no closest node known");
+    }
+
+    /// ★ W14-i pinned: no memo: None; all three hold: None (the memo refuses);
+    /// the start off: start; the target off: target; the window past:
+    /// expired -- in that order. Planted defect: start and target swapped ->
+    /// red.
+    #[test]
+    fn the_memo_names_its_near_misses() {
+        let feet = Vec3::new(7725, 6404, 181);
+        let target = Vec3::new(7742, 6404, 181);
+        let memo = Some((feet, target, 1900u64));
+        assert_eq!(memo_near_miss(None, feet, target, 1000), None, "no memo");
+        assert_eq!(memo_near_miss(memo, feet, target, 1000), None, "all three hold: the memo refuses");
+        assert_eq!(memo_near_miss(memo, feet + Vec3::unit_y(), target, 1000), Some("start"), "the start off");
+        assert_eq!(memo_near_miss(memo, feet, target + Vec3::unit_x(), 1000), Some("target"), "the target off");
+        assert_eq!(memo_near_miss(memo, feet, target, 1900), Some("expired"), "the window past");
     }
 
     /// ★ W12-a pinned: a standable target is its own stand; an unwalkable

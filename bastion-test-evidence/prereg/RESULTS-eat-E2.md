@@ -1407,7 +1407,20 @@ starving sleepers on this night). Disposition of E2-q: PARKED --
 the outcome for the eater is a meal from the pack, not a hunger;
 the cost is a shelf left bare for a household of one. It becomes
 a row if a shared household's second sleeper is found starving
-beside a bare shelf whose load sits in a housemate's pack.
+beside a bare shelf whose load sits in a housemate's pack. The
+never_free three, traced: 43 (Build) took a rest preempt at 19
+and slept; 25 (Build) ran home to two ALARMs at 18 and 20 and took
+hunger and rest preempts between them; 49 (Guard) took hunger
+preempts at 16, 18, 18, 19, 20 and 21 -- the lounge yielded to
+them (E2-o) and each minted an EatFrom to the store -- and arrived
+at 21. The door opens only for the job-free, and a colonist whose
+leisure is spent on need jobs and alarm shelters is never
+job-free: it eats at the store while its own load waits in the
+store to be carried home. E2-r candidate: THE HUNGRY EATER FETCHES
+ITS OWN SUPPER -- a hunger need with a pending own load should
+claim the load (eat from the pack on the way, stock the shelf with
+the rest) rather than mint a store meal beside it. Sized after
+E2-p's read removes the watch class (5 of 19 tonight).
 
 ## E2-p, registered 02:20 (keyed on the W14-b1 stage; the queue's end)
 

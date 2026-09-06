@@ -2039,6 +2039,101 @@ stranded walker is a one-in-two event per day on this arm --
 W14-b1's read (the third replicate, the key fixed) says whether
 the memo holds it when it happens.
 
+### W14-b1 read at hour 19 (b1 on the E2-p pair 105f775a97, read 03:11): the key is fixed and the day's re-asker was still never refused
+
+THE SEARCH IS NOT ASKED TWICE 4 refusals by hour 19 (bar 200 by
+day 1), two walkers (16 and 17, at hours 11 and 14, both arrived
+after); longest-tier steps 6,969 by hour 19 (53,693 on the W14
+pair's hour 19; 947 on W15-i2's); the most-repeated pair 3,737
+steps (bar 1,500) -- from (7725,6404,181) to (7742,6404,181),
+eighteen blocks east on the flat, a new spot: job 797, an EatFrom
+for item 1058, FETCH STALLED six times with no displacement; by
+03:20 that walker had started 7,205 searches from the one cell
+(7725,6404) and 805 from (7725,6403), a hundred-odd searches
+reaching the longest tier, and the memo refused none of them. The
+exhausted-search probe printed no line for that target: it
+samples the first sixty-four exhaustions of the day and the
+powers of two after, and a walker that starts re-asking at hour
+12 is past the sample -- a witness that shows the head misses the
+late offender. The raised-road pair (7714,6342 -> 7713,6345,186)
+took 706 steps today. Pump mean wait 62; arrivals 532; stuck 0.
+What the log cannot say: whether the memo was written for that
+walker (its search may never have delivered: a pending fill is
+replaced by the next enqueue), or which field of the key failed.
+W14-i (below) is that instrument.
+
+W14-b1 at night 1 (read 03:26, hour 6 of day 1): THE SEARCH IS NOT
+ASKED TWICE 16,384 by night 1 (bar 200: PASSED; four walkers
+named, the exact lane from bed); longest-tier steps 12,450 by day
+1 (bar 30,000: PASSED; 77,947 on the W14 pair); the raised-road
+pair 873 steps (14,791 on the W14 pair: the key fix holds it); the
+most-repeated pair 7,205 + 805 steps (bar 1,500: FAILED) -- the
+flat re-asker at (7725,6404) never refused; the day's pump mean
+wait 60 (bar under 60: FAILED by nothing); pending at midnight 26
+(bar 20: FAILED); arrivals 718; stuck 0; STUCK CENSUS 5 colonists.
+Disposition: PARTIAL -- the memo holds the two lanes whose key it
+matches (the bed's exact lane, the raised road's approach) and is
+blind to one flat re-asker whose key or write it never met; W14-i
+names which, and W14-b2 follows from that name.
+
+### W12-a-c read at +10 (b2 fresh on c75a908c89, read 03:23): the on-top class is gone; the rest stop on the store's perimeter
+
+64 probes by +10: 43 cut_off, 21 sealed, and NONE target_unwalkable
+(44 of 65 the day before): the on-top class is closed on this
+read (bar: at most 5%: PASSED). Every remaining target is a
+standing cell with a standing cell below it not, (true, false,
+false), and 41 of 64 rings read '.........' -- the target's whole
+neighbourhood walkable. Where the frontier stopped, for the main
+store's targets: (7662-7665, 6360-6363, 182) and (7668-7670, 6378,
+182) -- the store's south and north edges, three to eight blocks
+from targets deep inside; closest_xy by class: sealed 5 under 1.5
+and 16 at 1.5-3, cut_off 14 at 3-8, 16 at 8-20, 13 beyond 20.
+SEARCH TARGET MOVED 8,192 by +10 (512 under W12-a-b: the on-top
+moves counted again, the fix working); exhausted deliveries 70 by
++10; arrivals 354; embeds 0; pump mean wait 5; stuck 0. The router
+refuses a FLAT step into the store: its interior gate applies to
+climbs only (path.rs, dir.z >= 2, "roofs are not routes"), the
+interior surcharge is a cost of 2 and no max_cost bounds the
+search, so it is `is_walkable` on the cell just inside -- a rail,
+a post pattern (six rings '#..#..#..'), or a door sprite the
+router does not open while the trunk (which recognises doors)
+and the glide do. The probe read the target's ring; W15-i3 reads
+the frontier's.
+
+## W15-i3, registered 03:34 (keyed on the W14-i stage; the queue's end)
+
+THE FRONTIER NAMES WHAT STOPPED IT. At the exhausted delivery the
+probe also prints the 3x3 ring around the closest node at its z
+(`frontier_glyph`: '#' solid, 'D' a door sprite, '.' walkable, '~'
+neither; solid over door over walkable) and the sprite or block
+kind of every '~' and 'D' cell. No behaviour changes. Pin
+`the_frontier_names_what_stopped_it`; planted: a door drawn as
+neither, red. Prediction (b2 fresh at the stage,
+`wait-w15i3-b2.sh`, +10 and day 1): every cut_off and sealed probe
+prints a frontier ring; the perimeter rings are not all walkable
+and name what stopped the frontier. Falsified if the perimeter
+rings read '.........' (the transition rule refused, not the cell:
+the next probe prints the transition's verdict). NOT evidenced:
+the fix; b1.
+
+## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
+
+THE MEMO NAMES ITS NEAR MISSES. SEARCH_MEMO_WRITES counts the
+memo's writes; `memo_near_miss(memo, feet, target, now)` names,
+for a colonist with a memo that does not refuse it, the field
+that failed -- start, target, expired -- and the fill's check
+prints THE MEMO DID NOT MATCH (uid, why, stored, feet, target,
+now, writes, misses) for the first thirty-two misses and the
+powers of two after. No behaviour changes. Pin
+`the_memo_names_its_near_misses`; planted: start and target
+swapped, red. Prediction (b1 fresh after E2-p's night-1 block,
+`wait-w14i-b1.sh`; hour 19 and night 1): every re-asked pair over
+1,000 steps has either near-miss lines naming its walker or no
+write for it (writes below the exhausted count: the search never
+delivered); the misses partition by field. Falsified if the top
+pair re-asks with neither. Rejected: widening the memo before the
+field is named. NOT evidenced: the fix (W14-b2); b2.
+
 ## W12-a-c, registered 02:42 (keyed on the E2-p stage; the queue's end)
 
 THE SEARCH AIMS ONE BELOW THE ON-TOP TARGET. `search_stand` returns
@@ -2064,6 +2159,20 @@ colony); moving the target at the job (the arrival check and the
 witness read the on-top cell by the ruling); trusting the trunk.
 NOT evidenced: the sealed and cut_off classes; b1's next pair. Dry
 tree from HEAD 105f775a97 (E2-p).
+
+### W12-a-c landed (c75a908c89, staged 03:11)
+
+Check clean, the re-stated pin green, both halves staged 03:11.
+The b2 reader restarts b2 at the stage and reads +4, +10 and day 1
+with the probe's classes. Falsified: the on-top branch returning
+the target planted at c75a908c89, the pin RED at 03:16, the tree
+restored clean. Shipped to lab-bin 03:11. The queue is empty
+behind this row. The looking sweep was booted on this pair (slot
+120, ready in 30 s, the client launched on the granted path) and
+could not capture the desktop (every screenshot 0x0: the session
+locked or the display off, 03:13); the world and client were
+stopped by pid, and the sweep stays OWED for when Ben is at the
+machine.
 
 ## W14-b1, registered 02:00 (keyed on the W15-i2 stage; the queue's end)
 
