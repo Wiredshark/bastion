@@ -1467,6 +1467,76 @@ named eaters. Falsified: the forward walk refused planted at
 pre-shift leisure is the walk home", the tree restored clean.
 Shipped to lab-bin 02:50.
 
+### E2-p read: night 1 on b1 (the c75a908c89 pair, which contains E2-p; read 04:09)
+
+Bars: watch loads refused by the walk-home hour 0 (was 4 of 7 and
+7 of 19) -- PASSED. Swept 6 on day 0 and 5 on day 1 (bar <= 7) --
+PASSED. Starving sleepers 2 (bar <= 2; the five replicates before
+it 3, 2, 3, 0, 0) -- PASSED. SUPPER CARRIED HOME with
+night_watch=true 0 (bar >= 2) -- FAILED; 2 of the 11 swept loads
+still the watch's (bar <= 1) -- FAILED. The sweep's verdicts: 10
+never_free (door_opens=0), 1 claimed (a Guard, opened twice). The
+hour no longer refuses the watch; the residual is the eater that
+is never free. Colonist 28 (Build, load 750, never_free) is the
+class in one evening, from the b1 log: hungry at 18 (07:47:43), the
+need preempt aimed at item 1275 at (7591,6502,186), five blocks up
+a one-block-per-step stair from the road at 181; CLIMB BANNED
+07:48:24; FETCH BUDGET EXPIRED 07:50:09 and STALLED TARGET SHUNNED
+until tick 35205; the need preempt picked the SAME item at
+07:50:10 (job 1118), again at 07:53:04 (1181, supper=true) and
+07:55:10 (1247), each ending CLIMB BANNED and STALL BLAMED ON THE
+WALKER (W8-g: "the target is innocent and is not shunned"); bed at
+21 with hunger 0.00; the sweep at 07:56:28. The shun's reader is
+`goal_verdict_enabled()`, DEFAULT OFF behind `BASTION_GOAL_VERDICT`
+"until the fleet A/B passes" (the fleet never ran; VM work is
+blocked): the writer prints "the choosers skip this cell" and no
+chooser skips it. Colonist 144 (the second sleeper) was RestAt
+Traveling from hour 2 and on an EatFrom at 4. Disposition of E2-p:
+PASSED on its mechanism (the hour), FAILED on its outcome (the
+watch carried nothing home) because of the never_free class, which
+is the shun's. E2-r (the eater fetches its own supper) stays a
+candidate behind the shun row; E2-q parked.
+
+## E2-s, registered 04:31 (keyed on the W15-i3 stage; the lane was idle, so it fires at once)
+
+A WALKER DOES NOT RE-PICK THE STORE IT JUST STALLED ON. Defect:
+the stalled-target shun is written and never read -- its reader
+`goal_verdict_enabled()` is BASTION_GOAL_VERDICT opt-in, default
+OFF "until the fleet A/B passes", and the fleet never ran; colonist
+28 picked item 1275 five times in an evening (above). Mechanism:
+`WalkerShunKey` (Store(zone) for a cell inside a store's xy and the
+z band -2..=+3, else Cell) with one key function
+`walker_shun_key_at` shared by the writer and the reader; the
+board's `walker_shuns: HashMap<(Uid, WalkerShunKey), u64>`; at
+every fetch stall release, whoever W8-g blamed, the walker's own
+key is written for STALLED_TARGET_SHUN_TICKS (13,500) with THE
+WALKER SHUNS ITS STALL; the hunger chooser's verdict pass refuses
+this walker's live shuns (the fail-open second pass still admits
+everything: refusal never starves); THE PICK WENT ELSEWHERE names
+a pick made under a live shun; the need preempt line carries
+`pick_key`; the STALLED TARGET SHUNNED line carries `enabled`; the
+EAT CENSUS counts `walker_shuns_written` and `walker_shun_steered`.
+BASTION_NO_WALKER_SHUN restores the old behaviour. Pin
+`a_walker_does_not_re_pick_its_own_stall` (a store cell keys on
+the store; a loose cell on itself; inside the region: the store;
+below the band: the cell; live: blocked; at expiry: open; another
+walker: open; another key: open); planted: a store cell keyed on
+the cell, red. Prediction (b1 fresh after W14-i's night-1 block,
+b2 fresh after W15-i3's day-1 block; `wait-e2s-b1.sh`,
+`wait-e2s-b2.sh`; night 1 / day 1): re-picks under a live shun 0
+(28 did it four times); THE WALKER SHUNS ITS STALL >= 1 per day;
+starving sleepers on b1 <= 2 (the six replicates 3, 2, 3, 0, 0,
+2); no_food_found at most double 212 and meals >= 70 (77). Falsified
+if a re-pick under a live shun appears (the reader's key differs
+from the writer's) or no_food_found more than doubles (the shun
+starves what it protects). Rejected: flipping
+BASTION_GOAL_VERDICT's default (a global shun punishes every walker
+for one walker's wedge -- W8-g's reason stands); a per-cell key
+(the raised store has several stacks behind one stair); a longer
+window (a TTL, never amnesty). NOT evidenced: the mover that climbs
+the stair (the W class); E2-r behind this row. The dry tree at
+23195dc174 validated every anchor.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the

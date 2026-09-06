@@ -2142,6 +2142,34 @@ rings read '.........' (the transition rule refused, not the cell:
 the next probe prints the transition's verdict). NOT evidenced:
 the fix; b1.
 
+### W15-i3 landed (23195dc174, staged 04:10)
+
+Check clean, the pin green (six glyph cases), both halves staged
+04:10:12, shipped to lab-bin 04:11; the binary verified by
+contents (frontier_ring present). Falsifier at 04:14: a door drawn
+as neither, the pin RED, restored to 0 dirty files. The b2 reader
+restarts b2 at this stage and reads +10 and day 1 with the
+frontier rings and sprites.
+
+### W15-i3 read: b2 +10 (23195dc174, 04:21, hour 15 of day 0)
+
+64 probes: 46 cut_off, 17 sealed, 1 target_unwalkable; 63 with a
+walkable target. Frontier rings: 19 `.........` (every neighbour
+of the closest node walkable: the router refused for a reason the
+cell does not show -- the transition rule, the pre-registered
+falsification of the sprite hypothesis for those 19), 10
+`###...###` (a wall row north and south, an east-west corridor),
+9 `...#.....`, 7 `......#..`, 4 `......###`, 2 `#~~#..###`;
+sprites named: 11 `Empty` (the `~` cells are air with nothing to
+stand on, not a rail or a post). No door glyph anywhere: the
+frontier does not stop at a door sprite. Exhausted searches 87 in
+ten minutes (135 for W12-a-c's whole day 1: to be read against
+the day-1 block). Reading: the store's perimeter frontiers are
+walls and drops, and a third are nothing the ring shows. The
+day-1 read decides W15-i4 (print the refused transition's
+verdict at the frontier: which neighbour the router declined and
+why).
+
 ## W14-i, registered 03:22 (keyed on the W12-a-c stage; the lane was idle, so it fires at once)
 
 THE MEMO NAMES ITS NEAR MISSES. SEARCH_MEMO_WRITES counts the

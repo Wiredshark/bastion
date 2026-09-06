@@ -7144,6 +7144,59 @@ pub static EAT_STALLS_TOLERATED: core::sync::atomic::AtomicU64 = core::sync::ato
 pub const STALLED_TARGET_SHUN_TICKS: u64 = 13_500;
 pub static TARGETS_SHUNNED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// ★ E2-s pinned: A WALKER DOES NOT RE-PICK THE STORE IT JUST STALLED ON.
+/// The global shun (`goal_verdicts`) is read only behind BASTION_GOAL_VERDICT
+/// (default off, "until the fleet A/B passes"); colonist 28 picked one
+/// unclimbable meal five times in an evening and slept starving. This shun
+/// is the walker's own: written at every fetch stall whoever was blamed,
+/// read by the hunger chooser, one key rule for writer and reader (a cell
+/// inside a store keys on the store; a loose cell on itself), a window of
+/// STALLED_TARGET_SHUN_TICKS, no amnesty. The fail-open two-pass still
+/// applies: a walker whose only food is shunned tries it anyway.
+/// BASTION_NO_WALKER_SHUN restores the old behaviour exactly.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) enum WalkerShunKey {
+    Store(common::bastion::ZoneId),
+    Cell(Vec3<i32>),
+}
+
+pub(crate) fn walker_shun_key(store: Option<common::bastion::ZoneId>, cell: Vec3<i32>) -> WalkerShunKey {
+    match store {
+        Some(z) => WalkerShunKey::Store(z),
+        None => WalkerShunKey::Cell(cell),
+    }
+}
+
+/// The store predicate the stall site already uses (a field lookup, so it
+/// works while `board.jobs` is borrowed): the region's xy and the z band
+/// -2..=+3 of `stockpile_region_at`.
+pub(crate) fn walker_shun_key_at(stockpiles: &[(common::bastion::ZoneId, Region)], cell: Vec3<i32>) -> WalkerShunKey {
+    walker_shun_key(
+        stockpiles
+            .iter()
+            .find(|(_, r)| r.contains_point_xy(cell) && cell.z >= r.min.z - 2 && cell.z <= r.max.z + 3)
+            .map(|(id, _)| *id),
+        cell,
+    )
+}
+
+pub(crate) fn walker_shun_enabled() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_NO_WALKER_SHUN").is_none())
+}
+
+pub(crate) fn walker_shun_blocks(
+    shuns: &HashMap<(common::uid::Uid, WalkerShunKey), u64>,
+    uid: common::uid::Uid,
+    key: WalkerShunKey,
+    now: u64,
+) -> bool {
+    shuns.get(&(uid, key)).is_some_and(|expiry| *expiry > now)
+}
+
+pub static WALKER_SHUNS_WRITTEN: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static WALKER_SHUN_STEERED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ A STORE THE TOWN CANNOT ENTER IS CLOSED (flat arms b1 and b2 on
 /// a900163959: the fourth general store took deposits nobody could draw --
 /// 79 mushrooms on one cell -- while 25-41 eat trips a day stalled 25
@@ -14548,6 +14601,8 @@ pub struct JobBoard {
     pub route_fault_repaths: HashMap<JobId, u8>,
     /// ★ W8-g: each walker's last stall spot (4-block cells), for the blame.
     pub last_stall_spot: HashMap<common::uid::Uid, Vec3<i32>>,
+    /// ★ E2-s: (walker, store-or-cell) -> the tick its own shun expires.
+    pub walker_shuns: HashMap<(common::uid::Uid, WalkerShunKey), u64>,
     /// ★ RECENT DROPS: cells a deposit re-aim just chose (load, tick), counted
     /// as occupancy for RECENT_DROP_TICKS so simultaneous arrivals spread.
     pub recent_drops: HashMap<(i32, i32), (u32, u64)>,
@@ -26550,6 +26605,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 meals = EAT_MEALS.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 eat_stalls_tolerated = EAT_STALLS_TOLERATED.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 targets_shunned = TARGETS_SHUNNED.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                walker_shuns_written = WALKER_SHUNS_WRITTEN.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                walker_shun_steered = WALKER_SHUN_STEERED.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 skips = %skips.join(" "),
                                 "bastion: EAT CENSUS — why a hungry colonist did not get a meal today (skip reasons are per scan pass, any need)"
                             );
@@ -32244,11 +32301,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let icell = ipos.0.map(|e| e.floor() as i32);
                                     (night_ok(icell) || night_home.is_none())
                                     && (!respect_verdicts
-                                        || !goal_verdict_blocks(
+                                        || (!goal_verdict_blocks(
                                             &board.goal_verdicts,
                                             icell,
                                             tick.0,
-                                        ))
+                                        )
+                                        // ★ E2-s: this walker's own stalls.
+                                        && !walker_shun_blocks(
+                                            &board.walker_shuns,
+                                            *uid,
+                                            walker_shun_key_at(&board.stockpiles, icell),
+                                            tick.0,
+                                        )))
                                     // ★ ITEM-REACH GATE (flag-gated): a meal
                                     // in another walking component is a 90s
                                     // wall-press, not food. Fail-open.
@@ -32311,6 +32375,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     (*iuid, ipos.0.map(|e| e.floor() as i32), def, pi.amount())
                                 });
                             if let Some((item, ipos, def, amount)) = food {
+                                // ★ E2-s: a pick made under a live shun says so.
+                                let live_shuns = board
+                                    .walker_shuns
+                                    .iter()
+                                    .filter(|((u, _), e)| *u == *uid && **e > tick.0)
+                                    .count();
+                                if live_shuns > 0 {
+                                    let n = WALKER_SHUN_STEERED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                    if n <= 32 || n.is_power_of_two() {
+                                        info!(
+                                            colonist = %uid,
+                                            item = %item,
+                                            pick_key = ?walker_shun_key_at(&board.stockpiles, ipos),
+                                            live_shuns,
+                                            steered = n,
+                                            "bastion: THE PICK WENT ELSEWHERE — this walker holds a live shun and picked under it (E2-s)"
+                                        );
+                                    }
+                                }
                                 // #89/ITEM8-CRASH-FINDING.md (2026-08-11
                                 // fix): the split used to happen HERE, at
                                 // reservation time, mutating the ground
@@ -32380,6 +32463,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // target ≥3 above feet routes the
                                     // EatFrom into auto-access).
                                     item_pos = ?ipos,
+                                    pick_key = ?walker_shun_key_at(&board.stockpiles, ipos),
                                     feet = ?pos.0.map(|e| e.floor() as i32),
                                     supper = supper_hour(
                                         &board.night_watch,
@@ -33445,6 +33529,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         if let Some(u) = walker_uid {
                                             board.last_stall_spot.insert(u, walker_spot);
                                         }
+                                        // ★ E2-s: whoever is to blame, THIS walker shuns THIS
+                                        // store or cell for the window.
+                                        if walker_shun_enabled() && let Some(u) = walker_uid {
+                                            let sc = ip.map(|e| e.floor() as i32);
+                                            let key = walker_shun_key_at(&board.stockpiles, sc);
+                                            board.walker_shuns.insert((u, key), tick.0 + STALLED_TARGET_SHUN_TICKS);
+                                            let n = WALKER_SHUNS_WRITTEN.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if n <= 32 || n.is_power_of_two() {
+                                                info!(
+                                                    job = active.job,
+                                                    kind = ?job.kind,
+                                                    colonist = u.0.get(),
+                                                    key = ?key,
+                                                    cell = ?sc,
+                                                    repeated_spot,
+                                                    until_tick = tick.0 + STALLED_TARGET_SHUN_TICKS,
+                                                    written = n,
+                                                    "bastion: THE WALKER SHUNS ITS STALL — this walker skips this store or cell until the window expires, whoever was to blame (E2-s)"
+                                                );
+                                            }
+                                        }
                                         let blame = if std::env::var_os("BASTION_NO_WALKER_BLAME").is_none() {
                                             stall_blame(repeated_spot)
                                         } else {
@@ -33506,7 +33611,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 cell = ?shun_cell,
                                                 until_tick = tick.0 + STALLED_TARGET_SHUN_TICKS,
                                                 stalled,
-                                                "bastion: STALLED TARGET SHUNNED — the choosers skip this cell until the verdict expires"
+                                                enabled = goal_verdict_enabled(),
+                                                "bastion: STALLED TARGET SHUNNED — the choosers skip this cell until the verdict expires (only when enabled)"
                                             );
                                         }
                                         // Release through the SAME field-split
@@ -56012,6 +56118,29 @@ mod tests {
         assert_eq!(memo_near_miss(memo, feet + Vec3::unit_y(), target, 1000), Some("start"), "the start off");
         assert_eq!(memo_near_miss(memo, feet, target + Vec3::unit_x(), 1000), Some("target"), "the target off");
         assert_eq!(memo_near_miss(memo, feet, target, 1900), Some("expired"), "the window past");
+    }
+
+    /// ★ E2-s pinned: a cell inside a store keys on the store, a loose cell
+    /// on itself; the walker's own shun blocks while live, not at its
+    /// expiry, not another walker, not another key. Planted defect: a store
+    /// cell keyed on the cell -> red.
+    #[test]
+    fn a_walker_does_not_re_pick_its_own_stall() {
+        use common::uid::Uid;
+        let c = Vec3::new(7591, 6502, 186);
+        assert_eq!(walker_shun_key(Some(9), c), WalkerShunKey::Store(9), "in a store: the store");
+        assert_eq!(walker_shun_key(None, c), WalkerShunKey::Cell(c), "loose: the cell");
+        let stock = vec![(9u64, Region { min: Vec3::new(7580, 6490, 184), max: Vec3::new(7600, 6510, 188) })];
+        assert_eq!(walker_shun_key_at(&stock, c), WalkerShunKey::Store(9), "inside the region: the store");
+        assert_eq!(walker_shun_key_at(&stock, Vec3::new(7591, 6502, 170)), WalkerShunKey::Cell(Vec3::new(7591, 6502, 170)), "below the band: the cell");
+        let u = Uid(std::num::NonZeroU64::new(28).unwrap());
+        let v = Uid(std::num::NonZeroU64::new(29).unwrap());
+        let mut m = HashMap::new();
+        m.insert((u, WalkerShunKey::Store(9)), 1_000u64);
+        assert!(walker_shun_blocks(&m, u, WalkerShunKey::Store(9), 999), "live: blocked");
+        assert!(!walker_shun_blocks(&m, u, WalkerShunKey::Store(9), 1_000), "at expiry: open");
+        assert!(!walker_shun_blocks(&m, v, WalkerShunKey::Store(9), 999), "another walker: open");
+        assert!(!walker_shun_blocks(&m, u, WalkerShunKey::Cell(c), 999), "another key: open");
     }
 
     /// ★ W15-i3 pinned: solid '#', door 'D', walkable '.', neither '~';
