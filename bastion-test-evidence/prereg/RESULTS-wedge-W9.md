@@ -2683,6 +2683,192 @@ a third house); b1 (one replicate on b2 first). The dry tree at
 83e3666cb6 (W16-i2) with W2-b applied first validated every
 anchor.
 
+### W16-b read: b2 +4 / +10 (f408e4b8a9 under W2-b's b2 reader; 09:33 hour 10, 09:40 hour 13)
+
++4: exhausted 19, unreachable 1, bans 0/1 (other), stalls 0, arrivals
+280, p95 438. +10: exhausted 35 (47 at +10 on 1377f60249, 30 and 40
+before), components start_unlabelled 21 / same 7, unreachable 1,
+CLIMB BANNED (fetch) 0 by hour 13 and still 0 at hour 17, other 1,
+stalls 0, arrivals 421 (536 at hour 15 on the run before: the clock
+sits two hours earlier at this +10), p95 457, starving 0. W16-b's
+own class (on_prev with rise_next Some(1), push_site chaser-settle)
+has not occurred yet; the day-1 block reads it. This pair still
+carries W2-b, so the day's exhaustion is confounded as before.
+
+### W14-c registered (09:52): THE EXHAUSTED SEARCH STRIKES THE JOB
+
+The re-ask loop's consumer. The pump's Fill lane on BudgetExhausted
+writes the start-keyed memo and drops the path_cache; the walker
+keeps the job, moves (the glide, the move assist), misses the memo
+(why=start; refusals saturate at 32,768, misses at 4,096) and asks
+the whole-town search again. The Approach lane's proven Unreachable
+already strikes the held job (three strikes: UNREACHABLE PROVEN,
+benched; the arbitration latch clears benches every 40 intervals).
+Mechanism: `job_strike(strikes) -> (next, bench)` with
+`UNREACHABLE_STRIKES` 3, shared by the approach arm (identity) and
+the fill arm, which strikes only at `PathLength::Longest` (the
+75,000-iteration tier: a proof at the town's scale) and logs "three
+exhausted fill searches" on the bench with uid and target. Pin
+`the_exhausted_search_strikes_the_job`; falsifier plants the
+threshold at 30. Bars, b1: the most-repeated exhaust end <= 6 a day
+(10 before W2-b, 37-52 under it), LONGEST-TIER lines <= 1,000
+(1,642 before W2-b), fill benches >= 1 whenever an end repeats
+three times and <= 15 a day, arrivals >= 700, starving <= 1; b2:
+benches <= 15, arrivals >= 760, exhausted <= 520. Falsified if the
+top end repeats >= 10 with zero fill benches (the re-asker is
+another lane) or benches exceed 15 (reachable work benched).
+Chain behind W2-b-r (stage ~10:15 -> W14-c ~10:45).
+
+### W17-b landed (e5c4d9965d, staged 09:47, shipped to lab-bin 09:48)
+
+Check and pin green, both halves fresh; the falsifier planted the
+search-below never tried at 09:48 and the pin went RED at 09:51,
+the tree restored clean (0 dirty). The b1 restart
+at 09:45 (W2-b's reader) took f408e4b8a9, the latest pair at that
+moment; e5c4d9965d boards at the next restart on each arm.
+
+### W2-b read: b1 night 1 (1377f60249; 09:42)
+
+CLIMB BANNED (fetch) 9 for the day (15 on W16-a's b1 day, 24 on
+W16-i's: W2-b did cut the class by half or more, short of its bar
+of 3), other 4, PROMISED CLIMB TAKEN 3, FETCH STALLED 18, budgets
+expired 19, starving sleepers 0; arrivals 915 (933 on W15-c's
+night: -2%); exhausted 15 delivered; LONGEST-TIER steps 57,826; p95
+642; stuck 8 distinct. The revert (W2-b-r) gives the ban reduction
+back knowingly: the bans have a witness and a consumer (the shun);
+the floods had neither. Recorded as W2-b's benefit to be regained
+by the ramp row and the shun-on-exhaustion row.
+
+### W2-b DISPOSED: REVERTED (09:45) -- the flood named; W2-b2 WITHDRAWN
+
+The b1 log under 1377f60249 by hour 19: LONGEST-EXHAUST NEIGHBOURHOOD
+617 lines (13 on the W16-i run e7ad98977a, the last b1 run before
+W2-b), LONGEST-TIER SEARCH 51,798 (1,642), and every exhaust read
+`expanded_states=60696 distinct_cells=60696` with a bbox of 324 x 307
+blocks: the whole town, flooded per ask. The top exhaust (37 times):
+end (7742,6404,181), closest reached (7725,6404,181) 17 blocks short,
+the frontier +x Wood -- colonist 55 (a DepositRun to destination 59,
+then a haul) behind a wall whose way round needs a two-up edge the
+reach-1 trunk no longer plans; it re-asked 1,675 times (MOVE ASSIST
+DID NOT STICK repeats=14 between asks; the memo missed why=start
+because the body glided between asks). Before W2-b the trunk planned
+the jump, the body stalled, the fetch was banned and the walker shun
+(E2-s) sent the pick elsewhere: cheap, local, self-limiting. After
+W2-b the search itself was the failure, exhaustive and unwitnessed
+by any consumer. Arrivals were flat (733 vs 736) so the outcome hid
+it; the mechanism counters did not. Also seen: 101 of the 617
+exhausts print closest == end (the end cell expanded and the search
+still exhausted; `satisfied` is `node.pos == end`) -- a W15-i5
+question, not chased here. Disposal: W2-b FAILED its bar and
+REGRESSED the search load 30-47x on the ledge arm -> reverted by
+W2-b-r (below). W2-b2 (the chaser's leg at reach 1 for trunk
+walkers) was premised on the reach-1 trunk and is WITHDRAWN before
+its chain fired (killed by pid file 09:44; its scripts and
+registration stay in the scratchpad and above for the record). The
+`jumps_admitted` rule and its pin stay (reach 1 still means "no
+jump"; nothing asks for reach 1 now). Memory filed:
+removing-an-edge-class-turns-bans-into-whole-map-floods.
+
+### W2-b-r registered (09:50): THE TRUNK PLANS THE JUMP AGAIN
+
+Mechanism: `TRUNK_SCRAMBLE_REACH: u8 = 2` at the pump's search
+config (identity with the pre-W2-b trunk), and a once-per-boot
+witness line "THE TRUNK'S REACH" carrying the value so the binary
+names itself in every log. Pin `the_trunk_plans_the_jump_again`
+(the const is 2 and `jumps_admitted(2, land, climb, no fly)` is
+true); falsifier plants 1 -> red. Bars, b1 (hour 19 / night 1):
+LONGEST-EXHAUST <= 30 (617 under W2-b, 13 before it), LONGEST-TIER
+lines <= 3,000 (51,798 / 1,642), arrivals >= 700, starving after
+night 1 <= 1; CLIMB BANNED (fetch) is expected back at 15-24 a day
+and is recorded, not barred (the known cost; the shun answers it).
+b2 (+10 / day 1): exhausted for the day <= 520 (598 under W2-b, 513
+on W15-c's day), and W15-c-b's own bars re-read un-confounded:
+exhausted <= 256 and start_unlabelled <= 19 (a second FAIL there is
+W15-c-b's own). Falsified if b1's exhausts stay >= 300 with the
+trunk at reach 2 (then the flood is W15-c-b's pricing, not W2-b's
+admission: revert W15-c-b next) or if fetch bans exceed 30 a day.
+Chain behind W17-b (e5c4d9965d, building 09:50).
+
+### W2-b2 registered (09:35): THE CHASER'S LEG ADMITS WHAT ITS FRAME CAN EXECUTE -- WITHDRAWN 09:44 (see above)
+
+W2-b's early ledge read (below) named the router: the chaser's own
+per-tick search (the scheduler in bastion_path.rs) re-plans each
+local leg between trunk waypoints with `traversal_config_for`'s
+skill reach (2, or 3 trained) and cut the corner over the two-block
+ledge the reach-1 trunk had walked around; a committed walker gets
+no stall assist (W6-C), so the leg's jump is never made. Mechanism:
+`chaser_reach(skill_reach, committed)` = min(reach, 1) for a walker
+the path_cache holds (`JobBoard::walker_committed`), the skill reach
+otherwise, 0 identity; applied at the scheduler's leg (cands carry
+the flag) and the detour search. Pin
+`the_chasers_leg_admits_what_its_frame_can_execute`; falsifier plants
+the clamp dropped. Bars: b1 fetch bans <= 3 by hour 19 (8 by hour
+16 on the W2-b run), trunk-frame bans under a +2 edge 0, FETCH
+STALLED <= 1.5x the W2-b run's hour-19 count with no stall cluster
+>= 3 at a +2-edge head (the ledge tally), arrivals >= 90% of the
+W2-b run's, starving after night 1 <= 1; b2 no regression (bans <=
+3, arrivals >= 760). Falsified if trunk bans under +2 edges persist
+(a third router), if stalls at the ledge heads rise by the bans
+removed (the reach-1 leg exhausts and the glide walks into the wall:
+a plot row, the ledge needs a ramp), or if arrivals fall > 10%.
+Rejected: reach 1 for every colonist search (kills the skill where
+the assist can execute it; Ben's judgement item stays open); the
+assist for trunk walkers (W6-C's loop). Chain behind W17-b.
+
+### W2-b read: b1 hour 19 (1377f60249; 09:25) -- FAILED, and a flood came back
+
+CLIMB BANNED (fetch) 8 (bar <= 3): 7 on_prev + 1 short_of_prev, all
+frame trunk, all rise_next Some(2), push_site chaser-settle, trunk_dxy
+68-74 for five of them (the leg, not the trunk: W2-b2's premise);
+other bans 0, PROMISED CLIMB TAKEN 2, FETCH STALLED 12, budgets
+expired 15, starving 0; arrivals 733 (736 on W15-c's b1 run at hour
+19: flat); exhausted 19 delivered (up 5, flat 14), stuck 2, p95 640.
+LONGEST-TIER steps 40,932 against 951 and 2,434 on the W15-c run: a
+flood is back, and it is a RE-ASK flood, not a wide search -- one
+pair (7725,6403,181 -> 7742,6404,181, flat, 17 blocks) asked 1,675
+times by hour 19, three more pairs 788-1,169 times each, two of them
+with end_snap_dz=2 (the goal resolved two above the requested cell);
+the memo's misses saturate at 4,096, every one why=start. W15-c-b's
+b2 day (598 exhausted) ran under the same pair and is confounded by
+this. Disposed: W2-b FAILED its ban bar (the leg is the router:
+W2-b2), and its cost or a coincident regression is a re-ask flood
+(W14 class) to be named from this log before the next row.
+
+### W2-b read: b1 early (1377f60249, 09:20, hour 16 of day 0) -- FAILED
+
+CLIMB BANNED (fetch) 8 by hour 16 against a bar of <= 3 by hour 19;
+seven of the eight under a +2 edge one over (head minus prev), credit
+on_prev, frame trunk, rise_next Some(2), at the two ledges of every
+run before ((7665,6432)->182, (7637,6504)->183); one short_of_prev.
+FETCH STALLED 12, other bans 0, unreachable 0. W2-b's pin is green
+and its mechanism real (the pump's route holds no jump), and the bar
+failed anyway: the leg the body walks is planned by the chaser's own
+search at reach 2 (W16-i2's frame finding, read after W2-b was
+written). Disposed: FAILED, partial mechanism; W2-b2 above.
+
+### W15-c-b and W2-b read: b2 day 1 (1377f60249; 09:26)
+
+Exhausted 598 for the day (513 on W15-c's day; the bar was <= 256:
+FAILED), `start_unlabelled` 27 (bar <= 19: FAILED), `same` 30,
+`target_unlabelled` 6, `untrusted` 4; probes 67 (46 cut_off, 19
+sealed, 2 target_unwalkable); arrivals 846 (the highest day yet);
+unreachable 0 all day (W17-b's class did not occur: unexercised);
+CLIMB BANNED (fetch) 2 (one on_prev with rise_next Some(1) and
+push_site chaser-settle = W16-b's slid-off class; one no_prev), other
+4 (sleepers), FETCH STALLED 5, budgets expired 8, STALL BLAMED 1,
+starving sleepers 1, p95 508. W2-b on b2: no regression (pass). The
+exhaustion residual with both endpoints' plots free is a new
+question (W15-i5 candidate: which cost the `same`-component searches
+still pay -- the road factor, the wall band outside both plots, or
+the iteration budget itself).
+
+### W16-b landed (f408e4b8a9, staged 09:22, shipped to lab-bin 09:22)
+
+The relaunch's check and pin green; both halves built fresh; the
+falsifier planted the old vertical-only push and the pin went RED at
+09:27, the tree restored clean (0 dirty). b2 restarted fresh on it at
+09:27 under W2-b's b2 reader; b1 follows after W16-i2's night block.
+
 ### W15-c-b and W2-b read: b2 +10 (1377f60249 under the W16-i2 reader; 09:10, hour 15)
 
 Exhausted 47 by +10 (30 on W15-c's +10, 40 on W2-b's, 61-87

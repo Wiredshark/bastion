@@ -9482,6 +9482,30 @@ pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
     head.is_some_and(|h| h.z - feet.z >= 2)
 }
 
+/// ★ W2-b-r pinned: THE TRUNK PLANS THE JUMP AGAIN. W2-b set the trunk's
+/// reach to 1 (no two-up jump edge for a gliding body); on the ledge arm
+/// the town is not connected at one-up steps, so every search to a plot
+/// behind a two-block ledge flooded the whole town (60,696 cells, 617
+/// times a day against 13) and was re-asked by the walker until the day
+/// ended. Before W2-b the trunk planned the jump, the body stalled, the
+/// fetch was banned and the walker shun sent the pick elsewhere: cheap,
+/// local, self-limiting. The trunk's reach is 2 again, named here, and
+/// witnessed once per boot so the binary says which trunk it runs.
+pub(crate) const TRUNK_SCRAMBLE_REACH: u8 = 2;
+
+static TRUNK_REACH_WITNESS: std::sync::Once = std::sync::Once::new();
+
+/// The trunk's reach, witnessed on the first trunk search after boot.
+pub(crate) fn trunk_scramble_reach() -> u8 {
+    TRUNK_REACH_WITNESS.call_once(|| {
+        tracing::info!(
+            reach = TRUNK_SCRAMBLE_REACH,
+            "bastion: THE TRUNK'S REACH -- the trunk plans the jump again (W2-b-r); a ledge it cannot climb is banned and shunned, not flooded"
+        );
+    });
+    TRUNK_SCRAMBLE_REACH
+}
+
 /// ★ W16-b pinned: THE MOVER WALKS TO THE STEP IT SLID OFF. The chaser mover
 /// phases its move from `d` (target minus feet). The old rule sent a body
 /// straight up at any target more than 1.2 above -- a vanilla body would
@@ -35596,9 +35620,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // trained reach is a tunable the paired
                                     // A/B judges — FR15 lesson: no solo
                                     // tuning).
-                                    // ★ W2-b: THE FETCH LEG PLANS NO JUMP -- a gliding
-                                    // body: the stair floor and ladders, no jump edges.
-                                    scramble_reach: 1, // ★ W2-b
+                                    // ★ W2-b-r: the trunk plans the jump again (W2-b's
+                                    // reach 1 flooded the whole town per ask on the
+                                    // ledge arm; see `TRUNK_SCRAMBLE_REACH`).
+                                    scramble_reach: trunk_scramble_reach(),
                                     can_fly: false,
                                     vectored_propulsion: false,
                                     is_target_loaded: true,
@@ -56328,6 +56353,19 @@ mod tests {
         assert_eq!(memo_near_miss(memo, feet + Vec3::new(0, 4, 0), target, 1000), Some("start"), "the start off by four");
         assert_eq!(memo_near_miss(memo, feet, target + Vec3::unit_x(), 1000), Some("target"), "the target off");
         assert_eq!(memo_near_miss(memo, feet, target, 1900), Some("expired"), "the window past");
+    }
+
+    /// ★ W2-b-r pinned: the trunk's reach is 2 and admits the jump edge
+    /// (identity with the trunk before W2-b). Planted defect: reach 1 ->
+    /// red on both assertions.
+    #[test]
+    fn the_trunk_plans_the_jump_again() {
+        assert_eq!(TRUNK_SCRAMBLE_REACH, 2, "the trunk's reach is 2");
+        assert_eq!(trunk_scramble_reach(), 2, "the witnessed reach is the constant");
+        assert!(
+            common::path::jumps_admitted(TRUNK_SCRAMBLE_REACH, true, true, false),
+            "the trunk plans the two-up jump edge"
+        );
     }
 
     /// ★ W16-b pinned: a pure glide is d; a target two up and two over is
