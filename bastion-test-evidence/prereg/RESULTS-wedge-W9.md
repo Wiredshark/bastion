@@ -2262,6 +2262,43 @@ night 1. Falsifier at 05:16: a zero radius, the pin RED (0 passed,
 1 failed), restored to 0 dirty files. Shipped to lab-bin 05:12.
 W15-i4's chain fired at 05:17.
 
+### W14-b2 read: b1 hour 19 (c49a3e40b0, 05:52) -- FAILED its bar; the premise was wrong
+
+THE SEARCH IS NOT ASKED TWICE 32 refusals (bar >= 100; 0 and 4
+before), one walker (uid 97, ten refusals, arrived after 4). Memo
+writes 97, misses past 4,096, every named miss "start" (39 of 39).
+Longest-tier steps 55,255 by hour 19 (8,950 on W14-i's run); top
+pairs (7630,6273,180)->(7632,6274,182) 1,587, (7670,6443,183)->
+(7681,6444,182) 1,503, (7721,6355,181)->(7721,6354,185) 1,296.
+Arrivals 600, stuck 1, exhausted lines 11, pump mean wait 16-72.
+The named misses, measured from their own lines (stored start
+against the feet, Chebyshev xy): min 8, p25 22, median 25, p75 38,
+max 172 blocks; 0 of 39 within 3, 1 within 8, 30 over 20. The
+"slid body" of W14-b2's premise -- a walker a block or two from
+where it asked -- does not exist in the live population: the
+re-askers are walkers that keep GLIDING toward the target between
+exhausted searches (THE PRE-PATH GLIDE IS THE TOWN'S LOCOMOTION)
+and ask again from twenty-five blocks on, which is a new question
+the memo must not refuse. W14-b2's mechanism is correct and its
+pin holds, and the arm it guards is unreached (every gate arm must
+be reachable in the live population). Disposition: LANDED,
+harmless (identity for moves beyond three blocks), FAILED on its
+bar, the premise falsified by the instrument it asked for. No
+W14-b3: the cost these walkers pay is the exhausted search itself,
+which W15-i4 has just placed in the target's own component and
+W15-c prices (the destination's building is not a detour). The
+night-1 read follows for the record.
+
+### W14-b2 read: b1 night 1 (06:11) -- for the record
+
+Refusals 65,536 by the night (the sleepers' still feet, as on
+W14-i's night), writes 717 (150 on W14-i's run: this run asked
+far more), misses 8,192 all "start", longest-tier steps 66,001,
+the top pair (7697,6425,180)->(7698,6448,182) at 2,600. Arrivals
+788 (838; within 20%), stuck census 11 distinct (8), exhausted
+lines 14, p95 710 us. Same disposition: landed, harmless, its bar
+failed, its premise falsified. The E2-s-i reader took b1 at 06:12.
+
 ## W15-i4, registered 04:45 (keyed on the W14-b2 stage; the queue's end)
 
 THE EXHAUSTED SEARCH NAMES ITS COMPONENTS. An instrument row from
@@ -2304,6 +2341,108 @@ with the component verdicts. Falsifier at 05:40: same and
 different swapped, the pin RED (0 passed, 1 failed), restored to
 0 dirty files. Shipped to lab-bin 05:36. E2-s-i's chain fired at
 05:40; W16-a (the stair) is registered behind it.
+
+### W15-i4 read: b2 +10 (a1dc121908, 05:49, hour 14 of day 0)
+
+59 probes (45 cut_off, 13 sealed, 1 target_unwalkable; 58 with a
+walkable target); the component index rebuilt 13 times by then.
+Verdicts: `same` 34, `untrusted` 13, `start_unlabelled` 11,
+`target_unlabelled` 1, `different` 0. The perimeter class (sealed
+or cut_off with a walkable target): same 34, different 0. The
+pre-registered prediction (different for at least 80%) is
+FALSIFIED at the first read: the store's interior IS the walker's
+component; no door stands between them. The search spends its
+75,000 expansions inside one component with the target a few
+blocks away -- the cost, not the connectivity: the store's cells
+are interior columns (+2 per column) and wall-adjacent (+5 per
+step), so the true cost of the last few blocks is tens of units
+and an admissible A* floods every cheaper cell in the town before
+paying it (path.rs's own note: "12.0 broke DOORWAYS ... the full
+cure is a door-cell exemption at ingest -- queued"). Rings: 29
+all-walkable, 8 `###...###`, 3 `#.##.##.#` (posts), 2 `~~~~..~.#`.
+The day-1 read confirms the tally; the next row prices the route:
+THE DESTINATION'S BUILDING IS NOT A DETOUR (no interior surcharge
+and no wall band inside the building the target stands in).
+
+### W15-i4 read: b2 day 1 (a1dc121908, 06:08, hour 0 of day 1)
+
+Exhausted 413 for the day; probes 66 (52 cut_off, 13 sealed, 1
+target_unwalkable); the index rebuilt 40 times. Verdicts: `same`
+37, `untrusted` 13, `start_unlabelled` 13, `target_unlabelled` 3,
+`different` 0; the perimeter class same 37, different 0. CONFIRMED:
+the door hypothesis is dead; W15-c prices the route. Arrivals 560,
+stuck 1, p95 520 us. Rings 33 all-walkable, 9 `###...###`, 3 posts.
+A second class in the same block: unreachable deliveries 39 (0 on
+W12-a-c's day 1), UNREACHABLE APPROACH 20 lines, all
+from_in_house=true and to_in_house=true, four walkers (146 eight,
+147 six, 93 four, 68 two), brief episodes (146: 09:48:06-09:48:36;
+147: six minutes; 93: 35 s; 68: once) around the Sleep block --
+colonists at home asking for targets in other houses. Colonist 146
+at (7706,6310,183) in the house whose box starts at (7690,6300,
+180), targets at z 186; the door probe: doors=0, NoDoor -- it
+scans z-1..z+2 of the feet, and the house's floor is three above.
+W17-i (below) makes the probe scan the whole box and print the
+walker's column.
+
+## W17-i, registered 06:15 (keyed on the W15-c stage; the queue's end)
+
+THE SEALED WALKER NAMES ITS FLOOR. Mechanism: at the door probe,
+every door sprite in the house's whole box, the nearest by
+Manhattan distance including height, its dz, `door_dz_verdict`
+(no_door | level | door_above | door_below), the house's z range,
+and `column` (feet-3..feet+6 in the frontier glyphs). No
+behaviour changes. Pin `the_sealed_walker_names_its_floor` (no
+door; two and three up: door_above; two down: door_below; within
+one: level); planted: above and below swapped, red. Prediction
+(b2 fresh after W15-c's day-1 block, `wait-w17i-b2.sh`; +10 and
+day 1): every from_in_house unreachable line carries a verdict;
+the sealed walkers' verdict is door_above and their column shows
+walkable cells above; falsified if no_door dominates (doorless
+worldgen houses: a plot row) or level (the door at the feet's
+height and the search still fails: a router row). Rejected:
+fixing the drop or the climb before the floor is named; widening
+the original scan in place. NOT evidenced: how the walker got
+below its floor; b1. The dry tree at e6b5bc7e60 validated the
+anchors.
+
+## W15-c, registered 06:01 (keyed on the W16-a stage; the queue's end; common/)
+
+THE DESTINATION'S BUILDING IS NOT A DETOUR. Defect: above (34 of
+34 trusted perimeter verdicts `same`, 0 `different`; path.rs's own
+note that the wall band "broke DOORWAYS ... the full cure is a
+door-cell exemption at ingest -- queued"). Mechanism:
+`destination_plot(interior, target_xy, cap)` -- the 4-connected
+flood over the founding-computed interior columns from the
+target's column, capped at DEST_PLOT_CAP (4,096), empty when the
+target stands outside every building; `priced_outside_destination
+(in_destination, surcharge)` -- 0.0 inside the plot; `find_path`
+keeps its signature (the inline chaser and every vanilla caller
+unchanged) and `find_path_priced` takes the plot and applies the
+rule to both the interior surcharge and the wall band; the
+scheduled colonist search (`FullPathSearch`) computes its plot
+once per target column and keeps it across polls; the one-shot
+search computes it once. Deterministic (a BFS in a fixed direction
+order over a static set). No new log line. Pin (veloren-common,
+bastion_vertical_tests) `the_destinations_building_is_not_a_detour`
+(outside every building: no plot; inside a 3x3 plot: nine columns,
+not the plot five blocks away; the cap holds exactly; inside:
+free; outside: paid; the band too); planted: the surcharge paid
+inside the destination, red. Prediction (b2 fresh after W16-a's
+day-1 block, b1 fresh after W16-a's night-1 block;
+`wait-w15c-b2.sh`, `wait-w15c-b1.sh`): exhausted searches on b2
+by +10 at most half of 61 and by day 1 at most half of the
+previous run's; the perimeter probes' `same` class at most a
+quarter of 34; unreachable 0; arrivals within 20%; ITEM 39 p95_us
+at most double. Falsified if exhaustion holds with `same` still
+the majority (the budget itself, or the walker's own start
+building's surcharge) or p95_us more than doubles. Rejected: a
+door-cell exemption at ingest (the door is not the obstacle);
+raising the Longest budget (a bigger flood); an inadmissible
+heuristic; a radius exemption around the target (a walker would
+cut through the neighbour's house on its last twenty blocks). NOT
+evidenced: routes whose start is inside a surcharged building; the
+inline chaser searches; b1's stores. The dry tree at e6b5bc7e60
+with W16-a applied first validated every anchor.
 
 ## W16-a, registered 05:40 (keyed on the E2-s-i stage; the queue's end; common/)
 

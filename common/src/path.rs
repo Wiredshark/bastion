@@ -314,10 +314,11 @@ impl Route {
                         1.0
                     })
                 .powi(2)
-                && ((-1.0..=2.25).contains(&(pos.z - closest_tgt.z))
-                    || (traversal_cfg.in_liquid
-                        && pos.z < closest_tgt.z + 0.8
-                        && pos.z > closest_tgt.z))
+                && node_z_completed(
+                    pos.z - closest_tgt.z,
+                    traversal_cfg.in_liquid,
+                    traversal_cfg.scramble_reach,
+                )
             {
                 // Node completed, move on to the next one
                 self.next_idx += 1;
@@ -606,6 +607,20 @@ pub struct ChaserDiagnosticSnapshot {
 
 /// A self-contained system that attempts to chase a moving target, only
 /// performing pathfinding if necessary
+/// ★ W16-a pinned: A COLONIST DOES NOT COMPLETE A NODE FROM BELOW. Vanilla
+/// bodies jump, so the chaser completes a node the body stands up to one
+/// block under (the jump carries them). Colony bodies glide one step at a
+/// time: completing a one-up stair node from its foot leaves the next node
+/// two up -- "a climb the body never makes" (CLIMB BANNED; colonist 28 five
+/// times in one evening, colonist 149 at its own shelf). Colony workers are
+/// the bodies with `scramble_reach > 0`; for them a node completes only
+/// from within half a block below its height, so every stair step is a
+/// one-up target the glide takes. `dz` is the body's z minus the node's.
+pub fn node_z_completed(dz: f32, in_liquid: bool, scramble_reach: u8) -> bool {
+    let floor = if scramble_reach > 0 { -0.5 } else { -1.0 };
+    (floor..=2.25).contains(&dz) || (in_liquid && dz < 0.8 && dz > 0.0)
+}
+
 impl TraversalConfig {
     /// bastion ledger #178: the SEARCH-PROFILE fingerprint — every field
     /// that changes which nodes/edges a search ADMITS or how it terminates.
@@ -2662,6 +2677,24 @@ where
 #[cfg(test)]
 mod bastion_vertical_tests {
     use super::*;
+
+    /// ★ W16-a pinned: a vanilla body (reach 0) completes a node from one
+    /// block below; a colony body (reach 2) does not, but does from half a
+    /// block below, at the node, and from up to 2.25 above; neither from
+    /// 2.5 above; the liquid clause unchanged for both. Planted defect: the
+    /// colony floor back at -1.0 -> red.
+    #[test]
+    fn a_colonist_does_not_complete_a_node_from_below() {
+        assert!(node_z_completed(-1.0, false, 0), "vanilla: one below completes (the jump carries it)");
+        assert!(!node_z_completed(-1.0, false, 2), "colony: one below does not complete");
+        assert!(!node_z_completed(-0.75, false, 2), "colony: three quarters below does not");
+        assert!(node_z_completed(-0.5, false, 2), "colony: half a block below completes");
+        assert!(node_z_completed(0.0, false, 2), "colony: at the node");
+        assert!(node_z_completed(2.25, false, 2), "colony: from above, the drop");
+        assert!(!node_z_completed(2.5, false, 2) && !node_z_completed(2.5, false, 0), "neither from 2.5 above");
+        assert!(node_z_completed(0.5, true, 2) && node_z_completed(0.5, true, 0), "liquid: just above completes");
+        assert!(!node_z_completed(-1.5, true, 0), "liquid does not widen the floor");
+    }
     use crate::terrain::{BlockKind, SpriteKind};
     use hashbrown::HashMap as StdHashMap;
     use vek::Rgb;

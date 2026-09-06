@@ -1626,6 +1626,14 @@ the count exists. NOT evidenced: the cost of the Store key on
 non-eat stalls (this count decides it). The dry tree at
 a1dc121908 (W15-i4) validated the anchors.
 
+### E2-s-i landed (e6b5bc7e60, staged 05:58)
+
+Check clean, the gate pin (E2-s's) green, committed 05:53, both
+halves staged 05:58:45, shipped to lab-bin 05:59. Wiring: no
+falsifier. The b1 reader restarts b1 after W14-b2's night-1 block
+and reads the E2 night set with the fell-through count. W16-a's
+chain fires five minutes after this stage.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the
