@@ -2940,6 +2940,118 @@ is the next candidate -- THE BOB IS NOT PROGRESS (the stuck clock
 measured on xy, or a bob counted as no displacement, so the stall's
 consumers act) -- registered after W18-b's first read.
 
+### W18-c on b1, the full day (15:30; 5346279326, read at day 1 hour 0): the bob bar PASSED, the stalls bar FAILED, the arrivals clause TRIPPED -- one replicate, re-read on the W18-b2 day
+
+Bobs: 10 lines, peak bobs=1 (bar <= 16: PASSED; 128 yesterday). FETCH
+STALLED 29 (12-13 yesterday, 2.3x; bar <= 2x: FAILED) -- 21
+Designated at the terrace edges, 6 EatFrom, 2 Cook; STUCK CENSUS 15.
+Arrivals 828 (bar >= 900: FAILED; 991 yesterday at the same clock,
+-16%: the registered falsification clause "arrivals fall > 10%"
+TRIPPED). Starving sleepers 1 (colonist 141, RestAt Traveling at
+hunger 0.04 at tick 34500; bar <= 1: PASSED). Other bans 3 (19),
+fetch bans 2, W6-D 0, route proofs 0 jobs, W14-e2 benches 53 (1
+yesterday: the consumer now reaches the jobbed flooders every time
+the count hits three -- 53 jobs benched a day is a new number to
+watch, and W14-i6 says whether those proofs are true),
+LONGEST-EXHAUST 585 (567), drops refused 8,192.
+
+The 57 W14-e2 lines are TWO jobs, re-benched once per arbitration
+latch period through the day: colonist 148's job at (7769,6401,186)
+x31 and colonist 62's at (7626,6321,186) x26 -- both targets at z 186,
+beds or home spots three above a floor (W17-c's sealed-sleeper
+class), and (7769,6401,186) is the very bed b2's colonist 136 was
+walking to when it bobbed 256 times. The jobbed half of b1's flood
+is the bed-at-z-186 class; the jobless half (the one-block ends)
+still has no name. W14-i5 prints end_g and direct_edge for both.
+
+Disposal, honestly: W18-c did what it claimed (the bob class is gone
+from the ledge arm) and its registered costs came due -- the bodies
+the old clock let bounce now stall, and the day's arrivals fell by
+more than the clause allowed. Two readings compete: (a) the stalls
+and the lost arrivals are W18-b's refused step down made visible
+(21 of 29 stalls sit at the terrace edges W18-b refuses; W18-b2
+lifts that today), or (b) the x-y window now stalls walks that were
+real (the clause's own reading). One replicate cannot separate them;
+COLONY COUNTS VARY 2-3x (b1 arrivals ran 736-1,090 across the last
+days). The W18-b2 b1 day (b1 boards it at ~15:40) is the replicate:
+if stalls return to ~12 and arrivals to >= 900 with the bob peak
+still <= 16, (a) holds and W18-c stands; if stalls stay >= 25 or
+arrivals stay < 900, (b) holds and W18-c is reconsidered (a wider
+minimum, or the window measured on the route's own axis).
+
+### W18-b2 landed (5c8285fb34, staged 15:23:28; shipped to lab-bin 15:23:47)
+
+Chain bdx5gezga: check ok, pin
+the_body_does_not_drop_into_a_cell_it_cannot_leave green (the pit
+Closed with nine cells, the ramp WayUp, the step, the 40x40 ledge
+Open), committed 5c8285fb34, both halves from one commit, the server
+exe carries "THE DROP INTO THE OPEN IS ALLOWED" (grep 1) beside the
+W18-b and E2-t witnesses. Falsifier RED at 15:28 (the open-basin
+cap planted at a million in its own worktree: the 1,600-cell ledge
+read Closed, 0 passed, 1 failed; restored, 0 dirty). b2
+boards it now under the relaunched W14-e2 reader (held back so b2
+would not board the older pair minutes before this stage); its
+night is the starving read (~16:15). b1 boards it at the W14-e
+reader's restart after tonight's block (~15:45). lab-bin is
+5c8285fb34 (playable). W14-i5's chain fires at +300 s.
+
+First witness, b2 at boot+60 s (15:27): "THE DROP INTO THE OPEN IS
+ALLOWED" x8, uid 138, landing (7754,6343,181), edge_z 183, cells=64,
+site bridge -- the same landing that W18-b refused eight times at
+boot+50 s on both arms yesterday (uid 111 / 118). The Closed witness
+0 so far (the pit's rim not yet reached). The mechanism is live and
+reads as registered.
+
+### W18-c on b1 at hour 19 (15:20; 5346279326): the bob bar PASSES, the stalls bar FAILS on W18-b's cost
+
+Bob lines 5, peak bobs=1 (bar <= 16: PASSED; 128 at this hour the
+day before, colonist 117 at (7700,6303) -- 0 bobs and 0 stalls at
+that cell today). FETCH STALLED 27 (9 at hour 19 the day before:
+3x; bar <= 2x: FAILED) -- 21 of them Designated walks at the terrace
+edges ((7640,6436):4, (7664,6432):4, (7684,6388):4), i.e. W18-b's
+refused step down held for 15 s and now SEEN by the x-y clock; 4
+EatFrom, 2 Cook. STUCK CENSUS 9. Arrivals 686 at hour 19 (752 on
+the W14-e day's hour 19; 991 for yesterday's whole day; the bar is
+>= 900 by night). Other bans 3, benches 11, LONGEST-EXHAUST 462
+(the flood, W14-i5's subject). The reader's own hour-19 block
+(15:20) adds: W14-e2 benches 11 on b1 today ("three exhausted
+Longest searches", jobs 1017 and others; 1 for the whole day
+before) -- the consumer now reaches b1's flooders that hold a job;
+route-proof benches 0 today (the far TradeMission target absent);
+flood 461, top ends 52x (7697,6459,182), 39x (7679,6203,181), 27x
+(7721,6335,188). Disposal: W18-c did what it claimed
+(a bobbing body now stalls, and the bob class is gone from the
+ledge arm); the stalls it exposes are W18-b's, and W18-b2 (staging)
+is their cure -- the honest bar for W18-c's cost is re-read on the
+W18-b2 b1 day. The night's arrivals and starving close the read.
+
+### E2-t on b2, night 0 (a86bb23715 since 14:44; read by hand 15:18 at day 1 hour 0)
+
+Starving sleepers 0 (3 the night before), STARVING lines 0 all day,
+NIGHT SHELF EMPTY 0 (so no home's food carried an unclaimed haul's
+reservation tonight: the yield witness is 0 and UNEXERCISED, not
+falsified -- the bar reads "at least 1 on any night the case
+occurs"), haul releases 0, arrivals 744 (bar >= 720: PASSED), FETCH
+STALLED 2 for the day (19 the day before under the same W18-b rule:
+the ledge stalls were the supper walk's, and tonight's suppers went
+another way -- COUNTS VARY 2-3x, the W18-b2 day decides), pit drops
+0, drops refused 4,096. One number against the pair: bobs peak 256
+(this pair carries W18-i and W18-b, not W18-c) -- named below; on
+b1, under W18-c since 14:54, the peak is 1. E2-t stands unexercised;
+its witness waits for a night with the case.
+
+The 256-bob body: colonist 136 (Mine), cell (7700,6303) z 183 -> 181,
+site bridge-probe, bobs 64/128/256 at 19:15:29-19:17:33 UTC (hours
+21-22, after its evening meal and a RECREATE "home" walk toward its
+bed at (7769,6401,186)), stuck_time 0.033 s at every sample, 0 stalls,
+0 census lines: six minutes of bouncing that the clock never saw --
+W18-c's exact case, on the pair without it. The same cell held b1's
+colonist 117 (bobs=128) the day before and b2's colonist 65 (bobs=2)
+this morning: a terrace step on the home road at (7700,6303). Under
+W18-c a body there stalls in 15 s and its job's consumers act; the
+step itself (a two-block edge with a way up beside it) is the ramp
+row's geometry.
+
 ### W18-c on b1, first half-day (15:07; 5346279326 since 14:54): the bobs are gone, the ledge reads as stalls
 
 Bob lines 2, peak bobs=1 (128 on the day before, colonist 117).
@@ -2955,6 +3067,27 @@ day before) will read as W18-b's cost until W18-b2 lands; the honest
 disposal waits for W18-b2's b1 day, where the same walk steps down
 and neither bobs nor stalls. Arrivals 533 by hour ~12 (374-499 at
 hour 12 on earlier days).
+
+### W14-i5's slab experiment, predicted before it prints (15:28)
+
+Four searches on a 60x60 slab (3,600 cells), the end two blocks
+east of the start, Longest tier (75k budget): OPEN / NO-FLEE: Path
+of 2-3 nodes, consumed under 20. OPEN / FLEE at the start: the
+decisive cell -- under ~100 if the flee term merely reorders near
+the body (my arithmetic: h goes negative only within ~30-40 blocks),
+thousands (the whole slab) if it inverts the search; the live flood
+needs the latter AND a dear end. WALLED (one gap 39 rows away) /
+NO-FLEE: Path of ~80 nodes, consumed in the thousands (admissible
+A* with a Euclidean heuristic explores the disc whose path-plus-
+distance is under the detour's cost: the ordinary price of a
+misleading heuristic). WALLED / FLEE: the whole slab. If OPEN/FLEE
+prints thousands, W14-f (the flee term clamped) is the fix and my
+arithmetic was wrong; if it prints under 100, the live flood is a
+dear or refused edge and the direct_edge field on the exhaust line
+names it. Either way the walled case shows that a target reached
+only by a long detour floods a town-sized component with or without
+the flee term -- the router's missing step down (job 440) is that
+detour's most likely maker.
 
 ### W14-i6 registered (15:05): THE PROOF WAS FALSE (instrument)
 
@@ -2989,6 +3122,8 @@ the_bench_is_witnessed_once; falsifier drops the already-benched
 test -> red on the re-fire. No new string (verified by pin,
 falsifier and the next b1 day's count: lines == distinct benched
 jobs). Queued behind W14-i5 (bastion-server only, a short build).
+Second instance (15:21): b2's a86bb23715 day read route_proofs=101
+in the tally -- 2 distinct jobs, job 713 alone 88 lines.
 
 ### Observation (14:55): the router cannot plan the step the mover takes
 

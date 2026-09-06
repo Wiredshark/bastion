@@ -228,6 +228,12 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
     /// exhaust, diag-gated, to report the explored-set shape.
     pub(crate) fn visited(&self) -> impl Iterator<Item = &S> { self.visited_nodes.keys() }
 
+    /// ★ W14-i5: the g recorded for a visited node (the exhaust diag reads
+    /// its end's).
+    pub(crate) fn visited_cost(&self, node: &S) -> Option<f32> {
+        self.visited_nodes.get(node).map(|n| n.cost)
+    }
+
     /// To guarantee an optimal path the heuristic function needs to be
     /// [admissible](https://en.wikipedia.org/wiki/A*_search_algorithm#Admissibility).
     pub fn poll<I>(

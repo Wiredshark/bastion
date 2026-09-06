@@ -696,6 +696,25 @@ pub fn priced_outside_destination(in_destination: bool, surcharge: f32) -> f32 {
 /// zeroed the count each time it was earned (one end asked eighteen times,
 /// no strike). The count survives a partial route and resets on a complete
 /// one only.
+/// ★ W14-i5 pinned: THE EXHAUST NAMES ITS END'S COST. Over the visited
+/// states (at_end, g): the cheapest g among the states at the end, how many
+/// states sit at the end, and the dearest g visited anywhere. An end visited
+/// but never popped carries a g above every popped f; an end never visited
+/// carries none.
+pub fn end_cost_summary(states: impl Iterator<Item = (bool, f32)>) -> (Option<f32>, u32, f32) {
+    let mut end_g: Option<f32> = None;
+    let mut end_states = 0u32;
+    let mut max_g = 0.0f32;
+    for (at_end, g) in states {
+        max_g = max_g.max(g);
+        if at_end {
+            end_states += 1;
+            end_g = Some(end_g.map_or(g, |m| m.min(g)));
+        }
+    }
+    (end_g, end_states, max_g)
+}
+
 pub fn exhaust_count_after(complete: bool, count: u8) -> u8 {
     if complete { 0 } else { count }
 }
@@ -2197,6 +2216,25 @@ where
     // bastion ledger #180: expansions are counted as a delta around the
     // poll — correct across resumed searches (a retained astar keeps its
     // running total) and fresh creations (total starts at zero).
+    // ★ W14-i5 (diag-gated, Longest only): is the end a direct neighbour of
+    // the start, and at what price? An end one block away that the search
+    // visits yet never pops names its refused or dear edge here.
+    let endpoint_diag = path_length == PathLength::Longest && {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var_os("BASTION_PATH_ENDPOINT_DIAG").is_some())
+    };
+    let mut neighbors = neighbors;
+    let direct_edge = if endpoint_diag {
+        neighbors(&Node {
+            pos: start,
+            last_dir: Vec2::zero(),
+            last_dir_count: 0,
+        })
+        .find(|(n, _)| n.pos == end)
+        .map(|(_, c)| c)
+    } else {
+        None
+    };
     let consumed_before = astar.iters_consumed();
     let path_result = astar.poll(
         match path_length {
@@ -2302,9 +2340,20 @@ where
             //    a normal run.
             let (expanded_states, distinct_cells, bmin, bmax) =
                 explored_shape(astar.visited());
+            // ★ W14-i5: the end's cost in the search's own ledger.
+            let (end_g, end_states, max_g) = end_cost_summary(
+                astar
+                    .visited()
+                    .map(|n| (n.pos == end, astar.visited_cost(n).unwrap_or(0.0))),
+            );
             tracing::info!(
                 ?end,
                 ?closest,
+                end_g = ?end_g,
+                end_states,
+                max_g,
+                direct_edge = ?direct_edge,
+                flee = ?flee_from,
                 frontier = %frontier,
                 closest_dist = closest
                     .map(|c| (c - end).map(|e| e.abs()).sum())
@@ -2320,7 +2369,7 @@ where
                 n_ny = nb(-Vec3::unit_y()),
                 n_pz = nb(Vec3::unit_z()),
                 n_nz = nb(-Vec3::unit_z()),
-                "bastion: LONGEST-EXHAUST NEIGHBOURHOOD — where the cut actually is"
+                "bastion: LONGEST-EXHAUST NEIGHBOURHOOD — where the cut actually is (W14-i5: end_g)"
             );
         }
     }
@@ -2856,6 +2905,83 @@ mod bastion_vertical_tests {
         assert_eq!(exhaust_count_after(false, 0), 0, "nothing to keep");
         assert_eq!(exhaust_count_after(true, 2), 0, "a complete route forgives it");
         assert_eq!(exhaust_count_after(true, 0), 0, "and stays at zero");
+    }
+
+    /// ★ W14-i5 pinned: the end's cheapest state, its state count, the
+    /// dearest g anywhere; an unvisited end carries none. Planted defect:
+    /// the dearest end state reported as the cheapest -> red.
+    #[test]
+    fn the_exhaust_names_its_ends_cost() {
+        let (g, n, m) = end_cost_summary([(false, 5.0), (true, 9.0), (true, 7.0), (false, 20.0)].into_iter());
+        assert_eq!(g, Some(7.0), "the cheapest state at the end");
+        assert_eq!(n, 2, "two states at the end");
+        assert_eq!(m, 20.0, "the dearest g anywhere");
+        assert_eq!(end_cost_summary(std::iter::empty()), (None, 0, 0.0), "nothing visited: nothing named");
+    }
+
+    /// W14-i5 EXPERIMENT (prints, asserts nothing): an end two blocks east
+    /// of the start on a 60x60 slab, open and behind a wall whose one gap
+    /// sits 39 rows away; with and without the flee term at the start.
+    /// Read the expansions: `cargo test -p veloren-common flee_experiment_prints -- --nocapture`.
+    #[test]
+    fn flee_experiment_prints() {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let cfg = TraversalConfig {
+            node_tolerance: 1.5,
+            slow_factor: 0.0,
+            on_ground: true,
+            in_liquid: false,
+            min_tgt_dist: 1.0,
+            can_climb: false,
+            scramble_reach: 2,
+            can_fly: false,
+            vectored_propulsion: false,
+            is_target_loaded: true,
+            search_allowed: true,
+            climb_ban: Vec::new(),
+            road_cells: Default::default(),
+            route_jitter_seed: 0,
+            wall_margin_cells: Default::default(),
+            interior_cells: Default::default(),
+        };
+        for (label, walled) in [("open", false), ("walled", true)] {
+            let mut blocks = StdHashMap::new();
+            for x in 0..60 {
+                for y in 0..60 {
+                    blocks.insert(Vec3::new(x, y, 0), rock);
+                }
+            }
+            if walled {
+                for y in 0..59 {
+                    for z in 1..=3 {
+                        blocks.insert(Vec3::new(30, y, z), rock);
+                    }
+                }
+            }
+            let vol = MockVol::from_parts(blocks, Block::empty());
+            let startf = Vec3::new(29.5, 20.5, 1.0);
+            let endf = Vec3::new(31.5, 20.5, 1.0);
+            for (flee_label, flee) in [("no-flee", None), ("flee-at-start", Some(startf))] {
+                let mut astar = None;
+                let mut consumed = 0u64;
+                let mut result = PathResult::Pending;
+                for _ in 0..400 {
+                    let (r, c) = find_path_priced(&mut astar, &vol, startf, endf, &cfg, PathLength::Longest, flee, None);
+                    consumed += c;
+                    if !matches!(r, PathResult::Pending) {
+                        result = r;
+                        break;
+                    }
+                }
+                let kind = match &result {
+                    PathResult::Path(p, cost) => format!("Path(len={} cost={cost})", p.nodes.len()),
+                    PathResult::Exhausted(p) => format!("Exhausted(partial_len={})", p.nodes.len()),
+                    PathResult::None(p) => format!("None(partial_len={})", p.nodes.len()),
+                    PathResult::Pending => "Pending".to_string(),
+                };
+                println!("W14-i5 EXPERIMENT {label} {flee_label}: {kind} consumed={consumed}");
+            }
+        }
     }
 
     /// ★ W15-c-b pinned: a start in one plot and a target in another free
