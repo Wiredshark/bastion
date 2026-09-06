@@ -3111,6 +3111,81 @@ end_g 5.0-15.0 with flee None: the finished-search resume signature
 persists with the moved-goal restart aboard, on the second world
 too. W14-g2's premise holds on both arms; it stages ~18:30.
 
+b1 under W14-g at hour 18 (the waiter's read, 17:42): 476 exhausts
+-- far 356 (198 with the flee term), TOUCHED 120 (25%; 6 with a
+priced direct edge); END MOVED peak 8,192; arrivals 615 at hour 18,
+FETCH STALLED 6, starving 0. The same shape as b2, at the ledge
+arm's usual flood scale. b2's waiter read (17:48, hour 17): 521
+exhausts -- far 378 (220 with the flee term), TOUCHED 137 (26%; 15
+with a priced direct edge; (7607,6272,181) at end_g 5.0 with a 5.0
+direct edge -- this morning's one-block end, now on the second
+world); END MOVED peak 8,192; arrivals 497 at hour 17 (547-556 on
+the two earlier days at that hour), FETCH STALLED 4, STARVING lines
+4 by hour 17 (colonists 19 and 93, awake, EatFrom Traveling at
+0.01-0.04 -- named at the day read). b1's reader hour-19 block on
+W14-g (17:46): arrivals 645 (688, 688, 686 at hour 19 on the three
+W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
+distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
+closes b1's W14-g day.
+
+### The b2 bobber named (18:05): colonist 132, no assist, no re-plan -- the clock is reset by the per-tick progress check
+
+uid 132, rest preempt at 21:58:09 UTC to the bed at (7769,6401,186)
+(the same bed as colonists 136 and 148), then at (7700,6303) z 183
+-> 181, bobs 64/128/256 at 21:59:02-22:01:03, stuck_time 0.033 s at
+each sample. In the bob window: 657 POS-WRITE lines, all 554 at
+that cell "mover DOWN" (the two-block drops); NO logged lifts (the
+lifts are the probe's own +1-per-column steps, under the diag's 1.5
+threshold, two per cycle); 2 MOVE ASSIST lines all day and 0 "DID
+NOT STICK"; NO searches, re-plans or target moves. So W18-d's
+premise (the assist's reset) fits colonist 49's case, not this one,
+and the clock here is reset by the per-tick progress check itself
+(38145/38156: sdist + EPS < best_dist -> best_dist = sdist,
+stuck_time = 0): a body creeping a few centimetres along the ledge
+each cycle ratchets its 3-D distance to the bed above by more than
+the epsilon every lift -- progress forever. W18-c's window closes
+the displacement path; this is the distance path. Design (W18-e,
+THE BOB IS A STALL): the bob witness already counts bobs per walker
+per window (W18-i); at BOB_STALL_COUNT (16) within the window the
+mover sets the walker's stuck_time to the timeout, so the release,
+shun and strike consumers act whatever reset path was open -- an
+outcome-level consumer, pinned on the count, falsified by planting
+the count out of reach.
+
+### b2's day on W14-g (a468786d41 since 17:23; read by hand 18:02 at day 1 hour 0): arrivals down a quarter, a 256-bob body with W18-c aboard
+
+Arrivals 652 (873 and 946 on the two days before, 736 before that:
+-25%, past W14-g's 10% clause on this arm while b1 read -5%),
+starving sleepers 0 (36 STARVING lines, colonists 115 and 121
+hungry and awake, EatFrom Traveling), FETCH STALLED 7, bobs peak
+256 -- with W18-c aboard: the assist-lift loop W18-d was written
+for, on the second world (named below), pit drops 77 (float-aware:
+bodies in and out of the pit all day), flood 665 (touched 147 --
+W14-g2's class, unchanged), END MOVED 8,192, false proofs 4, benches
+2 jobs, p95 524 us. Reading: the arrivals loss and the bob are one
+event if the bobbing body sat out its day -- W18-d (staging ~18:15)
+is the cure and the replicate; W14-g's own cost on b1 was nil.
+
+### W14-w2 landed (d4523dc9f2, staged 17:57:40; shipped to lab-bin 17:57:54)
+
+Chain b4am77alm: check ok, pin the_bench_has_one_door green,
+committed d4523dc9f2, both halves from one commit, the server exe
+carries "silent writer named" (grep 1). Falsifier at +90 s (verdict
+below when it prints); W18-d's chain at +300 s (18:02:40). lab-bin
+is d4523dc9f2 (playable).
+
+### b1's day on W14-g (a468786d41 since 17:17; read by hand 17:58 at day 1 hour 0)
+
+Arrivals 803 (839, 863, 828 on the three W18-c days at this frame;
+-4 to -7%, inside the day-to-day band), starving sleepers 0,
+STARVING lines 0, FETCH STALLED 6 (the lowest of the week), STUCK
+CENSUS 16, bobs peak 2, flood 570 with the touched class at 143
+(unchanged, as expected: W14-g2's class), END MOVED peak 16,384 for
+the day (the next-node rate), benches 4 jobs in 23 lines, false
+proofs 1, p95 766 us. W14-g's own bars: the restart witness fired
+(>= 1); the flood bars failed for the reason already disposed; no
+cost in arrivals, stalls, starving or tick time.
+
 ### The far class's design gap, read (17:37): the chaser arrives within a block, the search demands the cell
 
 Chaser::chase returns "arrived" when the body is within

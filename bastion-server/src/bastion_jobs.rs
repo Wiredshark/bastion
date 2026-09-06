@@ -1950,6 +1950,19 @@ pub(crate) fn assist_repeat_is_a_failure(
     last.is_some_and(|(h, t)| h == head && now.saturating_sub(t) <= ASSIST_REPEAT_WINDOW_TICKS)
 }
 
+/// ★ W18-d pinned: THE REPEATED LIFT IS NOT PROGRESS. A completed assist
+/// step resets the stuck clock -- unless it is the same cell as the last
+/// lift within the window (assist_repeat_is_a_failure): that lift is the
+/// bounce (colonist 49: 256 drops and lifts at (7700,6303), the clock at
+/// 0.033 s throughout), and the clock keeps running so the stall's
+/// consumers can act.
+pub(crate) fn lift_resets_clock(repeated: bool) -> bool {
+    !repeated
+}
+
+/// ★ W18-d: the witness count.
+pub(crate) static LIFTS_REPEATED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W4 THE ASSIST IS THE LAST WRITER OF ITS TICK. The mover's deferred
 /// writes (a refused-into-rock hold, a chaser hold, an override glide) are
 /// pushed before the assist decides and drained after the assist applies,
@@ -38449,12 +38462,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // same body again within the window
                                     // means the move was undone. Exact for
                                     // the first 16, sampled after.
+                                    // ★ W18-d: the repeat verdict reaches the clock below.
+                                    let mut lift_repeated = false;
                                     if let Some(u) = uids.get(entity).map(|u| u.0.get()) {
                                         let repeat = assist_repeat_is_a_failure(
                                             board.assist_last.get(&u).copied(),
                                             head,
                                             tick.0,
                                         );
+                                        lift_repeated = repeat;
                                         board.assist_last.insert(u, (head, tick.0));
                                         board.assist_last_target.insert(u, job.pos);
                                         if repeat {
@@ -38581,8 +38597,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         front = ?front,
                                         "bastion: MOVE ASSIST — the router promised this cell; the vault/step completes"
                                     );
-                                    active.stuck_time = 0.0;
-                                    active.best_dist = f32::MAX;
+                                    // ★ W18-d: THE REPEATED LIFT IS NOT PROGRESS -- a lift at
+                                    // the cell of the last one keeps the clock.
+                                    if lift_resets_clock(lift_repeated) {
+                                        active.stuck_time = 0.0;
+                                        active.best_dist = f32::MAX;
+                                    } else {
+                                        let n = LIFTS_REPEATED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                        if n <= 8 || n.is_power_of_two() {
+                                            info!(
+                                                colonist = uids.get(entity).map(|u| u.0.get()),
+                                                ?head,
+                                                class,
+                                                stuck_time = active.stuck_time,
+                                                repeats = n,
+                                                "bastion: THE REPEATED LIFT IS NOT PROGRESS — the clock keeps running (W18-d)"
+                                            );
+                                        }
+                                    }
                                     continue;
                                 }
                                 // From here on this is a REAL timeout
@@ -56939,6 +56971,18 @@ mod tests {
         assert!(!reservation_yields_to_owner(true, "haul"), "a claimed haul stands");
         assert!(!reservation_yields_to_owner(false, "eat"), "an unclaimed eat stands");
         assert!(!reservation_yields_to_owner(false, "deposit"), "an unclaimed deposit stands");
+    }
+
+    /// ★ W18-d pinned: a first or distant lift resets the clock; a lift
+    /// repeated at the last cell within the window keeps it. Planted
+    /// defect: every lift resets -> red on the repeat.
+    #[test]
+    fn the_repeated_lift_is_not_progress() {
+        let here = Vec3::new(7700, 6303, 183);
+        assert!(!assist_repeat_is_a_failure(None, here, 1000), "the first lift is not a repeat");
+        assert!(assist_repeat_is_a_failure(Some((here, 1000)), here, 1000 + ASSIST_REPEAT_WINDOW_TICKS / 2), "the same cell inside the window is");
+        assert!(lift_resets_clock(false), "a first or distant lift resets the clock");
+        assert!(!lift_resets_clock(true), "a repeated lift keeps it");
     }
 
     /// ★ W18-c pinned: a two-block vertical oscillation displaces nothing;
