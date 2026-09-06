@@ -1256,6 +1256,40 @@ E2-i2's pair after its night-1 block by the printer. Falsified:
 the shelf named as the store planted at 74b373f5ac, the pin RED at
 23:38, the tree restored clean. Shipped to lab-bin 23:33.
 
+### E2-k read (b1 fresh on eda115908a; boot, day 0 and night 1, read 23:57): no shelf on a bed, and the best night of the six pairs
+
+At boot 116 beds, 19 shelves added, 0 on a bed cell, every house
+2 beds (the row's own bar: PASSED). The night, with E2-m, E2-o and
+E2-k all aboard (one replicate): the round minted 54 loads, 51
+private arrivals before the sweep (37-43 on the three pairs
+before), SWEPT 11 (18, 19); distinct starving sleepers 2 (3, 3,
+9); in-bed starving samples at 0-3 none at all (0, 0, 7, 8 the
+pair before; 14, 25, 28, 43 on E2-m); EAT CENSUS day 1 meals 70,
+no_food_found 57 (125, 452, 1,040); evening hungry walkers at
+18-20 12, 19, 7. What remains is the night WALKER: starving
+samples at hours 0-3 are RestAt/Traveling 7, 11, 14, 16 and
+EatFrom/Traveling 7, 8, 14, 16 -- the hungry go to the store at
+night and then to bed, nobody lies starving in bed; NIGHT SHELF
+verdicts through the night 12 Empty (present 0: the eleven swept
+loads' shelves) and 4 Refused with food present (E2-i2's holders
+read names the refusal); NIGHT MEAL AT HOME 7 (7, 13). E2-m's
+RestAt/Traveling bar (at most 4 an hour at 0-3) fails on this
+third replicate (7-16) as on the second (7-14) after passing on
+its own (0, 0, 0, 6): the late walkers to bed are the night
+walkers above, not the queue's. Disposition: PASSED on its own
+bar; the walk home (E2-l-i) and the night walker (E2-n) are the
+open rows, with the swept loads now 11 of 54.
+
+### E2-i2 landed (9bdf57c361, staged 23:56)
+
+Check clean, the pin green, both halves staged 23:56 (the holders
+field in the binary). The b1 reader restarts b1 after E2-k's
+night-1 block and reads the night shelf's verdicts with their
+holders; the E2-n-i printer reads the same pair's meals by source
+after that block. Falsified: the holders unnamed planted at
+9bdf57c361, the pin RED at 23:59, the tree restored clean. Shipped
+to lab-bin 23:56.
+
 ## E2-l-i, registered 23:40 (keyed on the W15-i1 stage; ahead of W14, which was re-keyed behind it)
 
 THE SWEEP NAMES ITS EATERS. An instrument row from E2-o's read: the

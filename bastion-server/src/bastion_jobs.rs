@@ -17582,8 +17582,12 @@ pub(crate) static SEARCH_TARGETS_MOVED: std::sync::atomic::AtomicU64 = std::sync
 /// ★ W12-a pinned: the search's target is the target cell when a body can
 /// stand in it; else the nearest standable cell within SEARCH_STAND_REACH
 /// (rings out, then z 0, +1, -1, +2, -2); else the target as before.
+/// ★ W12-a-b: THE ON-TOP TARGET STANDS -- an Untargeted job's approach
+/// target is its cell plus one (the classic on-top target), so a target
+/// whose cell below is standable stands as it always did; only a target
+/// whose own column cannot be stood on is moved.
 pub(crate) fn search_stand(target: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> bool) -> Vec3<i32> {
-    if standable(target) {
+    if standable(target) || standable(target - Vec3::unit_z()) {
         return target;
     }
     for r in 1..=SEARCH_STAND_REACH {
@@ -55561,6 +55565,7 @@ mod tests {
     fn the_search_aims_at_the_stand_not_the_stone() {
         let t = Vec3::new(10, 10, 5);
         assert_eq!(search_stand(t, |c| c == t), t, "a standable target stands");
+        assert_eq!(search_stand(t, |c| c == t - Vec3::unit_z()), t, "one below stands: the on-top target stands (W12-a-b)");
         assert_eq!(search_stand(t, |c| c == t + Vec3::new(1, 0, 0)), t + Vec3::new(1, 0, 0), "one east stands");
         assert_eq!(search_stand(t, |c| c == t + Vec3::new(0, -2, 1)), t + Vec3::new(0, -2, 1), "two south, one up, in the second ring");
         assert_eq!(search_stand(t, |_| false), t, "nothing within reach: the target as before");

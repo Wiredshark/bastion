@@ -1812,6 +1812,19 @@ one dip a day against 5-18 without it; the dip is W13-c's case,
 one a day, and stays in the ledger; the 11 unreachable are read
 again on the next b2 pair before they are a row.
 
+W13-b-r at day 2 on b2 (read 00:02, hour 0 of day 2; the pair ran
+on until W12-a-b's stage): EMBED WATCH 3 over two days (2 by day 1,
+one more on day 1; the no-raise pair carried 5 by day 1 and 21 by
+hour 8 of day 2), arrivals 1,450 (W13-w 1,215 by hour 15 of day
+1), stuck 0. The raise holds at one embed a day. Two counts rose
+with the day: unreachable deliveries 48 (11 by day 1; 20
+UNREACHABLE APPROACH lines, 10 NoDoor probes -- the W12-a stand
+class, read next on the W12-a-b pair, whose rule is that very
+target) and the pump's exhausted deliveries 2,729 over the two
+days (the flat arm prints no longest-tier line; W15-i1 classifies
+them by direction, W14 damps the re-asks). The store's max cell
+918 is the wheat-seed stack (seeds merge by def), not the larder.
+
 ## W14, registered 22:12 (keyed on the W15-i1 stage; the queue's end)
 
 THE SEARCH IS NOT ASKED TWICE. Found while E2-m built, by mining
