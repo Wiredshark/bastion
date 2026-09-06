@@ -9560,6 +9560,18 @@ pub(crate) fn fresh_exhausts(count: u8, struck: u8) -> u8 {
     count.saturating_sub(struck)
 }
 
+/// ★ W14-i7 pinned: THE FLOOD NAMES ITS WALKER. The chaser's Longest-exhaust
+/// count, read at the mover's write for every walker, names a new exhaustion
+/// whenever it differs from the last count seen and is not zero (a complete
+/// route resets it to zero; a reset followed by a fresh exhaustion between
+/// two writes still reads as new).
+pub(crate) fn exhaust_rose(seen: u8, now: u8) -> bool {
+    now != seen && now > 0
+}
+
+/// ★ W14-i7: the witness count.
+pub(crate) static FLOOD_NAMED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W18-i pinned: THE BODY NAMES ITS BOB. A drop of two blocks or more by
 /// the mover, at the same cell (within one block) as this body's previous
 /// such drop and within `BOB_WINDOW_TICKS` of it, is a bob: the surface
@@ -14516,6 +14528,9 @@ pub struct JobBoard {
     /// ★ W14-e: how many of the chaser's Longest exhaustions this walker's
     /// held job has already been struck for (cleared with the streak).
     pub exhausts_struck: HashMap<Uid, u8>,
+    /// ★ W14-i7: the last Longest-exhaust count seen per walker at the mover's
+    /// write (the flood names its walker).
+    pub exhausts_seen: HashMap<Uid, u8>,
     /// ★ W18-i: each body's last two-block-or-more mover drop (cell, tick)
     /// and how many bobs it has made at that cell since.
     pub bob_last: HashMap<Uid, (Vec2<i32>, u64)>,
@@ -42517,6 +42532,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if let Some(u) = uids.get(entity) {
                     board.last_push_site.insert(*u, site);
                 }
+                // ★ W14-i7: THE FLOOD NAMES ITS WALKER -- every walker passes
+                // here; the chaser's exhaust count is read against the last
+                // count seen and each rise is witnessed with who and for what.
+                if let Some(u) = uids.get(entity).copied()
+                    && let Some(a) = agents.get(entity)
+                {
+                    let snap = a.chaser.diagnostic_snapshot();
+                    let seen = board.exhausts_seen.get(&u).copied().unwrap_or(0);
+                    if snap.longest_exhausts != seen {
+                        board.exhausts_seen.insert(u, snap.longest_exhausts);
+                        if exhaust_rose(seen, snap.longest_exhausts) {
+                            let n = FLOOD_NAMED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                            if n <= 16 || n.is_power_of_two() {
+                                let job = active_jobs.get(entity).map(|aj| aj.job);
+                                let (kind, job_pos) = job
+                                    .and_then(|j| board.jobs.get(&j))
+                                    .map(|j| (format!("{:?}", j.kind), Some(j.pos)))
+                                    .unwrap_or_else(|| ("none".to_string(), None));
+                                info!(
+                                    uid = u.0.get(),
+                                    ?job,
+                                    kind = %kind,
+                                    ?job_pos,
+                                    target = ?snap.last_search_target,
+                                    route_target = ?snap.route_target,
+                                    exhausts = snap.longest_exhausts,
+                                    feet = ?new_pos,
+                                    named = n,
+                                    "bastion: THE FLOOD NAMES ITS WALKER — a whole-town search exhausted; who asked, and for what (W14-i7)"
+                                );
+                            }
+                        }
+                    }
+                }
                 if let Some(p) = positions.get_mut(entity) {
                     let prev = p.0;
                     p.0 = new_pos;
@@ -56894,6 +56943,19 @@ mod tests {
         assert_eq!(chaser_terminal_strike(6, 2), Some((3, true)), "third episode: benched");
         assert_eq!(chaser_terminal_strike(5, 2), None, "below the streak: nothing");
         assert_eq!(chaser_terminal_strike(0, 0), None, "no streak: nothing");
+    }
+
+    /// ★ W14-i7 pinned: a count that rose from the last seen names a new
+    /// exhaustion; the same count, or a reset to zero, does not; a reset
+    /// followed by a fresh exhaustion between two writes (2 -> 1) does.
+    /// Planted defect: "rose" as a plain greater-than -> red on 2 -> 1.
+    #[test]
+    fn the_flood_names_its_walker() {
+        assert!(exhaust_rose(0, 1), "the first exhaustion");
+        assert!(exhaust_rose(2, 3), "the third");
+        assert!(!exhaust_rose(1, 1), "nothing new");
+        assert!(!exhaust_rose(1, 0) && !exhaust_rose(0, 0), "a reset is not an exhaustion");
+        assert!(exhaust_rose(2, 1), "a reset and a fresh exhaustion between two writes: named");
     }
 
     /// ★ W14-i6 pinned: three strikes make an arrival a false proof; two do

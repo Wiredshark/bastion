@@ -3054,6 +3054,152 @@ benched= fields and the false-proof witness on the arms' next
 restarts (b1 boarded W14-w ten seconds before this stage; b2 boards
 the latest pair at ~17:00). W14-g's chain fires at +300 s.
 
+### W18-c's third day on b1 (W14-w pair; read by hand 17:04 at day 1 hour 0): the outcome bars hold, the arrivals question needs its own baseline
+
+Starving sleepers 0 (STARVING lines 16, all colonist 53 awake and
+walking to eat after a shun), FETCH STALLED 16, STUCK CENSUS 6,
+bobs peak 2, fetch bans 5 / other 4 (the ledge-foot jump class),
+flood 18 (the quiet day), bench lines 2 = distinct jobs 2 (W14-w's
+unit holds all day), NIGHT SHELF EMPTY 0, supper yields 0. Arrivals
+839 at the hour-0 frame: the three W18-c days read 828, 863, 839
+there against ONE W18-b-only day's 991 -- a consistent ~13% below
+one comparison day, which is not a baseline (COUNTS VARY 2-3x;
+three replicates or nothing applies to the baseline too). At the
+registered hour-6 frame the two prior days read 889 and 916; the
+reader's block (~17:10) gives the third. Disposal stands: W18-c's
+mechanism works (bobs 128-256 -> 2, the held bodies stall and the
+consumers act, no starver on the W18-b2 days); its arrivals cost is
+an open WATCH with a baseline to collect, not a verdict.
+
+Float-aware pit count on b1 today: 23 mover writes into the pit's
+columns at z 179 -- bodies step in and out (the assist lifts them;
+bobs peak 2; no starver). W18-b2's "drops 0" bar fails on b1 as
+on b2 for the same reason: the pit is not a Closed basin by the
+rule, and W18-c is what keeps a body from bobbing in it.
+
+### W14-w2 registered (17:12): THE BENCH HAS ONE DOOR (instrument honesty)
+
+Mechanism: SilentBench { StuckTimeoutRelease, SelfRescueNoAccess,
+NotExposed } + silent_bench_label(reason); each of the three silent
+writers (39178, 44776, 48401) now tests bench_is_new(true,
+job.unreachable), sets the flag as before, and prints "UNREACHABLE
+PROVEN -- job benched off the board (silent writer named)" with the
+job and its reason. The five strike sites are unchanged; no state,
+gate or route changes. Pin the_bench_has_one_door (three labels,
+non-empty and distinct; the door with bench = true); falsifier
+empties the stuck-timeout label -> red. Bar (the next days): bench
+lines by label sum to the distinct benched jobs per latch period;
+on b2 the silent-writer lines number at least the arrivals with
+strikes >= 3 and no strike-site bench line (four today); the
+stuck-timeout label leads. Falsified as an instrument if arrivals
+still carry strikes >= 3 with no bench line of any label. Rejected:
+one JobBoard::bench method for all eight writers (five sites hold
+&mut Job while the board is borrowed); removing the silent benches
+(they are the town's design). Queued behind W14-i7 (bastion-server).
+
+### W14-i6 on b2, the first day to hour 18 (17:08; e4351e2457): FOUR false proofs, and strikes without a bench line
+
+THE PROOF WAS FALSE x4: job 539 (Haul to (7662,6370,182), colonist
+63, strikes 4), job 328 (Designated at (7721,6354,184), colonist
+156, strikes 3), job 676 (Haul to (7704,6347,182), colonist 144,
+strikes 3), job 663 (Haul to (7640,6367,181), colonist 21, strikes
+4). Eleven arrivals carried strikes >= 1 (1: 3, 2: 4, 3: 2, 4: 2);
+benched=true at arrival 0. Bench lines all day: ONE (a terminal
+chaser bench) -- so four jobs reached three or four strikes with no
+bench witness: either a writer sets unreachable without a witness
+(the bench_is_new gate then hides the transition) or the strikes
+came from an arm whose witness did not print; the grep below names
+the writers. Three of the four false proofs are Hauls to STORE
+cells at z 181-182 -- the same z as the far class's ends -- and the
+walkers arrived (arrive_dist 2): the search cannot satisfy a store
+cell it may not enter, the walker never has to. If W14-i7 shows the
+far ends are store and shelf cells, the far class is not plot
+geometry but a target cell the search demands exactly while the
+job only needs adjacency -- GENERATOR AND CONSUMER MUST AGREE on
+what "reached" means. Flood 509 by hour 18 (far 359, touched 150);
+stalls 0; arrivals 663.
+
+The silent benches, found (17:10): three writers set
+job.unreachable = true with no witness and no strike -- the
+stuck-timeout RELEASE path (bastion_jobs.rs 39178, "retries are the
+mechanism": every non-haul stuck timeout benches the job silently),
+the self-rescue's None arm (44776: no auto-access could be emitted),
+and the exposure check (48401: a designation with no open face). So
+W14-w's "one witness per bench" covers the five STRIKE sites only;
+a job benched silently first never prints its later third strike
+(the gate reads unreachable already true). NOT evidenced by W14-w,
+now evidenced: its unit read (bench lines == distinct benched jobs)
+undercounts benches; the honest count needs one door -- a
+JobBoard::bench(job, reason) that every writer goes through, with
+the witness there (candidate W14-w2 THE BENCH HAS ONE DOOR). And
+W14-i6's four false proofs are jobs whose strikes came from W14-e2's
+Longest exhausts (no approach proofs today) after a silent bench:
+the "proof" was a budget exhaustion on a store-cell target that the
+walker then reached to within two blocks -- the far class is not
+unreachability, it is the search demanding the exact end cell
+while the job needs adjacency, most likely at doorways and
+interiors the admission rules refuse to the search and the glide
+walks through (the frontier's 663 floorless-or-refused air cells).
+W14-i7's walker names settle it.
+
+### W14-g landed (a468786d41, staged 17:02:18; shipped to lab-bin 17:02:24)
+
+Chain bw6thgwjl: check ok, pin the_search_restarts_when_its_end_moves
+green, committed a468786d41, both halves from one commit (common/
+changed), the server exe carries "THE END MOVED UNDER THE SEARCH"
+(grep 3) beside the W14-i5, W14-i6 and W18-b2 witnesses. Falsifier
+RED at 17:07 (the tag test planted always-false in its own
+worktree: the moved goal on the old heap found no Path; 0 passed,
+1 failed; restored, 0 dirty). W14-i7's chain fired at 17:07:18.
+Readers for the W14-g pair are armed behind the W18-c readers
+(wait-w14g-b1/b2) so the arms keep restarting daily after the
+current cascade; the first-hour live reads come from two waiters
+keyed on each arm's next boot.
+Live read: b1 at the W14-e2 reader's restart (~17:25), b2 at the
+W18-c reader's restart (~17:35, with the diag) -- the first hour's
+bar: the restart witness >= 1 on each arm, the touched class
+(closest_dist=0) at 0, LONGEST-EXHAUST falling toward 60 a day on
+b2 (644 today). lab-bin is a468786d41 (playable).
+
+### b1 on W14-w (6e60a081ff since 16:34), hour 19 (16:55): the third W18-c day's afternoon
+
+Arrivals 688 at hour 19 (688 on the second W18-c day at hour 19,
+686 on the first: three days identical at this frame), FETCH
+STALLED 15 (16 / 13 on the W18-b2 days; (7664,6432) x9 -- the ledge
+foot), CLIMB BANNED fetch 5 (all under a two-block edge, trunk
+frame: the jump the trunk plans and the glider cannot make -- W2-b's
+class, five today), other 3, STUCK CENSUS 3 distinct, bobs peak 2,
+starving sleepers 0, W14-e2 bench 1, terminal 1, LONGEST-EXHAUST 17
+for the day so far (the ledge arm's flooders absent today), bench
+lines 2 = distinct jobs 2 (W14-w's unit holding). The night block
+(~17:20) closes the third replicate.
+
+### W14-i6 on b2, first look (16:47; e4351e2457 since 16:42, hour 10)
+
+Every B5 arrival line carries strikes= and benched= (219 of 219;
+all strikes=0 so far -- no job struck three times by hour 10), THE
+PROOF WAS FALSE 0, bench lines 0 (W14-w's unit read waits for the
+first bench). Flood 84 by hour 10 (far 64, touched 20), stalls 0,
+starving none. The instrument's field bar PASSED; its false-proof
+count reads at the day's end.
+
+### W14-g: check ok, pin GREEN, committed a468786d41 (16:46; building both)
+
+The slab pin held every assumption: one Small poll toward a goal 110
+blocks east stayed Pending with >= 200 iterations spent; the next
+poll toward the cell one block behind the start returned a Path in
+under 50 expansions; two polls toward the same far goal continued
+one search (> 250 spent); the tag rule and the tag's distinctness
+held. Stage ~17:02 (common/ changed: both halves rebuild), then the
+falsifier (the tag test always false -> the moved goal on the old
+heap -> no Path -> red) and W14-i7's chain at +300 s. Live read: b2
+boards the pair at the W18-c reader's restart (~17:35) with the
+diag; b1 at the W14-e2 reader's restart (~17:25). b1's flood is
+quiet today (3 exhausts by hour 14 against 139-256 on earlier days;
+LONGEST-TIER step lines 1,100 against 40-54k: the producers -- a few
+colonists with specific targets -- are absent, not a change), so b2
+is the read that counts.
+
 ### W14-i7 registered (16:25): THE FLOOD NAMES ITS WALKER (instrument)
 
 No log line ties an exhaust to its walker (the search has no uid;
