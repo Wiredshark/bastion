@@ -9537,6 +9537,46 @@ pub(crate) fn fresh_exhausts(count: u8, struck: u8) -> u8 {
 /// taken again (one body: 242 drops in fourteen minutes at one cell).
 pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
 
+/// ★ W18-b pinned: THE BODY DOES NOT DROP INTO A CELL IT CANNOT LEAVE. A
+/// two-block drop is taken only when its landing has a way up: a walk over
+/// standable cells, one block up or down per step, within
+/// `DROP_EXIT_RADIUS` blocks, reaches a cell as high as the edge dropped
+/// from. A two-deep pit whose floor meets only its own rim two above has
+/// none, and a body that dropped in bobbed there through an evening at
+/// hunger 0.00 (colonist 16, (7712,6306), 39 drops) and went to bed
+/// starving.
+pub(crate) const DROP_EXIT_RADIUS: i32 = 4;
+
+pub(crate) static DROPS_REFUSED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+pub(crate) fn drop_has_way_up(
+    standable: impl Fn(Vec3<i32>) -> bool,
+    landing: Vec3<i32>,
+    edge_z: i32,
+) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    seen.insert(landing);
+    queue.push_back(landing);
+    while let Some(c) = queue.pop_front() {
+        if c.z >= edge_z {
+            return true;
+        }
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for dz in [1, 0, -1] {
+                let n = c + Vec3::new(dx, dy, dz);
+                if (n.x - landing.x).abs() > DROP_EXIT_RADIUS || (n.y - landing.y).abs() > DROP_EXIT_RADIUS {
+                    continue;
+                }
+                if standable(n) && seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+    }
+    false
+}
+
 pub(crate) fn bob_repeats(prev: Option<(Vec2<i32>, u64)>, cell: Vec2<i32>, now: u64) -> bool {
     prev.is_some_and(|(c, t)| {
         (c - cell).map(|e| e.abs()).reduce_max() <= 1 && now.saturating_sub(t) <= BOB_WINDOW_TICKS
@@ -37065,6 +37105,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 && !solid(feet)
                                                 && !solid(head)
                                             {
+                                                // ★ W18-b: a two-block drop only where the
+                                                // landing has a way up.
+                                                if dz == -2
+                                                    && !drop_has_way_up(
+                                                        |c| common::path::colonist_walkable(&*terrain, c),
+                                                        feet,
+                                                        fz,
+                                                    )
+                                                {
+                                                    let n = DROPS_REFUSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                    if n.is_power_of_two() {
+                                                        info!(
+                                                            uid = uids.get(entity).map(|u| u.0.get()),
+                                                            landing = ?feet,
+                                                            edge_z = fz,
+                                                            refused = n,
+                                                            site = "bridge",
+                                                            "bastion: THE DROP HAS NO WAY UP — a two-block step refused; the body holds at the edge (W18-b)"
+                                                        );
+                                                    }
+                                                    continue;
+                                                }
                                                 return Some((fz + dz) as f32);
                                             }
                                         }
@@ -37549,6 +37611,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             && !solid(feet)
                                             && !solid(head_c)
                                         {
+                                            // ★ W18-b: a two-block drop only where the
+                                            // landing has a way up.
+                                            if dz == -2
+                                                && !drop_has_way_up(
+                                                    |c| common::path::colonist_walkable(&*terrain, c),
+                                                    feet,
+                                                    fz,
+                                                )
+                                            {
+                                                let n = DROPS_REFUSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                if n.is_power_of_two() {
+                                                    info!(
+                                                        uid = uids.get(entity).map(|u| u.0.get()),
+                                                        landing = ?feet,
+                                                        edge_z = fz,
+                                                        refused = n,
+                                                        site = "walk",
+                                                        "bastion: THE DROP HAS NO WAY UP — a two-block step refused; the body holds at the edge (W18-b)"
+                                                    );
+                                                }
+                                                continue;
+                                            }
                                             landed = Some((fz + dz) as f32);
                                             break;
                                         }
@@ -56551,6 +56635,25 @@ mod tests {
             common::path::jumps_admitted(TRUNK_SCRAMBLE_REACH, true, true, false),
             "the trunk plans the two-up jump edge"
         );
+    }
+
+    /// ★ W18-b pinned: a two-deep pit whose floor meets only its rim two
+    /// above has no way up; a ramp cell one up beside the floor gives one;
+    /// a one-block edge is always climbable. Planted defect: the walk's
+    /// radius zeroed -> red on the ramp.
+    #[test]
+    fn the_body_does_not_drop_into_a_cell_it_cannot_leave() {
+        let o = Vec3::new(10, 10, 179);
+        let pit = |c: Vec3<i32>| {
+            let dx = (c.x - 10).abs();
+            let dy = (c.y - 10).abs();
+            (c.z == 179 && dx <= 1 && dy <= 1) || (c.z == 181 && dx.max(dy) == 2)
+        };
+        assert!(!drop_has_way_up(pit, o, 181), "a two-deep pit: no way up");
+        let ramp = |c: Vec3<i32>| pit(c) || c == Vec3::new(12, 10, 180);
+        assert!(drop_has_way_up(ramp, o, 181), "a ramp cell one up beside the floor: a way up");
+        let step = |c: Vec3<i32>| c.z == 179 || c == Vec3::new(11, 10, 180);
+        assert!(drop_has_way_up(step, o, 180), "a one-block edge with a cell one up beside it: a way up");
     }
 
     /// ★ W18-i pinned: a second drop at the same cell within the window is

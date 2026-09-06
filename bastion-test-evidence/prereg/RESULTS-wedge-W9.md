@@ -2906,6 +2906,74 @@ loops 7 with arrivals 1,013. Both consumers (W6-D for the loops,
 W14-d for the floods) are aboard from the W14-d pair on; the
 decision rule's day is the first full b1 day on that pair.
 
+### W14-e replicate 2: b1 hour 19 (203321df48 under the W14-c reader; 13:41) -- the flood at full scale, unconsumed
+
+LONGEST-EXHAUST 629 by hour 19 (90 on replicate 1 for the whole
+day: the flood's day-to-day range on this arm is 21 to 654),
+LONGEST-TIER lines 53,901, top ends 41x(7632,6281,182),
+33x(7685,6459,182), 31x(7679,6203,181), benches by Longest
+exhausts 0 (the reset defect, W14-e2 boards b1 at the next
+restart), route-proof benches 5; CLIMB BANNED (fetch) 3, other 1,
+PROMISED CLIMB TAKEN 3, FETCH STALLED 17, budgets expired 19, STALL
+BLAMED 3, stuck 9, arrivals 744, starving 0, p95 738. W14-e FAILED
+twice as landed; W14-e2's first day is the read that matters.
+
+### W14-e2 landed (537c8031e6, staged 13:38:38; both halves, common/ changed)
+
+Check green across both crates, the common-crate pin green on the
+chain (1 test passed, 714 filtered), the client rebuilt with the
+server; shipped to lab-bin at 13:39. The falsifier planted the
+partial arm zeroed at 13:40 and the pin went RED at 13:43, the tree
+restored clean (0 dirty); W18-b's chain fired at 13:43 (stage
+~14:10). Nine rows landed today with red falsifiers. b1 boards this pair at the W6-D reader's
+restart after the replicate-2 night block (~14:07): the flood fix's
+first ledge-arm day, whose first-hour witness (benches "three
+exhausted Longest searches" >= 1 once an end repeats three times)
+is read by hand at hour ~12 (~14:40), per the memory filed today.
+
+### W18-b registered (13:36): THE BODY DOES NOT DROP INTO A CELL IT CANNOT LEAVE
+
+Mechanism: `drop_has_way_up(standable, landing, edge_z)` -- a
+breadth-first walk from the landing over colonist-standable cells,
+one block up or down per step, within `DROP_EXIT_RADIUS` (4) in x
+and y, true when it reaches a cell at least as high as the edge.
+Both surface probes (the walk probe and the pure-glide bridge's
+`surface_at`) consult it on the -2 arm only: a -2 landing without a
+way up is skipped, the probe finds no surface, the body holds at
+the edge and the stall's consumers act; steps of 0, +1 and -1 are
+untouched. A refused drop is counted (DROPS_REFUSED) and logged at
+powers of two as "THE DROP HAS NO WAY UP" (uid, landing, edge_z,
+count, the probe). Pin `the_body_does_not_drop_into_a_cell_it_
+cannot_leave` (a two-deep pit whose floor meets only its rim: no
+way up; a ramp cell one up beside the floor: a way up; a one-block
+edge with a cell one up beside it: a way up); falsifier plants the
+radius zeroed. Bars, b2: mover drops of two or more at (7712,6306)
+0 for the day (39, 5, 3), the refusal witness >= 1 there, starving
+sleepers after night 1 0 (1 tonight), the bob peak <= 8, FETCH
+STALLED <= 2x the day before, arrivals >= 720; b1: arrivals >= 900,
+starving <= 1, the bob peak <= 8. Falsified if a starving sleeper
+appears with the refusal witness at its cell (holding at the edge
+starves as the pit did: then the edge needs the router), if
+arrivals fall > 10% (the refused edges were routes), or if the
+pit's drops continue (another writer takes the step). Rejected:
+the probe without -2 at all (the trunk's ground-following holds
+two-down steps at every terrace, TRUNK_REJECT_DZ 2); a two-up
+assist out of the pit (a teleport; Ben's open judgement); pricing
+the drop in the router (the router already plans none). Chain
+behind W14-e2 (committed 537c8031e6 at 13:35, building; W18-b's
+stage ~14:20); readers behind the W14-e2 readers.
+
+### W14-e read: b2 day 1 (203321df48 under the W6-D reader; 13:24)
+
+Arrivals 649 (740, 907, 835 on the days before), exhausted 896,
+probes 67 (44 cut_off, 23 sealed), CLIMB BANNED (fetch) 0, other 4
+(colonist 125: 3 across jobs, no bench by design), PROMISED CLIMB
+TAKEN 4, FETCH STALLED 10, budgets expired 28, STALL BLAMED 1,
+unreachable 0, starving sleepers 1 (colonist 16, the pit), W14-d's
+benches 3 (jobs 490, 756 and one more: the stuck-branch consumer
+fires more on b2 than on b1), Longest benches 0 (W14-e's reset
+defect), p95 569.
+
 ### The pit cost a meal (b2, 203321df48, hours 20-0; 13:25) -- the pit is the row
 
 The two-minute watch: hour 21 starving 3 (16, 97, 100, all EatFrom
