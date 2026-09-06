@@ -3128,6 +3128,100 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W6-E LANDED (19:39): b3adc86540, both halves, markers 'THE HELD JOB STRIKES' 1 and 'THE HELD JOB STRUCK OUT' 1 in the exe
+
+Pin the_held_job_strikes_and_strikes_out green on the fresh
+compile; committed 19:27, staged 19:39:47, pushed, shipped to
+lab-bin 19:40:35 (playable). Falsifier bjw5mk4x1 planted `climbing
+&& false` at 19:41: the pin went RED (0 passed, 1 failed), 0 dirty
+files restored at 19:44. W6-E is red on its plant. The H1-i chain fires at +300 s (~19:45). Both arms are
+on W18-e (5f7089fbfa) since 19:29 (b2) and 19:38 (b1); they board
+W6-E at their next reader restarts (the W6-E readers, after the
+W18-e days: b2 at hour 6 of day 1 ~20:05, b1 after its night block
+~20:15). The 961 loop has now run three times in three days (961 on
+b1, 71 on b2, 59 on b1: 129 / 15 / 74 reclaims), so the read has a
+live case waiting on each arm.
+
+### W14-g2 full day on b1 (19:36, night block at hour 6 of day 1): PASSED -- 52 exhausts against 807; arrivals 997
+
+The E2-t reader's night block on the 1d8588199c log: LONGEST-EXHAUST
+52 for the whole day (807 / 584 on the two days before: -94%), top
+ends (7713,6394,181) x19, (7723,6412,181) x15 (the far class, two
+store cells); arrivals 997 (bar 900); FETCH STALLED 10; STUCK CENSUS
+15 distinct; starving sleepers 2 (colonist 10 with the empty shelf,
+and one more); bobs peak 2; DROPS refused 2, pit drops 1; NIGHT
+SHELF EMPTY 16 lines; haul releases 25; ledge stalls 10 (5 at
+(7664,6432)); p95 686 us; panics 0. W14-g2's b1 bars all PASS:
+touched class 0, LONGEST-EXHAUST 807 -> 52, FINISHED_DROPPED >= 1,
+arrivals >= 900. THE WHOLE-TOWN FLOOD IS CLOSED ON BOTH ARMS (b2: 20
+by hour 0, 24 -> 71 the day before under W14-g). And the 961 loop ran
+a THIRD time: colonist 59, 75 CLIMB BANNED at (7708,6299,182) from
+23:28 to 23:36 UTC with 74 reclaims (CLIMB BANNED(other) 84 for the
+day) -- W6-E's class, whose pair stages in minutes. The PUMP CENSUS series says the pending 29 / oldest_wait 194 at hour
+6 was the morning burst (pending 0 all night; 39 with oldest 270 s
+at the wake-up, draining to 8 within the hour): the pump's per-tick
+budget meeting fifty colonists asking at once, not a trend. Not a
+row.
+The night: BED CENSUS h22 10, h23 13, h0 13, h1 15, h2 18, h3 23, h4
+24, h5 27 of 50 -- the same onset.
+
+### The fifth night starver (19:31): the empty shelf holds, the upstairs bed does not
+
+b1 tonight (W14-g2 pair, hour 3 of day 1): colonist 10, hunger
+0.02-0.04, RestAt, NIGHT SHELF EMPTY x14 -- and its bed is at
+(7613,6335,181), the ground floor. Five of five night starvers have
+the empty home shelf; four of five slept upstairs. The shelf is the
+class; the bed's floor is a correlate. E2-i3's ledger fields are the
+read that names why the shelf is empty.
+
+### W14-g2 day on b2 (19:19 block at hour 0; the night read by hand at 19:29): PASSED; W6-E's class recurs
+
+The W14-g2 b2 reader's day block (hour 0): LONGEST-EXHAUST 20 (bar
+under 60; 71 on the W14-g day, 513-1,043 before), top ends
+(7705,6393,180) x4, (7721,6340,188) x3; arrivals 758 by hour 0 (bar
+720); FETCH STALLED 4; bobs peak 1, REPEATED LIFT 9 (W18-d fires),
+DROPS refused 128 (the pit: 1 mover drop); starving sleepers 1
+(colonist 67, the empty shelf); p95 502 us; panics 0. CLIMB
+BANNED(other) 18, of which colonist 71 took 15 at (7705,6310,181)
+between 23:11 and 23:19 UTC with 15 "reclaiming suspended RestAt"
+lines -- the 961 loop again, on the other arm, eight minutes long:
+W6-E's read will have a live case. The night (hand read at hour 8):
+BED CENSUS h22 9, h23 12, h0 13, h1 15, h2 17, h3 23, h4 23, h5 25
+of 50 -- the same plateau, the same slow onset. b2 rolls onto W18-e
+(5f7089fbfa) now by the W18-e reader (after hour 6 on the live
+clock, as patched).
+
+### W14-g2 on b1 at hour 0 of day 1 (19:28): THE LEDGE ARM'S FLOOD IS GONE -- 38 exhausts against 600-800, all far
+
+Hand read of the 1d8588199c log at hour 0 (seventeen game hours):
+LONGEST-EXHAUST 38 (the W14-w2 day: ~600 by hour 0, 807 by hour 6;
+the W14-g day 584), every one of them FAR (end_g None), TOUCHED 0
+(the class W14-g2 was built for: 25-36% of the day before); END
+MOVED 9 lines, peak 16; arrivals 918 by hour 0 (875 / 1,033 at hour
+6 on the two days before: the bar of 900 is passed seven hours
+early); FETCH STALLED 8; starving none; bobs peak 2; CLIMB
+BANNED(other) 4. FLOOD NAMES 16: EatFrom 15, Designated 1 -- the
+residual far class is hungry walkers whose store cell the search
+cannot enter (THE GOAL IS A BAND, the judgement item). W14-g2's b1
+bars (touched 0, LONGEST-EXHAUST falling from 807, FINISHED_DROPPED
+>= 1, arrivals >= 900) all PASS at hour 0; the night block confirms.
+
+### The game day got a third shorter under W14-g2 (19:27): the flood was eating the server's wall clock
+
+Boot (hour 7) to hour 0 of day 1, seventeen game hours, by the DAY
+SCHEDULE timestamps: b1 on the W14-g pair 40 min (21:17 -> 21:57
+UTC; 56 min a day), on W14-g2 24.5 min (23:02 -> 23:26:37; 35 min a
+day); b2 on the W14-g pair ~30 min (42 a day), on W14-g2 23 min
+(22:55 -> 23:18:10; 33 a day). The nominal day is 30 min (54,000
+ticks at 30 TPS): both arms now run near nominal, where before the
+whole-town searches (60,000 states per ask, hundreds a day) cost a
+third of the wall clock. Consequences: the readers' clocks (a day is
+now ~35 min, not ~50), the 25-minute waiters read at hour ~1 of day
+1, and Ben's world will feel it directly (the tick budget the
+searches took is back). ITEM 39 p95 did not show it (the search runs
+outside that system's timer). W6-E committed b3adc86540 at 19:27,
+building.
+
 ### E2-i3 registered (19:25): THE EMPTY SHELF NAMES ITS LOADS -- an instrument, no behaviour change
 
 (First named E2-i2; the stale-marker check found e2i2-staged.txt

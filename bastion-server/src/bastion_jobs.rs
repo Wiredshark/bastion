@@ -3081,6 +3081,52 @@ pub fn hour_of_day(time_of_day: f64) -> u32 {
 /// job-type override, or an eventual dynamic planner all just replace this
 /// call. The player-facing editor (DECISIONS-FOR-BEN #117) edits the same
 /// thing. Autonomous first, exposable later — the standing order.
+/// ★ H1-i pinned: THE NIGHT CENSUS NAMES THE AWAKE. One class per colonist
+/// at each night hour: the night watch first (the deliberate exception),
+/// then a bed job arrived (in bed), a bed job not arrived (walking to it),
+/// a bed job suspended and held for reclaim, any other job (working), none
+/// (idle). The census prints the counts, the untired, the rest meter and
+/// the farthest walkers; it changes nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NightClass {
+    InBed,
+    ToBed,
+    BedHeld,
+    Watch,
+    Working,
+    Idle,
+}
+
+pub(crate) fn night_class(watch: bool, holds_rest: bool, arrived: bool, bed_held: bool, has_job: bool) -> NightClass {
+    if watch {
+        NightClass::Watch
+    } else if holds_rest && arrived {
+        NightClass::InBed
+    } else if holds_rest {
+        NightClass::ToBed
+    } else if bed_held {
+        NightClass::BedHeld
+    } else if has_job {
+        NightClass::Working
+    } else {
+        NightClass::Idle
+    }
+}
+
+/// ★ H1-i: the hours the census covers (the sleep block and its shoulders).
+pub(crate) fn night_census_hour(hour: u32) -> bool {
+    hour >= 21 || hour <= 6
+}
+
+/// ★ H1-i: the hour last printed (one line per game hour).
+pub(crate) static NIGHT_CENSUS_LAST_HOUR: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// ★ H1-i: a job kind's variant name, payload dropped.
+pub(crate) fn job_kind_name(kind: &common::bastion::JobKind) -> String {
+    let s = format!("{:?}", kind);
+    s.split(|c: char| c == ' ' || c == '(' || c == '{').next().unwrap_or("").to_string()
+}
+
 pub fn default_schedule_block(hour: u32) -> ScheduleBlock {
     match hour % 24 {
         22 | 23 | 0..=5 => ScheduleBlock::Sleep,
@@ -50326,6 +50372,85 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         );
                     }
                 }
+                // ★ H1-i: NIGHT CENSUS — who is awake at this hour, and why.
+                // One line per game hour from 21 to 6; no behaviour change.
+                if night_census_hour(hour) {
+                    let last = NIGHT_CENSUS_LAST_HOUR.swap(hour, core::sync::atomic::Ordering::Relaxed);
+                    if last != hour {
+                        let interrupt = common::bastion::MoodConfig::current().rest.interrupt;
+                        let mut n = [0usize; 6];
+                        let mut kinds: HashMap<String, usize> = HashMap::new();
+                        let mut far: Vec<(u64, i32, f32, String, Vec3<i32>)> = Vec::new();
+                        let mut feet_z: HashMap<i32, usize> = HashMap::new();
+                        let mut untired = 0usize;
+                        let mut rest_min = 1.0f32;
+                        let mut rest_sum = 0.0f32;
+                        let mut roster = 0usize;
+                        for (_, e) in (&colonists, &entities).join() {
+                            roster += 1;
+                            let uid = uids.get(e).copied();
+                            let watch = uid.is_some_and(|u| board.night_watch.contains(&u));
+                            let aj = active_jobs.get(e);
+                            let job = aj.and_then(|a| board.jobs.get(&a.job));
+                            let holds_rest = job.is_some_and(|j| {
+                                matches!(j.kind, common::bastion::JobKind::RestAt { .. })
+                            });
+                            let arrived = aj.is_some_and(|a| a.state == comp::bastion::ActiveJobState::Arrived);
+                            let bed_held = arbiters
+                                .get(e)
+                                .and_then(|a| a.pending_self_job)
+                                .and_then(|id| board.jobs.get(&id))
+                                .is_some_and(|j| matches!(j.kind, common::bastion::JobKind::RestAt { .. }));
+                            let class = night_class(watch, holds_rest, arrived, bed_held, aj.is_some());
+                            n[class as usize] += 1;
+                            let rest = needs_storage.get(e).map(|nd| nd.rest).unwrap_or(1.0);
+                            rest_min = rest_min.min(rest);
+                            rest_sum += rest;
+                            if let Some(p) = positions.get(e) {
+                                *feet_z.entry(p.0.z.floor() as i32).or_insert(0) += 1;
+                            }
+                            if !holds_rest && !watch && rest >= interrupt {
+                                untired += 1;
+                            }
+                            if let (Some(a), Some(j)) = (aj, job) {
+                                if class == NightClass::Working {
+                                    *kinds.entry(job_kind_name(&j.kind)).or_insert(0) += 1;
+                                }
+                                if class == NightClass::ToBed
+                                    && let Some(p) = positions.get(e)
+                                {
+                                    let d = (j.pos.map(|c| c as f32) - p.0).magnitude() as i32;
+                                    far.push((uid.map(|u| u.0.get()).unwrap_or(0), d, a.stuck_time, format!("{:?}", a.state), p.0.map(|c| c.floor() as i32)));
+                                }
+                            }
+                        }
+                        far.sort_by(|a, b| b.1.cmp(&a.1));
+                        far.truncate(3);
+                        let mut feet_z: Vec<(i32, usize)> = feet_z.into_iter().collect();
+                        feet_z.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+                        feet_z.truncate(5);
+                        let mut kinds: Vec<(String, usize)> = kinds.into_iter().collect();
+                        kinds.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+                        kinds.truncate(6);
+                        info!(
+                            hour,
+                            roster,
+                            in_bed = n[0],
+                            to_bed = n[1],
+                            bed_held = n[2],
+                            watch = n[3],
+                            working = n[4],
+                            idle = n[5],
+                            untired,
+                            rest_min,
+                            rest_mean = if roster > 0 { rest_sum / roster as f32 } else { 1.0 },
+                            ?kinds,
+                            ?far,
+                            ?feet_z,
+                            "bastion: NIGHT CENSUS — who is awake at this hour, and why (H1-i)"
+                        );
+                    }
+                }
                 // ROW 27: derive the NIGHT WATCH roster on the same clock
                 // cadence — renewable by construction (re-derived from the
                 // guard lane each time, like farm demand; a died/demoted
@@ -57164,6 +57289,24 @@ mod tests {
         assert!(bench_is_new(true, false), "the third strike on a claimable job: a bench");
         assert!(!bench_is_new(true, true), "the fourth strike on a benched job: the same bench, not a new one");
         assert!(!bench_is_new(false, false) && !bench_is_new(false, true), "no bench is never new");
+    }
+
+    /// ★ H1-i pinned: the night census classifies every colonist by one
+    /// rule -- watch first, then in bed, walking to bed, bed held, working,
+    /// idle -- and covers hours 21 to 6. Planted defect: the arrived arm
+    /// dropped (a walker counted in bed) -> red.
+    #[test]
+    fn the_night_census_classifies_the_awake() {
+        use NightClass::*;
+        assert_eq!(night_class(true, true, true, false, true), Watch, "the night watch is the deliberate exception");
+        assert_eq!(night_class(false, true, true, false, true), InBed, "a bed job arrived: in bed");
+        assert_eq!(night_class(false, true, false, false, true), ToBed, "a bed job not arrived: a walker, not a sleeper");
+        assert_eq!(night_class(false, false, false, true, false), BedHeld, "a suspended bed job: held, not in bed");
+        assert_eq!(night_class(false, false, false, false, true), Working, "any other job at night: working");
+        assert_eq!(night_class(false, false, false, false, false), Idle, "no job: idle");
+        assert!(night_census_hour(21) && night_census_hour(0) && night_census_hour(6), "the block and its shoulders");
+        assert!(!night_census_hour(7) && !night_census_hour(20), "the day is not counted");
+        assert_eq!(job_kind_name(&common::bastion::JobKind::RestAt { bed_pos: Vec3::zero() }), "RestAt");
     }
 
     /// ★ W6-E pinned: a banned climb strikes the held job; the first two
