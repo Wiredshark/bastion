@@ -7821,6 +7821,21 @@ pub(crate) fn haul_claim_admitted(carried: bool, cargo_in_world: bool) -> bool {
     carried || cargo_in_world
 }
 
+/// ★ FS1: THE FAIL-SAFE WAITS FOR THE DIGGERS. The ultimate fail-safe (the
+/// teleport to ground, a design violation kept as the last resort) used to
+/// fire at STUCK_TELEPORT_SECS regardless of the town's own answer: an
+/// emergency access plan whose cells were still undug. b1, pair 3b9661d2:
+/// colonist 71's one-cell dig plan was emitted at 13:00:39Z and the teleport
+/// fired at 13:02:19Z with the cell untouched. While a rescue dig for this
+/// colonist is pending, the fail-safe holds until the stuck clock reaches the
+/// extended limit (STUCK_TELEPORT_SECS + RESCUE_PATIENCE_SECS); then it fires
+/// as before, so a dig nobody comes to cannot hold a body forever.
+pub(crate) const RESCUE_PATIENCE_SECS: f32 = 300.0;
+
+pub(crate) fn failsafe_holds(cells_pending: usize, stuck_secs: f32, limit_secs: f32) -> bool {
+    cells_pending > 0 && stuck_secs < limit_secs
+}
+
 pub(crate) static HAULS_WITHOUT_CARGO: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 pub const FOOD_DEFS: &[&str] = &[
@@ -48605,6 +48620,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     cells = cells.len(),
                     "bastion: emergency access restored (REQ-0040)"
                 );
+                info!(
+                    owner = owner.0.get(),
+                    cells = cells.len(),
+                    stuck_secs = ?board.stuck_watch.get(&owner).copied(),
+                    "bastion: THE RESCUE PLAN ENDED — its cells are restored; the fail-safe held while they were pending (FS1)"
+                );
             }
 
             const STUCK_TELEPORT_SECS: f32 = 60.0;
@@ -48857,6 +48878,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     continue;
                 }
                 let stuck_seconds = *secs;
+                // ★ FS1: THE FAIL-SAFE WAITS FOR THE DIGGERS -- a rescue dig
+                // pending for this colonist holds the teleport until the
+                // extended limit; witnessed every 30 s of the hold.
+                let pending_fs1 = board
+                    .emergency_access_cells
+                    .values()
+                    .filter(|(cell_owner, _)| *cell_owner == *uid)
+                    .count();
+                let limit_fs1 = STUCK_TELEPORT_SECS + RESCUE_PATIENCE_SECS;
+                if failsafe_holds(pending_fs1, stuck_seconds, limit_fs1) {
+                    if (stuck_seconds as u64) % 30 == 0 {
+                        info!(
+                            uid = uid.0.get(),
+                            secs = stuck_seconds,
+                            cells_pending = pending_fs1,
+                            limit = limit_fs1,
+                            "bastion: THE FAIL-SAFE WAITS FOR THE DIGGERS — a rescue dig is pending for this colonist; no teleport while it is (FS1)"
+                        );
+                    }
+                    continue;
+                }
                 if let Some(d) = dest {
                     let active_job = active.map(|active| active.job);
                     let active_job_state = active.map(|active| format!("{:?}", active.state));
@@ -48959,6 +49001,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         ?character_state,
                         ?velocity,
                         access_jobs_pending,
+                        rescue_cells_pending = pending_fs1,
                         terminal_cause,
                         "bastion: ULTIMATE FAIL-SAFE — teleporting stuck colonist to ground \
                          (organic egress tiers failed)"
@@ -59072,6 +59115,19 @@ mod tests {
     }
 
     /// ★ E2-v pinned: carried or in the world admits; neither refuses.
+    /// FS1: the fail-safe holds only while a rescue dig is pending for the
+    /// colonist and its stuck clock is under the extended limit; no dig, or
+    /// the patience spent, and it fires as before. Planted defect: a hold
+    /// that never holds -> red.
+    #[test]
+    fn the_fail_safe_waits_for_the_diggers() {
+        assert!(failsafe_holds(1, 100.0, 360.0), "a pending dig at 100 s holds the teleport");
+        assert!(failsafe_holds(3, 359.0, 360.0), "under the limit it still holds");
+        assert!(!failsafe_holds(0, 100.0, 360.0), "no pending dig: the fail-safe fires as before");
+        assert!(!failsafe_holds(1, 360.0, 360.0), "the patience spent: the fail-safe fires");
+        assert!(RESCUE_PATIENCE_SECS >= 240.0, "the patience covers a miner's walk and a few cells");
+    }
+
     /// Planted defect: every claim admitted -> red.
     #[test]
     fn the_haul_has_no_cargo() {
