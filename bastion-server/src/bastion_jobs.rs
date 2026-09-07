@@ -3125,6 +3125,31 @@ pub(crate) fn dist_label(d: f32) -> String {
     }
 }
 
+/// ★ W6-I pinned: THE OVER-REACH STEER NEEDS A BUILT LADDER. The nearest
+/// anchor within 24 blocks and the z window, and -- when built_only -- only
+/// an anchor whose ladder has been built. A plan is a designation, not a
+/// climb: the walker keeps its route.
+pub(crate) fn over_reach_anchor(
+    anchors: &[(Vec3<i32>, bool)],
+    feet: Vec3<i32>,
+    job_z: i32,
+    pos_xy: Vec2<f32>,
+    built_only: bool,
+) -> Option<Vec3<i32>> {
+    anchors
+        .iter()
+        .filter(|(_, built)| !built_only || *built)
+        .filter(|(a, _)| a.z >= feet.z - 2 && a.z <= job_z + 2 && a.xy().map(|e| e as f32).distance(pos_xy) < 24.0)
+        .min_by(|(a, _), (b, _)| {
+            let da = a.xy().map(|e| e as f32).distance(pos_xy);
+            let db = b.xy().map(|e| e as f32).distance(pos_xy);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(a, _)| *a)
+}
+
+pub(crate) static ANCHOR_STEERS_WAITED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn night_class(watch: bool, holds_rest: bool, arrived: bool, bed_held: bool, has_job: bool) -> NightClass {
     if watch {
         NightClass::Watch
@@ -14468,6 +14493,9 @@ pub struct JobBoard {
     /// beelining-then-bobbing at a wall never finishes the search that
     /// would have found the ladder (b58 run-10 root cause).
     pub access_anchors: Vec<Vec3<i32>>,
+    /// ★ W6-I: the anchors whose ladder has a completed cell; only these
+    /// stage a climb.
+    pub anchor_built: std::collections::HashSet<Vec3<i32>>,
     /// bastion (B5.8-E): per-colonist emergency-egress watch — (last anchor
     /// position, seconds stationary, egress already attempted). Jobless
     /// colonists have no travel watchdog and zone deletion empties the
@@ -36820,19 +36848,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // compute found) or the climb-free egress (fix-2)
                         // instead of beelining at an unreachable top target.
                         let anchor_steer = if over_reach {
-                            board
+                            // ★ W6-I: THE OVER-REACH STEER NEEDS A BUILT LADDER -- a
+                            // planned anchor is a designation, not a climb; the walker
+                            // keeps its route and the plan is witnessed.
+                            let anchors_w6i: Vec<(Vec3<i32>, bool)> = board
                                 .access_anchors
                                 .iter()
-                                .filter(|a| {
-                                    a.z >= feet.z - 2
-                                        && a.z <= job.pos.z + 2
-                                        && a.xy().map(|e| e as f32).distance(pos.0.xy()) < 24.0
-                                })
-                                .min_by(|a, b| {
-                                    let da = a.xy().map(|e| e as f32).distance(pos.0.xy());
-                                    let db = b.xy().map(|e| e as f32).distance(pos.0.xy());
-                                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                                })
+                                .map(|a| (*a, board.anchor_built.contains(a)))
+                                .collect();
+                            let built_pick = over_reach_anchor(&anchors_w6i, feet, job.pos.z, pos.0.xy(), true);
+                            if built_pick.is_none()
+                                && let Some(planned) = over_reach_anchor(&anchors_w6i, feet, job.pos.z, pos.0.xy(), false)
+                            {
+                                let n = ANCHOR_STEERS_WAITED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if n <= 8 || n.is_power_of_two() {
+                                    info!(
+                                        uid = uids.get(entity).map(|u| u.0.get()),
+                                        job_pos = ?job.pos,
+                                        ?feet,
+                                        ?planned,
+                                        waited = n,
+                                        "bastion: THE OVER-REACH STEER WAITS FOR A BUILT LADDER — the nearest anchor is a plan, not a ladder; the walker keeps its route (W6-I)"
+                                    );
+                                }
+                            }
+                            built_pick
                                 .map(|a| {
                                     let base = Vec3::new(
                                         a.x as f32 + 0.5,
@@ -43212,14 +43252,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // B5.8: a player-built ladder line registers as an
                     // access anchor too (one per column — XY dedupe), so
                     // staged routing finds it.
-                    if job.kind.is(DesignationKind::Ladder)
-                        && !board
+                    if job.kind.is(DesignationKind::Ladder) {
+                        let near = board
                             .access_anchors
                             .iter()
-                            .any(|a| a.xy().distance_squared(job.pos.xy()) < 4)
-                    {
-                        info!(pos = ?job.pos, "bastion: access anchor registered (built)");
-                        board.access_anchors.push(job.pos);
+                            .copied()
+                            .find(|a| a.xy().distance_squared(job.pos.xy()) < 4);
+                        let anchor = match near {
+                            Some(a) => a,
+                            None => {
+                                info!(pos = ?job.pos, "bastion: access anchor registered (built)");
+                                board.access_anchors.push(job.pos);
+                                job.pos
+                            },
+                        };
+                        // ★ W6-I: the ladder has a built cell; its anchor may stage a climb.
+                        if board.anchor_built.insert(anchor) {
+                            info!(
+                                ?anchor,
+                                pos = ?job.pos,
+                                built = board.anchor_built.len(),
+                                "bastion: THE LADDER IS BUILT — its anchor may now stage a climb (W6-I)"
+                            );
+                        }
                     }
                     // B7-1: a completed bed registers its slot (the same
                     // build-completion registration pattern as the ladder
@@ -58555,6 +58610,24 @@ mod tests {
         assert_eq!(shelf_relocation(old, &[Vec3::new(7755, 6412, 183), floor]), Some(floor), "a tie in x, y takes the lowest");
         assert_eq!(shelf_relocation(old, &[far, old]), Some(old), "the old cell itself, when reached, stays");
         assert_eq!(shelf_relocation(old, &[]), None, "no candidate: no move");
+    }
+
+    /// ★ W6-I pinned: a planned anchor never stages a climb; a built one
+    /// within the window does, the nearest first. Planted defect: the plan
+    /// admitted -> red.
+    #[test]
+    fn the_over_reach_steer_needs_a_built_ladder() {
+        let feet = Vec3::new(7684, 6317, 181);
+        let pos = Vec2::new(7684.5f32, 6317.5);
+        let plan = vec![(Vec3::new(7686, 6317, 182), false)];
+        assert_eq!(over_reach_anchor(&plan, feet, 186, pos, true), None, "a plan is not a ladder");
+        assert_eq!(over_reach_anchor(&plan, feet, 186, pos, false), Some(Vec3::new(7686, 6317, 182)), "the plan is still named");
+        let built = vec![(Vec3::new(7696, 6319, 182), true), (Vec3::new(7686, 6317, 182), true)];
+        assert_eq!(over_reach_anchor(&built, feet, 186, pos, true), Some(Vec3::new(7686, 6317, 182)), "the nearest built");
+        let far = vec![(Vec3::new(7720, 6317, 182), true)];
+        assert_eq!(over_reach_anchor(&far, feet, 186, pos, true), None, "out of the window");
+        let high = vec![(Vec3::new(7686, 6317, 190), true)];
+        assert_eq!(over_reach_anchor(&high, feet, 186, pos, true), None, "above the job");
     }
 
     /// ★ W6-H pinned: a sleeper at no speed stands; the steer classes are
