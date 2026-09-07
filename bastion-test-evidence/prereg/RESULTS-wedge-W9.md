@@ -3128,6 +3128,102 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### H1-a registered (20:43): THE SLEEP BLOCK PUTS THE UNTIRED TO BED -- and the queue reordered to land it first
+
+Hours 1-2 on b2 confirmed the shape: in_bed 16-17, to_bed 7, watch
+6, working 1-2, idle 19, untired 16-17 (of 50). The mechanism, from
+the code: the need pass admits the rest candidate in the Sleep
+block whatever the meter (rest_in || Sleep), but the arbiter's
+Personal drive scores severity = max(rest, hunger, recreation
+severities), each zero above its interrupt, and p = personal_
+urgency(w, severity) = w + (0.95 - w) * severity = w for the
+untired; the drive choice needs p > w, so Personal never wins and
+the need pass skips the candidate as drive_not_personal (16,777
+skips on one day). Generator and consumer disagree on the block's
+own rule. Mechanism: SLEEP_BLOCK_SEVERITY 0.5;
+sleep_block_severity(severity, own_sleep_block, on_cooldown) floors
+the severity in the colonist's OWN Sleep block (the night watch's
+block is rotated) off the preempt cooldown; p then beats every
+modulated Work (<= 0.7) and Idle (<= 0.14) urgency and never Flee;
+the wake rule (slept = rest >= comfort + margin && !night) already
+holds a sleeper down until the block ends, so no churn. Witness THE
+SLEEP BLOCK PUTS THE UNTIRED TO BED (uid, severity, floored, work
+urgency, count) at the first eight and powers of two. Pin
+the_sleep_block_puts_the_untired_to_bed; falsifier plants the floor
+at zero. Authorised by Ben's HUMAN HOURS ruling (nights in bed;
+nobody frozen off-shift).
+
+The queue was REORDERED to land it first among the pending rows:
+the W18-e2 chain and its readers were killed by their pid files
+and re-derived behind H1-a; H2-i's chain and readers (keyed on
+W18-e2's) were left untouched; the dry tree was re-run in the new
+order (HEAD 54435acd14 + E2-i3 + H1-a + W18-e2 + H2-i: 7 uses of
+the floor fn). Launched 20:43: chain-h1a (holds on e2i3-staged),
+falsify-h1a, chain-w18e2 (holds on h1a-staged), readers
+wait-h1a-b1/b2 (keyed on E2-i3's blocks) and wait-w18e2-b1/b2
+(keyed on H1-a's). Order now: E2-i3 (checking, stage ~20:55) ->
+H1-a (~21:15) -> W18-e2 (~21:35) -> H2-i (~21:55).
+
+Bars (each arm's first night on the pair, from the NIGHT CENSUS):
+idle at hours 23-2 <= 5 (21); in_bed at hour 0 >= 28 (14) and at
+hour 2 >= 35 (17); to_bed at hour 0 <= 8; BED CENSUS peak >= 35
+(22-27); untired at hour 0 unchanged or higher; starving unchanged;
+arrivals >= 900 / 720; the watch 6-8; Recreate at hour 21 unchanged
+(no leak into Leisure). Falsified if idle stays above 12 at
+midnight with the witness present (another gate on the candidate),
+or in_bed rises only as much as to_bed (beds picked, not reached:
+the upstairs class), or the hour-21 Recreate count falls.
+
+### THE NIGHT CENSUS NAMES THE AWAKE (20:37, b2 on ae6b8fd42d, hours 21-0): they are IDLE and UNTIRED
+
+hour 22: in_bed 3, to_bed 9, watch 8, working 14 (EatFrom 7,
+Recreate 5, DepositRun 2), idle 15, untired 27, rest_mean 0.31.
+hour 23: in_bed 11, to_bed 8, watch 8, working 1, idle 21, untired
+21, rest_mean 0.43. hour 0: in_bed 14, to_bed 5, watch 8, working
+2, IDLE 21, untired 20, rest_mean 0.48. The far walkers: 923 at 225
+blocks (feet (7697,6303,181), the wall cell), 150 at 130 (feet
+(7707,6310,181), the same wall, clock 0.6 -> the loop under W6-E
+now), 154 at 120-154. So at midnight the town is: 14 asleep, 5
+walking to far beds (two of them at the wall under the upstairs
+bed), 8 on the night watch (the deliberate exception), 2 working,
+and TWENTY-ONE STANDING IDLE WITH NO JOB, twenty of them with rest
+above the 0.2 interrupt. The Sleep block forbids work and the rest
+preempt is need-gated (rest below the interrupt), so a colonist who
+is not tired at 22 has nothing to do and nowhere to be: it stands.
+Ben's HUMAN HOURS ruling (nights in bed; nobody frozen off-shift)
+and the block's own comment ("rest is WANTED here regardless of how
+full the meter is") both say the untired go to bed at the Sleep
+block. The next row, authorised by the ruling: H1-a THE SLEEP BLOCK
+PUTS THE UNTIRED TO BED -- the rest candidate is admitted in the
+Sleep block whatever the meter (the night watch's block is rotated,
+so it is unaffected), and the sleeper stays down until the block
+ends or the meter is full (read the RestAt completion rule first so
+a full-rested sleeper does not churn in and out of bed).
+
+### W17-c LANDED (20:32): 54435acd14, both halves, markers 'THE MOVER STANDS WHERE THE ROUTER WALKS' 1 (server) and 'start_under' 1 in each half
+
+Pin the_mover_stands_where_the_router_walks green on the fresh
+compile; committed 20:18, staged 20:32:41, pushed, shipped to
+lab-bin 20:32:55 (playable). Falsifier bls6219hu planted `(routable
+|| true)` at 20:34: the pin went RED (0 passed, 1 failed), 0 dirty
+files restored at 20:37. W17-c is red on its plant. The E2-i3
+chain fires at +300 s (~20:38). The arms board W17-c at their next
+reader restarts (the W17-c readers, after the H1-i days: b2 ~20:55
+at hour 6, b1 ~21:15).
+
+### THE FIRST NIGHT CENSUS LINE (20:33, b2 on ae6b8fd42d, hour 21)
+
+roster 49: in_bed 2, to_bed 5, bed_held 0, watch 8, working 29,
+idle 5 (sum 49 = roster: the instrument's first bar holds); untired
+28; rest_min 0.02, rest_mean 0.29; working kinds EatFrom 15,
+Recreate 14 (hour 21 is the Leisure block's last hour: suppers and
+the evening, as designed); the farthest walkers to bed: 145 at 178
+blocks, 149 at 115 (feet (7706,6310,183): the wall cell), 156 at
+72, all Traveling with the clock at 0.03; feet by z: 180 x23, 181
+x17, 183 x6, 182 x2, 186 and up (cut). in_bed 2 agrees with the
+BED CENSUS at this hour (2-5 on the days before). The lines for
+hours 22-5 decide the class.
+
 ### b1's W18-e day (20:14, pair 5f7089fbfa, night block at hour 6): the wall loop's worst night -- three colonists, 261 bans; arrivals 834
 
 The W18-c reader's night block: CLIMB BANNED(other) 261 -- colonist
@@ -3142,8 +3238,12 @@ and benches what is truly unreachable -- the upstairs targets --
 instead of resuming a dead frontier); LONGEST-EXHAUST 45; arrivals
 834 (997 the day before: the bar of 900 FAILED, the loop's and the
 benching's cost); p95 684 us; panics 0. Three colonists looped at
-the one house wall under the z-186 bed at (7700,6308): the class
-H2-i counts and W6-E strikes out. b1 boards ae6b8fd42d (W6-E and
+the one house wall under the z-186 bed at (7700,6308): 51 (bed
+(7700,6308,186), 163 bans, 157 reclaims), 74 (bed (7841,6234,186),
+43 bans, 0 reclaims: not a RestAt suspend, another job through the
+same wall), 77 (bed (7798,6205,186), 22 bans). Seven of seven
+loopers today were bound upstairs: the class H2-i counts and W6-E
+strikes out. b1 boards ae6b8fd42d (W6-E and
 H1-i aboard) at this restart; its next night is W6-E's b1 read and
 the first NIGHT CENSUS on b1.
 

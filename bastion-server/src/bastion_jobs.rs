@@ -8727,6 +8727,27 @@ pub(crate) fn supper_shortfall(heads: u32, shelf_units: u32, per_head: u32) -> u
 }
 
 /// ★ E2 pinned: the round runs once a day, in the supper hour only.
+/// ★ E2-i3 pinned: THE EMPTY SHELF NAMES ITS LOADS. A supper load minted for a
+/// house is, at the sleeper's night pick, still on the board unclaimed (the
+/// sweep will take it), on the board claimed (in flight), or gone from the
+/// board (delivered -- then the shelf would not be empty -- or dropped).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SupperFate {
+    Unclaimed,
+    InFlight,
+    Gone,
+}
+
+pub(crate) fn supper_load_fate(on_board: bool, claimed: bool) -> SupperFate {
+    if !on_board {
+        SupperFate::Gone
+    } else if claimed {
+        SupperFate::InFlight
+    } else {
+        SupperFate::Unclaimed
+    }
+}
+
 pub(crate) fn supper_round_due(supper_now: bool, last_day: Option<i64>, today: i64) -> bool {
     supper_now && last_day != Some(today)
 }
@@ -15528,6 +15549,10 @@ pub struct JobBoard {
     /// ★ E2-g: each supper load's eaters (the bed owners of its house);
     /// an eater claims its own load at 6. Cleaned on remove_job.
     pub supper_eaters: HashMap<JobId, Vec<Uid>>,
+    /// ★ E2-i3: the round's ledger per house (by the house's min corner):
+    /// the shortfall at the round and the loads minted for it, so a
+    /// sleeper's empty shelf can name what the round did for its house.
+    pub supper_ledger: HashMap<Vec3<i32>, (u32, Vec<JobId>)>,
     /// ★ E2-l-i: how often the leisure door opened for each colonist today,
     /// and (passes, last verdict) the scan gave the colonist's own load.
     /// Cleared at the Sleep-block sweep.
@@ -29430,6 +29455,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // ★ E2-c: the emptiest shelves first, so the houses a
                     // capped round misses one evening come first the next.
                     let mut short: Vec<(u32, Vec3<i32>, common::bastion::ZoneId, u32, Vec<Uid>)> = Vec::new();
+                    board.supper_ledger.clear();
                     for h in &houses {
                         let heads = board
                             .beds
@@ -29465,7 +29491,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                     }
                     short.sort_by_key(|(have, hmin, ..)| (*have, hmin.x, hmin.y, hmin.z));
-                    for (_, _, z, mut need, eaters) in short {
+                    for (_, hmin, z, mut need, eaters) in short {
+                        // ★ E2-i3: the ledger entry (the need before any load).
+                        board.supper_ledger.insert(hmin, (need, Vec::new()));
                         while need > 0 && loads < SUPPER_ROUND_LOADS_MAX {
                             // ★ E2-d: a supper is a small stack -- never a
                             // stack over the cap, whatever the need.
@@ -29501,6 +29529,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             });
                             board.supper_jobs.insert(id);
                             board.supper_eaters.insert(id, eaters.clone());
+                            if let Some(l) = board.supper_ledger.get_mut(&hmin) {
+                                l.1.push(id);
+                            }
                             loads += 1;
                             need = need.saturating_sub(n);
                         }
@@ -33076,6 +33107,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 });
                                 let k = NIGHT_SHELF_EMPTIES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                 if k <= 8 || k.is_power_of_two() {
+                                    // ★ E2-i3: what the round did for this house.
+                                    let ledger = night_home.and_then(|h| board.supper_ledger.get(&h.min));
+                                    let round_need = ledger.map(|l| l.0).unwrap_or(0);
+                                    let round_loads = ledger.map(|l| l.1.len()).unwrap_or(0);
+                                    let (mut unclaimed, mut in_flight, mut gone) = (0usize, 0usize, 0usize);
+                                    if let Some(l) = ledger {
+                                        for id in &l.1 {
+                                            let j = board.jobs.get(id);
+                                            match supper_load_fate(j.is_some(), j.is_some_and(|j| j.claimed_by.is_some())) {
+                                                SupperFate::Unclaimed => unclaimed += 1,
+                                                SupperFate::InFlight => in_flight += 1,
+                                                SupperFate::Gone => gone += 1,
+                                            }
+                                        }
+                                    }
+                                    let bed_z = colonist.0.owned_bed.map(|b| b.z);
                                     info!(
                                         colonist = %uid,
                                         home_known = night_home.is_some(),
@@ -33088,8 +33135,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         reserved,
                                         holders = ?holders,
                                         verdict = ?verdict,
+                                        round_need,
+                                        round_loads,
+                                        unclaimed,
+                                        in_flight,
+                                        gone,
+                                        bed_z = ?bed_z,
                                         night_no_food = k,
-                                        "bastion: NIGHT SHELF EMPTY — a sleeper's night pick found nothing at home; what the home held and what refused it"
+                                        "bastion: NIGHT SHELF EMPTY — a sleeper's night pick found nothing at home; what the home held and what refused it (E2-i3: the loads named)"
                                     );
                                 }
                             }
@@ -57326,6 +57379,17 @@ mod tests {
         assert!(bench_is_new(true, false), "the third strike on a claimable job: a bench");
         assert!(!bench_is_new(true, true), "the fourth strike on a benched job: the same bench, not a new one");
         assert!(!bench_is_new(false, false) && !bench_is_new(false, true), "no bench is never new");
+    }
+
+    /// ★ E2-i3 pinned: a load off the board is gone; on the board and
+    /// claimed it is in flight; on the board unclaimed it awaits the sweep.
+    /// Planted defect: the claimed arm dropped -> red.
+    #[test]
+    fn the_empty_shelf_names_its_loads() {
+        assert_eq!(supper_load_fate(false, false), SupperFate::Gone, "off the board: delivered or dropped");
+        assert_eq!(supper_load_fate(false, true), SupperFate::Gone, "off the board, whatever it was");
+        assert_eq!(supper_load_fate(true, true), SupperFate::InFlight, "claimed: a hauler carries it");
+        assert_eq!(supper_load_fate(true, false), SupperFate::Unclaimed, "unclaimed: the sweep will name it");
     }
 
     /// ★ H1-i pinned: the night census classifies every colonist by one
