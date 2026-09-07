@@ -9667,8 +9667,27 @@ pub(crate) static HELD_STRIKES: core::sync::atomic::AtomicU64 = core::sync::atom
 /// is offered as before.
 pub(crate) const BED_SHUN_SECS: f64 = 8.0 * 75.0;
 
-pub(crate) fn bed_is_shunned(shun: Option<&(Vec3<i32>, f64)>, bed: Vec3<i32>, now: f64) -> bool {
-    shun.is_some_and(|(b, until)| *b == bed && now < *until)
+pub(crate) fn bed_is_shunned(shun: Option<&Vec<(Vec3<i32>, f64)>>, bed: Vec3<i32>, now: f64) -> bool {
+    shun.is_some_and(|l| l.iter().any(|(b, until)| *b == bed && now < *until))
+}
+
+/// ★ W6-F2 pinned: THE SHUN HOLDS EVERY BED STRUCK OUT TONIGHT. W6-F's shun
+/// was one slot per sleeper: colonist 144, with two unreachable beds on
+/// offer (its own and the nearest free slot, both upstairs), struck out
+/// one, was offered the other, struck that out, and the second shun erased
+/// the first -- seven strike-outs in twenty minutes of one afternoon. The
+/// shun is a list: a new strike-out joins the others (the same bed is
+/// refreshed, not duplicated) and entries whose window has passed are
+/// pruned as it is recorded. Returns how many beds the sleeper shuns now.
+pub(crate) fn shun_bed_for_night(list: &mut Vec<(Vec3<i32>, f64)>, bed: Vec3<i32>, now: f64) -> usize {
+    list.retain(|(_, until)| now < *until);
+    let until = now + BED_SHUN_SECS;
+    if let Some(e) = list.iter_mut().find(|(b, _)| *b == bed) {
+        e.1 = until;
+    } else {
+        list.push((bed, until));
+    }
+    list.len()
 }
 
 /// ★ W6-F: the witness count.
@@ -15692,7 +15711,7 @@ pub struct JobBoard {
     /// skips it (one Sleep block), so the strike-out does not re-pick the same
     /// unreachable bed and flood the town with a fresh search every three
     /// timeouts.
-    pub bed_shun: HashMap<Uid, (Vec3<i32>, f64)>,
+    pub bed_shun: HashMap<Uid, Vec<(Vec3<i32>, f64)>>,
     /// ★ E2-i3: the round's ledger per house (by the house's min corner):
     /// the shortfall at the round and the loads minted for it, so a
     /// sleeper's empty shelf can name what the round did for its house.
@@ -33471,10 +33490,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 _ => None,
                             };
                             if let Some(b) = shun_bed {
-                                board.bed_shun.insert(*uid, (b, time.0 + BED_SHUN_SECS));
+                                let held = shun_bed_for_night(board.bed_shun.entry(*uid).or_default(), b, time.0);
                                 let k = BEDS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                 if k <= 8 || k.is_power_of_two() {
-                                    info!(colonist = %uid, bed = ?b, until = time.0 + BED_SHUN_SECS, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F)");
+                                    info!(colonist = %uid, bed = ?b, until = time.0 + BED_SHUN_SECS, held, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F; W6-F2: every bed struck out tonight, held names how many)");
                                 }
                             }
                             board.remove_job(pending_id);
@@ -38549,10 +38568,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         );
                                         // ★ W6-F: a benched bed job shuns its bed for this sleeper too.
                                         if let common::bastion::JobKind::RestAt { bed_pos } = job.kind {
-                                            board.bed_shun.insert(u, (bed_pos, time.0 + BED_SHUN_SECS));
+                                            let held = shun_bed_for_night(board.bed_shun.entry(u).or_default(), bed_pos, time.0);
                                             let k = BEDS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                             if k <= 8 || k.is_power_of_two() {
-                                                info!(colonist = u.0.get(), bed = ?bed_pos, until = time.0 + BED_SHUN_SECS, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F)");
+                                                info!(colonist = u.0.get(), bed = ?bed_pos, until = time.0 + BED_SHUN_SECS, held, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F; W6-F2: every bed struck out tonight, held names how many)");
                                             }
                                         }
                                     }
@@ -57742,13 +57761,35 @@ mod tests {
     fn the_struck_out_bed_is_shunned_for_the_night() {
         let bed = Vec3::new(7716, 6343, 186);
         let other = Vec3::new(7700, 6308, 186);
-        let shun = (bed, 1000.0 + BED_SHUN_SECS);
+        let shun = vec![(bed, 1000.0 + BED_SHUN_SECS)];
         assert!(bed_is_shunned(Some(&shun), bed, 1000.0), "just struck out: shunned");
         assert!(bed_is_shunned(Some(&shun), bed, 1000.0 + BED_SHUN_SECS - 1.0), "still inside the block: shunned");
         assert!(!bed_is_shunned(Some(&shun), bed, 1000.0 + BED_SHUN_SECS), "the block has passed: offered again");
         assert!(!bed_is_shunned(Some(&shun), other, 1000.0), "another bed is never shunned by this entry");
         assert!(!bed_is_shunned(None, bed, 1000.0), "no shun: no skip");
         assert!((BED_SHUN_SECS - 600.0).abs() < f32::EPSILON as f64, "a Sleep block: eight game hours of 75 s");
+    }
+
+    /// ★ W6-F2 pinned: the second strike-out joins the first instead of
+    /// erasing it (colonist 144's two beds); a third bed is still offered;
+    /// the same bed is refreshed, not duplicated; expired entries are pruned
+    /// when a shun is recorded. Planted defect: the list cleared on every
+    /// shun (one slot again) -> red on the second bed.
+    #[test]
+    fn the_shun_holds_every_bed_struck_out_tonight() {
+        let a = Vec3::new(7756, 6412, 186);
+        let b = Vec3::new(7700, 6309, 186);
+        let c = Vec3::new(7710, 6320, 181);
+        let mut l = Vec::new();
+        assert_eq!(shun_bed_for_night(&mut l, a, 1000.0), 1, "the first strike-out");
+        assert_eq!(shun_bed_for_night(&mut l, b, 1010.0), 2, "the second joins it");
+        assert!(bed_is_shunned(Some(&l), a, 1020.0), "the first bed is still shunned after the second (144's ping-pong)");
+        assert!(bed_is_shunned(Some(&l), b, 1020.0), "and the second");
+        assert!(!bed_is_shunned(Some(&l), c, 1020.0), "a third bed is offered");
+        assert_eq!(shun_bed_for_night(&mut l, a, 1030.0), 2, "the same bed is refreshed, not duplicated");
+        assert!(bed_is_shunned(Some(&l), a, 1000.0 + BED_SHUN_SECS + 5.0), "the window runs from the refresh");
+        assert_eq!(shun_bed_for_night(&mut l, c, 1030.0 + BED_SHUN_SECS + 1.0), 1, "expired entries are pruned as a shun is recorded");
+        assert!(!bed_is_shunned(Some(&l), a, 1030.0 + BED_SHUN_SECS + 1.0), "the pruned bed is offered again");
     }
 
     /// ★ W6-E pinned: a banned climb strikes the held job; the first two

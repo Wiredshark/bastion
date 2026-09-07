@@ -3128,6 +3128,128 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W6-F's full day and night on b1 (23:25, pair a81dbd9c9d, read at hour 6 of day 1): the shun had no work (STRUCK OUT 0); the flood 471; arrivals 935
+
+b1: LONGEST-EXHAUST 471 (whole-town 469; 243 at hour 19), top ends
+110x (7679,6454,183), 77x (7752,6412,181) -- house 86's ground
+floor, the house whose upstairs bed and shelf the b2 hauls could
+not reach -- and 36x (7696,6442,182) (a store-field cell). STRIKES:
+terminal_chaser 5, longest_exhausts 13 (W14-d's consumer DID fire
+on b1: "three exhausted Longest searches job=1379 colonist=135",
+job 1412 ...), route_proofs 0, fill_exhausts 0. Held strikes 0,
+STRUCK OUT 0, shunned 0 (W6-F's arm never ran: b1's loopers today
+are the non-climb class -- reclaims top 83:14, 136:3, W6-G's row;
+bar 8 failed by six). Other bans 18 (135 x11 at (7721,6358,181)).
+Arrivals 935 (bar 900: PASSED). NIGHT SHELF EMPTY 14 lines,
+starving sleepers 1 (E2-i3's class). Bobs: lifts_repeated 9,
+stalls 0 (W18-e2 holds). EXPERIENCE at hour 6: working 0, moving
+37, idle 13 (the morning). Refusal probes: 149 refused 17, arrived
+after 8; 163 1/4; 135 1/1.
+
+So the two arms' floods differ in producer: b2's W14-d strikes 0
+(the pump's fill lane, unstruck), b1's 13 + 5 (the chaser's terminal
+streak, struck) -- and both still run 400-470 a day. W14-i8's
+table is the read that separates them by pair and job.
+
+### W14-i8 THE EXHAUSTED DELIVERY NAMES ITS ASKER -- registered 23:16 (before the binary exists), inserted behind W6-F2
+
+The producer question from W6-F's night, answered as far as the
+logs allow: W14-i7 names the CHASER's exhausts (17 lines on b2, 2
+on b1) and b1 ran 214 whole-town searches; the pump's fill lane
+(bastion_full_path_step -> find_path_priced, the same neighbourhood
+witness) delivered 1,323 (b2) / 544 (b1) exhausted searches for the
+day, and its BudgetExhausted arm keeps the trunk tail, strikes
+nothing and names nobody past the first eight. The hot ends: b2
+(7746,6399,180) x63 from 6 flee points, one pair x34 across the
+day; (7728,6353,198) x26 from ONE flee point in 4.5 min (a store
+cell at z 182 resolved sixteen up to the roof; colonist 21's haul
+to store 36 from an upstairs floor, per the sampled witness); b1
+three store-field cells x30/22/20 with zero strike-outs. No line
+names the asker for any of the six.
+
+MECHANISM (instrument, no behaviour): exhaust_repeats: HashMap<(Uid,
+cell), u32> on the board; at the fill-exhausted arm the pair's
+count rises and its 1st, 2nd, 4th, 8th ... print THE EXHAUSTED
+DELIVERY NAMES ITS ASKER (uid, target, from, held job, kind, pos,
+repeats, waited); once per tick-clock hour EXHAUST REPEAT CENSUS
+prints pairs, total and the top eight "uid@(x,y,z)xN" in a total
+order. PIN the_exhausted_delivery_names_its_asker (order, tie by
+asker, truncation, the sample rule); falsifier plants truncate(0).
+
+BARS (each arm's first day): top pair repeats >= 10 by hour 16; the
+top eight carry >= 60% of the total; every top pair is a Haul/Fetch
+to a store or shelf cell (z 180-183) or a job held from upstairs;
+a top pair's from cells stay within 3 blocks (a stationary asker).
+FALSIFIED if the top eight carry < 30% (a spread: the town's
+routing, not a few jobs) or if the top pairs are RestAt/EatFrom
+walks from the ground floor (W14-i7's rise rule is the gap).
+Rejected: striking the exhausted fill (the glide on the trunk tail
+is load-bearing: count first); a per-uid count; a daily reset.
+
+Queue: W6-F2 (building) -> W14-i8 -> S1-i (re-anchored) -> W6-G ->
+E2-i3b. Dry tree re-run in this order: passed.
+
+### H2-i LANDED (23:13): 8e72bfaee3, both halves, marker 'THE UPSTAIRS BED NAMES ITS STAIR' 1 in the exe
+
+Pin the_upstairs_bed_names_its_stair green on the fresh compile
+(507 filtered, 1 passed); committed 22:50, staged 23:13, pushed.
+A census only (STAIR CENSUS + up to 12 cut-bed lines at the day
+change): no behaviour. Falsifier bvg9m5iel plants floor_z - 100 at
++90 s. The W6-F2 chain fires at +300 s. First STAIR CENSUS on each
+arm at its next day change on this pair or later (b2's H2-i reader
+restarts it at hour 6 of day 1, ~23:15).
+
+### W6-F's first night (23:00, pair a81dbd9c9d): the shun works and is one slot wide (-> W6-F2); the exhaust bar FAILED on both arms by a flood that is NOT the re-pick loop; HUMAN HOURS held
+
+b2 (boarded 22:27; read at hour 3 of day 1): LONGEST-EXHAUST 408
+(bar <= 80: FAILED), whole-town 406, top ends 63x (7746,6399,180),
+32x (7681,6197,182), 29x (7734,6399,180); shunned 9, STRUCK OUT 17
+(colonist 144 x6-7, 132/136/141 x1: the per-colonist bar of 2
+FAILED by the one-slot shun, W6-F2 registered above); reclaims top
+144:10 (bar 8: failed by two); other bans 96 (132 x43 at the wall
+cell (7706,6310,183), 136 x21, 141 x13); benched by banned climbs
+5; held strikes 9; arrivals 859 (b2's bar 720: passed); stalls 9;
+starving 1. NIGHT CENSUS hours 23-3: in_bed 28 -> 35 -> 36 -> 36
+-> 36 of 50, to_bed 13 -> 6-7, watch 7-8, working 0, idle 0-1:
+H1-a holds on its second night.
+b1 (boarded 22:37; hour 17-18 of day 0 at the read): LONGEST-
+EXHAUST 216 by hour 18 (bar FAILED), whole-town 214, top ends 30x
+(7696,6442,182), 22x (7673,6203,182), 20x (7691,6450,182);
+shunned 0, STRUCK OUT 0, other bans 0, held strikes 0; arrivals
+686 by hour 18; stalls 14; starving 0.
+
+THE FLOOD IS NOT THE RE-PICK LOOP. b1 ran 214 whole-town searches
+by hour 18 with no strike-out, no ban and no reclaim loop; W6-E's
+discard -> re-pick chain (blamed for the 518 / 616 days) is not the
+producer here. The hot ends are GROUND-LEVEL cut-off cells: z 180
+(b2: two cells on the row y 6399 just south of house 86's footprint
+(7744..7761, 6402..6419); the neighbourhood probe shows wood to the
+west, air above, rock below, end_walkable true, the closest reached
+cell (7725,6398,181) or (7775,6414,181) 22-45 blocks off) and z 182
+(b1: three store-field cells; endf z 180 snapped up two to 182).
+The same (startf, endf) pair with the SAME float start repeats: the
+asker stands at the closest reached cell and asks again. W14-d's
+consumer (the terminal chaser strikes the job) has ZERO witnesses
+on both arms; the PROBES witness (68 lines, head-sampled) never
+sampled the hot ends, so no line names the asker or the job for
+any of the six hot cells. The pump's day: b2 delivered_exhausted
+1,323 / path 707 / unreachable 306; b1 544 / 490 / 1.
+
+DISPOSITION: W6-F STANDS on its mechanism (nine shuns witnessed;
+the picker skipped the shunned bed each time) and FAILED two of its
+bars: the per-colonist strike-out (the one-slot shun, W6-F2) and
+the exhaust count (a producer outside its scope). The day-to-day
+swing (b2: 39 on the W17-c-r day, 408 today, same town) says the
+producer is state-dependent, not a code change of today.
+
+NEXT: an instrument before a fix (STOP PROPOSING AND INSTRUMENT;
+A HEAD-SAMPLED WITNESS MISSES THE LATE OFFENDER): W14-i8 THE
+EXHAUSTED DELIVERY NAMES ITS ASKER -- at the pump's Exhausted
+delivery, a per-(uid, target) repeat count on the board, logged at
+1, 2, 4, 8 ... with uid, target, the active job's kind and pos, the
+feet, the origin site and the count; a daily top-8 table of
+(uid, target, repeats). Registered below when written.
+
 ### W6-F2 THE SHUN HOLDS EVERY BED STRUCK OUT TONIGHT -- registered 22:52 (before the binary exists), inserted behind H2-i
 
 W6-F FAILED ITS STRIKE-OUT BAR ON ITS FIRST DAY. b2 on a81dbd9c9d
@@ -3169,6 +3291,15 @@ house; a longer window.
 Queue after the insertion: H2-i (building, ~23:03) -> W6-F2 (~23:25)
 -> S1-i (re-anchored) -> W6-G -> E2-i3b. Dry tree re-run in the new
 order.
+
+23:15 amendment: the first chain run FAILED cargo check -- at W6-F's
+discard site a local `let shun_bed = match job.kind {...}` (the bed
+Option) shadowed the new function of the same name (E0618). The
+dry tree validates anchors, not names. The function is renamed
+shun_bed_for_night (same body, same pin, same falsifier plant); the
+tree was reverted, both queued patches (W6-F2 + W14-i8) checked
+clean together in the foreground, and the chain relaunched (fires
+~23:23, stage ~23:40).
 
 ### W18-e2 LANDED (22:38): fbc710b221, both halves, marker 'the reset point pinned' 1 in the exe
 
