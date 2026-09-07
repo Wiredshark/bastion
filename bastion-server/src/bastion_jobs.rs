@@ -3097,6 +3097,34 @@ pub(crate) enum NightClass {
     Idle,
 }
 
+/// ★ W6-H pinned: THE STANDING SLEEPER NAMES ITS STATE. A sleeper walking
+/// to bed at no speed is standing; its steer is nowhere, at its own feet
+/// (the v2 exemption that pins the stuck clock to zero), or away.
+pub(crate) const STANDING_SPEED: f32 = 0.05;
+pub(crate) const STANDING_SLEEPERS_MAX: usize = 12;
+
+pub(crate) fn sleeper_stands(speed_xy: f32) -> bool {
+    speed_xy < STANDING_SPEED
+}
+
+pub(crate) fn steer_class(steer: Option<Vec3<f32>>, body: Vec3<f32>) -> &'static str {
+    match steer {
+        None => "none",
+        Some(t) if steer_is_at_own_feet(t, body) => "own-feet",
+        Some(_) => "away",
+    }
+}
+
+pub(crate) fn dist_label(d: f32) -> String {
+    if d == f32::MAX {
+        "MAX".to_string()
+    } else if d == f32::MIN {
+        "MIN".to_string()
+    } else {
+        format!("{d:.1}")
+    }
+}
+
 pub(crate) fn night_class(watch: bool, holds_rest: bool, arrived: bool, bed_held: bool, has_job: bool) -> NightClass {
     if watch {
         NightClass::Watch
@@ -51592,6 +51620,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let mut n = [0usize; 6];
                         let mut kinds: HashMap<String, usize> = HashMap::new();
                         let mut far: Vec<(u64, i32, f32, String, Vec3<i32>)> = Vec::new();
+                        // ★ W6-H: the standing sleepers, with their state.
+                        let mut standing: Vec<String> = Vec::new();
                         let mut feet_z: HashMap<i32, usize> = HashMap::new();
                         let mut untired = 0usize;
                         let mut rest_min = 1.0f32;
@@ -51632,6 +51662,51 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 {
                                     let d = (j.pos.map(|c| c as f32) - p.0).magnitude() as i32;
                                     far.push((uid.map(|u| u.0.get()).unwrap_or(0), d, a.stuck_time, format!("{:?}", a.state), p.0.map(|c| c.floor() as i32)));
+                                    // ★ W6-H: THE STANDING SLEEPER NAMES ITS STATE.
+                                    let speed_xy = velocities.get(e).map(|v| v.0.xy().magnitude()).unwrap_or(0.0);
+                                    if sleeper_stands(speed_xy) && standing.len() < STANDING_SLEEPERS_MAX {
+                                        let steer = agents.get(e).and_then(|ag| match ag.rtsim_controller.activity {
+                                            Some(common::rtsim::NpcActivity::Goto(t, _)) => Some(t),
+                                            _ => None,
+                                        });
+                                        let route = uid.and_then(|u| board.path_cache.get(&u)).map(|(nodes, idx, _)| (nodes.len(), *idx));
+                                        let route_age = uid.and_then(|u| board.route_built_at.get(&u)).map(|t| tick.0.saturating_sub(*t));
+                                        let push = uid.and_then(|u| board.last_push_site.get(&u).copied()).unwrap_or("none");
+                                        let pending = uid.is_some_and(|u| board.path_searches.contains_key(&u.0.get()));
+                                        let exhausts = agents.get(e).map(|ag| ag.chaser.diagnostic_snapshot().longest_exhausts).unwrap_or(0);
+                                        let kin = kinematic_travels.get(e).is_some();
+                                        let feet_c = p.0.map(|c| c.floor() as i32);
+                                        let block_name = |c: Vec3<i32>| {
+                                            terrain
+                                                .get(c)
+                                                .ok()
+                                                .map(|b| b.get_sprite().map(|sp| format!("{sp:?}")).unwrap_or_else(|| format!("{:?}", b.kind())))
+                                                .unwrap_or_else(|| "?".to_string())
+                                        };
+                                        standing.push(format!(
+                                            "{}:d{}@({},{},{}) bed=({},{},{}) clock={:.2} reset={} best={} steer={} route={:?} age={:?} push={} pending={} exh={} kin={} at={} under={}",
+                                            uid.map(|u| u.0.get()).unwrap_or(0),
+                                            d,
+                                            feet_c.x,
+                                            feet_c.y,
+                                            feet_c.z,
+                                            j.pos.x,
+                                            j.pos.y,
+                                            j.pos.z,
+                                            a.stuck_time,
+                                            dist_label(a.reset_dist),
+                                            dist_label(a.best_dist),
+                                            steer_class(steer, p.0),
+                                            route,
+                                            route_age,
+                                            push,
+                                            pending,
+                                            exhausts,
+                                            kin,
+                                            block_name(feet_c),
+                                            block_name(feet_c - Vec3::unit_z()),
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -51658,8 +51733,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ?kinds,
                             ?far,
                             ?feet_z,
+                            standing = ?standing,
                             "bastion: NIGHT CENSUS — who is awake at this hour, and why (H1-i)"
                         );
+                        // ★ W6-H: one line per standing sleeper at hour 1, for the read.
+                        if hour == 1 {
+                            for entry in &standing {
+                                info!(
+                                    hour,
+                                    entry = %entry,
+                                    "bastion: THE STANDING SLEEPER NAMES ITS STATE — a sleeper walking to bed at no speed: its clock, its steer, its route, its last push (W6-H)"
+                                );
+                            }
+                        }
                     }
                 }
                 // ROW 27: derive the NIGHT WATCH roster on the same clock
@@ -58469,6 +58555,22 @@ mod tests {
         assert_eq!(shelf_relocation(old, &[Vec3::new(7755, 6412, 183), floor]), Some(floor), "a tie in x, y takes the lowest");
         assert_eq!(shelf_relocation(old, &[far, old]), Some(old), "the old cell itself, when reached, stays");
         assert_eq!(shelf_relocation(old, &[]), None, "no candidate: no move");
+    }
+
+    /// ★ W6-H pinned: a sleeper at no speed stands; the steer classes are
+    /// named apart. Planted defect: own-feet named away -> red.
+    #[test]
+    fn the_standing_sleeper_names_its_state() {
+        assert!(sleeper_stands(0.0));
+        assert!(sleeper_stands(0.03));
+        assert!(!sleeper_stands(0.3), "a walker");
+        let body = Vec3::new(7685.5, 6317.5, 181.0);
+        assert_eq!(steer_class(None, body), "none");
+        assert_eq!(steer_class(Some(body), body), "own-feet");
+        assert_eq!(steer_class(Some(body + Vec3::new(5.0, 0.0, 0.0)), body), "away");
+        assert_eq!(dist_label(f32::MAX), "MAX");
+        assert_eq!(dist_label(f32::MIN), "MIN");
+        assert_eq!(dist_label(12.34), "12.3");
     }
 
     /// ★ W18-j pinned: the stall's clock is past the timeout the ladder
