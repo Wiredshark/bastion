@@ -3128,6 +3128,126 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### S1-i registered (21:31): THE STORE NAMES ITS AISLES -- an instrument at the end of the queue
+
+Mechanism: store_cell_has_stand(cell, standable) = standable(cell)
+|| search_stand(cell, standable) != cell; at the day-changed gate,
+for every stockpile zone: cells, walkable_cols (columns with a
+colonist_walkable cell in the zone's height band), stocked (pickup
+items inside the zone, the supper round's band), no_stand (stocked
+cells failing the rule); one STORE AISLE CENSUS line per stocked
+zone (first twelve) with private = whether it is a house shelf. Pin
+the_store_names_its_aisles (a standable cell, a cell within reach
+of the floor row, cells three or more rows into a crate field);
+falsifier plants `|| true`. Chain (holds on h2i-staged), falsifier
+and readers wait-s1i-b1/b2 (AISLE line) launched 21:32; dry tree
+HEAD c1d838a091 + W17-c-r + W6-F + W18-e2 + H2-i + S1-i (6 uses).
+Bars: the general store zone reads walkable_cols under a quarter of
+its cells and no_stand over half its stocked cells; the 88 private
+shelves read no_stand 0. Falsified if the general store reads
+no_stand 0 (W17-c's stalls were the drop's or the head-room's), or
+the private shelves read no_stand > 0 (the shelves themselves are
+the unreachable class, tying into E2-i3's empty shelves). The plot
+rule (aisles) follows the count; Ben is asked in the report whether
+he wants stores as solid blocks with the mover's leniency kept.
+Meanwhile W17-c's toll keeps climbing while the revert builds: b2
+starving 11 at hour 7 of day 1, b1 starving 4 at hour 19.
+
+### W17-c's full magnitude (21:28): b2 at hour 7 of day 1 -- starving 15, stalls 171; b1 at hour 19 -- stalls 183, exhausts 319
+
+b2 (54435acd14) at hour 7 of day 1: STARVING 15 at the sample (5
+distinct across the night; 0-1 on every night before), FETCH
+STALLED 171, arrivals 730 for the day, LONGEST-EXHAUST 178,
+would-refuse witness 19. b1 (54435acd14) at hour 19: FETCH STALLED
+183 (the W14-g2 reader's block: FETCH BUDGET EXPIRED 146, STALL
+BLAMED 8), arrivals 566 by hour 19 (645-831 on the days before),
+STUCK CENSUS 12, LONGEST-EXHAUST 319, starving 3 at the sample.
+The lab-bin pair c1d838a091 (H1-a, shipped 21:27) carries the same
+W17-c; the report tells Ben not to play it. W17-c-r is in its
+check (committing next; both halves build; stage ~21:45); both
+arms' next readers are gated on that stage.
+
+### H1-a LANDED (21:26): c1d838a091, both halves, marker 'THE SLEEP BLOCK PUTS THE UNTIRED TO BED' 1 in the exe
+
+Pin the_sleep_block_puts_the_untired_to_bed green on the fresh
+compile; committed 21:13, staged 21:26:16, pushed. The pair still
+carries W17-c (the store starvation), so it is NOT the pair to
+play; W17-c-r's chain fired at +30 s (21:26:46) and lands ~21:45,
+the first playable pair with H1-a aboard. Falsifier bbm7xpydf
+planted the floor at zero at 21:28: the pin went RED (recorded
+21:32). H1-a is red on its plant. Neither arm boards c1d838a091: their next readers are
+gated on the W17-c-r stage.
+
+### W17-c at hour 1 on b2 (21:21): fed 24 of 50, starving 9
+
+The FED line at tick 40,500: fed 24/50, starving 9 (0-1 on every
+night before). The night's own-shelf rule cannot feed the eaters
+whose day picks failed at the store. The arms are lab worlds; the
+number is W17-c's magnitude, not a casualty -- and the reason the
+revert goes first. b2 will run W17-c for one more day (its E2-i3
+reader restarts it onto H1-a's pair at ~21:30, before W17-c-r
+stages ~21:45; the H1-a reader then boards W17-c-r at ~22:05).
+
+### What W17-c's stalls are (21:17): the general store is a field of crates the router cannot enter
+
+b2's FETCH STALLED under W17-c by kind: EatFrom 69, Craft 24, Cook
+18; the stalled eaters' feet at z 181 (on the ground); the shunned
+cells (THE WALKER SHUNS ITS STALL) at z 182 in 31 of 33 cases, all
+in the general store (7660-7680, 6355-6375): the store's cells are
+storage sprites (crates, shelves) at z 182 on the plank floor -- a
+hurdle height the router never treats as ground -- and the pick
+stand is inside the store. search_stand rings out to
+SEARCH_STAND_REACH = 3 around an item; a twenty-wide crate field has
+no standable cell within three of most items, so the search target
+stays in the crates, the router cannot enter, and before W17-c the
+mover carried the body over the crates to the item. The leniency
+was carrying every pick from the general store. Two honest fixes,
+both after W17-c-r: THE STORE HAS AISLES (the drop-cell resolver
+leaves every second row free, a proper plot per Ben's ruling; the
+router walks the aisle; the stand is the aisle cell beside the
+crate) with an aisle census first (stocked cells with no standable
+cell within three: count them), or a stand reach that spans the
+store (a taste number: no). H2-i's shape applies here too: the
+world was built for a mover that ignores the router.
+
+### W17-c's night on b2 (21:15, hour 0): seven starving, stalls 111; W17-c-r queued first with a 30 s hold
+
+b2 at hour 0 of day 1: STARVING 7 at the sample (4 distinct so
+far), FETCH STALLED 111, arrivals 675 (the day's rate down a
+quarter), refused landings 18, LONGEST-EXHAUST 59. The night
+census: in_bed 17 at hour 0, idle 13, working 6, untired 17 (the
+W17-c stalls keep more colonists "working" -- walking to items they
+cannot reach -- than the H1-i nights). W17-c-r's chain was killed
+and relaunched with its hold after the H1-a stage cut from 300 s to
+30 s; it fires the moment H1-a stages (~21:27) and lands ~21:45.
+
+### W17-c FAILED ITS BAR ON ITS FIRST DAY (21:12): stalls x20, three starving at the tables -- DISPOSED FAILED; W17-c-r written
+
+b2 (54435acd14) by hour 21: FETCH STALLED 79 (3 the day before), 35
+in the first ten minutes of the evening; STARVING 3 at hours 19-21
+-- colonists 16, 49, 56, all EatFrom to items at (7698,6263,182),
+(7640,6317,182), (7672,6352,183): the store's items sit on tables
+and counters one or two blocks above the floor; the router never
+stands on a hurdle sprite; the mover used to; colonist 16 shunned
+three stores in three minutes. b1 (54435acd14 since 20:59) by hour
+13: FETCH STALLED 113, arrivals 399, refused landings 16; stalls
+with feet at z 186 (a body carried upstairs by the assist whose
+only way down is a drop the router refuses). The stall targets on
+b2 by z: 181 x64, 183 x26, 180 x24, 182 x6. W17-c's own bar
+(stalls at most 2x) failed by twenty times and its falsification
+clause named the shape ("the fence tops were load-bearing routes"):
+the town was built around a mover that ignores the router -- items
+on counters, beds upstairs, bodies coming down by drops. The start-
+snap class it closed (451 -> 0) was real; the price is not payable
+yet. DISPOSED: FAILED. W17-c-r switches the refusal off behind a
+pinned constant (LANDING_ROUTER_CHECK = false; landing_gate), keeps
+the walk probe's would-refuse witness (the surfaces named) and the
+endpoint diag, and goes FIRST in the queue after H1-a (already
+building). The follow-ups: an item on furniture gets a stand on the
+floor beside it; the upstairs gets a stair or its beds go (H2-i,
+Ben). The playable pairs 54435acd14 and a05f19c6df carry the
+regression until W17-c-r ships (~21:40).
+
 ### E2-i3 LANDED (21:01): a05f19c6df, both halves, marker 'the loads named' 1 in the exe
 
 Pin the_empty_shelf_names_its_loads green on the fresh compile;

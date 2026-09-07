@@ -9790,6 +9790,20 @@ pub(crate) fn probe_landing_ok(below_solid: bool, feet_solid: bool, head_solid: 
     below_solid && !feet_solid && !head_solid && routable
 }
 
+/// ★ W17-c-r pinned: the router check on landings is OFF. W17-c's first day
+/// stalled twenty times the fetches (79 / 113 against 3-23) and starved
+/// three colonists at items on tables the router never stands on, and held
+/// bodies upstairs whose only way down is a drop the router refuses. The
+/// world was built around a mover that ignores the router; until the
+/// items have a stand on the floor and the upstairs has a stair, the mover
+/// keeps its own footing and the witness counts what the router would have
+/// refused.
+pub(crate) const LANDING_ROUTER_CHECK: bool = false;
+
+pub(crate) fn landing_gate(check: bool, routable: bool) -> bool {
+    !check || routable
+}
+
 /// ★ W17-c: the witness count (landings the router refused).
 pub(crate) static LANDINGS_REFUSED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
@@ -37483,7 +37497,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 Vec3::new(cx, cy, fz + dz);
                                             let head =
                                                 Vec3::new(cx, cy, fz + dz + 1);
-                                            if probe_landing_ok(solid(below), solid(feet), solid(head), common::path::colonist_walkable(&*terrain, feet))
+                                            if probe_landing_ok(solid(below), solid(feet), solid(head), landing_gate(LANDING_ROUTER_CHECK, common::path::colonist_walkable(&*terrain, feet)))
                                             {
                                                 // ★ W18-b / W18-b2: a two-block drop is refused only into a
                                                 // closed basin; a landing that opens onto the town is taken.
@@ -38018,11 +38032,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     ?feet,
                                                     ?under,
                                                     refused = n,
-                                                    "bastion: THE MOVER STANDS WHERE THE ROUTER WALKS — a landing the router cannot start a search from is refused (W17-c)"
+                                                    "bastion: THE MOVER STANDS WHERE THE ROUTER WALKS — a landing the router cannot start a search from; the check is off, the mover lands anyway, the surface is named (W17-c-r)"
                                                 );
                                             }
                                         }
-                                        if probe_landing_ok(solid(below), solid(feet), solid(head_c), common::path::colonist_walkable(&*terrain, feet))
+                                        if probe_landing_ok(solid(below), solid(feet), solid(head_c), landing_gate(LANDING_ROUTER_CHECK, common::path::colonist_walkable(&*terrain, feet)))
                                         {
                                             // ★ W18-b / W18-b2: a two-block drop is refused only into a
                                             // closed basin; a landing that opens onto the town is taken.
@@ -38884,7 +38898,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 Vec3::new(cx, cy, fz + dz);
                                             let headc =
                                                 Vec3::new(cx, cy, fz + dz + 1);
-                                            if probe_landing_ok(solid(below), solid(feet), solid(headc), common::path::colonist_walkable(&*terrain, feet))
+                                            if probe_landing_ok(solid(below), solid(feet), solid(headc), landing_gate(LANDING_ROUTER_CHECK, common::path::colonist_walkable(&*terrain, feet)))
                                             {
                                                 return Some(Vec3::new(
                                                     cx, cy, fz + dz,
@@ -57318,6 +57332,18 @@ mod tests {
         assert_eq!(sleep_block_severity(0.9, true, false), 0.9, "a very tired one keeps its own severity");
         assert_eq!(sleep_block_severity(0.0, false, false), 0.0, "off the block: identity");
         assert_eq!(sleep_block_severity(0.0, true, true), 0.0, "on the cooldown: identity");
+    }
+
+    /// ★ W17-c-r pinned: with the check off every landing the mover's triple
+    /// accepts is taken whatever the router says; with it on, only routable
+    /// ones. Planted defect: the check switched on -> red.
+    #[test]
+    fn the_router_check_on_landings_is_off() {
+        assert!(!LANDING_ROUTER_CHECK, "the check is off until items have a stand on the floor and the upstairs has a stair");
+        assert!(landing_gate(LANDING_ROUTER_CHECK, false), "off: a table top is landed on again");
+        assert!(landing_gate(LANDING_ROUTER_CHECK, true), "off: a floor too");
+        assert!(!landing_gate(true, false) && landing_gate(true, true), "on: only routable landings");
+        assert!(probe_landing_ok(true, false, false, landing_gate(LANDING_ROUTER_CHECK, false)), "the fence top lands while the check is off");
     }
 
     /// ★ W17-c pinned: a floor the router walks is landed on; a fence top the
