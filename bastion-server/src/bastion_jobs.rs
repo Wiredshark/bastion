@@ -10000,6 +10000,21 @@ pub(crate) fn site_has_stand(p: Vec3<i32>, reached: impl Fn(Vec3<i32>) -> bool) 
     false
 }
 
+/// ★ E2-q pinned: THE SHELF MOVES TO THE FLOOR THE ROAD REACHES. Among the
+/// candidates (the house footprint's standable cells the road reaches, no
+/// bed among them) the shelf takes the one nearest the old cell in x and
+/// y, then the lowest, then by (x, y): a total order; none without a
+/// candidate.
+pub(crate) fn shelf_relocation(old: Vec3<i32>, candidates: &[Vec3<i32>]) -> Option<Vec3<i32>> {
+    candidates
+        .iter()
+        .copied()
+        .min_by_key(|c| ((c.x - old.x).pow(2) + (c.y - old.y).pow(2), c.z, c.x, c.y))
+}
+
+/// ★ E2-q: the witness count.
+pub(crate) static SHELVES_MOVED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// The drop is taken unless its landing is a closed basin.
 pub(crate) fn drop_is_safe(
     standable: impl Fn(Vec3<i32>) -> bool,
@@ -27310,6 +27325,65 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                             board.site_reach = Some(set);
                         }
+                    }
+                    // ★ E2-q: THE SHELF MOVES TO THE FLOOR THE ROAD REACHES -- a one-cell
+                    // private shelf the road does not reach moves to the nearest reached
+                    // standable cell of its house's footprint (its id and its hauls'
+                    // destination stay); it stays put when the footprint has none (the
+                    // house itself is cut off: TR1 names it).
+                    if day_changed && let Some(reach) = board.site_reach.take() {
+                        let houses_q: Vec<Region> = board
+                            .designated
+                            .iter()
+                            .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                            .map(|(r, _)| *r)
+                            .collect();
+                        let beds_q: Vec<Vec3<i32>> = board.beds.keys().copied().collect();
+                        let standable = |c: Vec3<i32>| {
+                            terrain.get(c).is_ok_and(|b| !b.is_filled())
+                                && terrain.get(c - Vec3::unit_z()).is_ok_and(|b| b.is_filled())
+                        };
+                        let mut moves: Vec<(usize, Vec3<i32>, Vec3<i32>, Vec3<i32>)> = Vec::new();
+                        for (i, (_, r)) in board.stockpiles.iter().enumerate() {
+                            if r.min != r.max
+                                || !store_is_private(r, houses_q.iter())
+                                || site_has_stand(r.min, |c| reach.contains(&c))
+                            {
+                                continue;
+                            }
+                            let Some(h) = houses_q.iter().find(|h| h.contains_point_xy(r.min)) else {
+                                continue;
+                            };
+                            let mut cands: Vec<Vec3<i32>> = Vec::new();
+                            for z in h.min.z..=h.min.z + 3 {
+                                for y in h.min.y..=h.max.y {
+                                    for x in h.min.x..=h.max.x {
+                                        let c = Vec3::new(x, y, z);
+                                        if reach.contains(&c) && standable(c) && !beds_q.contains(&c) {
+                                            cands.push(c);
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some(to) = shelf_relocation(r.min, &cands) {
+                                moves.push((i, r.min, to, h.min));
+                            }
+                        }
+                        for (i, from, to, house_min) in moves {
+                            if let Some((zid, r)) = board.stockpiles.get_mut(i) {
+                                *r = Region { min: to, max: to };
+                                let n = SHELVES_MOVED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                info!(
+                                    zone = ?zid,
+                                    ?from,
+                                    ?to,
+                                    ?house_min,
+                                    moved = n,
+                                    "bastion: SHELF MOVED — the road did not reach this shelf; it moves to the nearest reached floor cell of its house (E2-q)"
+                                );
+                            }
+                        }
+                        board.site_reach = Some(reach);
                     }
                     // ★ THE DAILY CENSUSES RUN ONCE A DAY (2026-09-02 00:05).
                     // They were inserted between `let day_changed` and the
@@ -57951,6 +58025,22 @@ mod tests {
         assert!(store_cell_has_stand(Vec3::new(5, 2, 2), floor), "two cells from the floor row: a stand within reach");
         assert!(!store_cell_has_stand(Vec3::new(20, 20, 2), floor), "deep in the crate field: no stand within reach");
         assert!(!store_cell_has_stand(Vec3::new(20, 4, 2), floor), "four rows in: still none (the reach is three)");
+    }
+
+    /// ★ E2-q pinned: the nearest candidate in x and y wins; a tie takes the
+    /// lowest; the old cell itself, when it is a candidate, wins outright; no
+    /// candidate, no move. Planted defect: the choice never made -> red.
+    #[test]
+    fn the_shelf_moves_to_the_floor_the_road_reaches() {
+        let old = Vec3::new(7755, 6412, 186);
+        let floor = Vec3::new(7755, 6412, 181);
+        let near = Vec3::new(7756, 6413, 181);
+        let far = Vec3::new(7745, 6403, 181);
+        assert_eq!(shelf_relocation(old, &[far, near, floor]), Some(floor), "the cell under the old shelf: nearest in x, y");
+        assert_eq!(shelf_relocation(old, &[far, near]), Some(near), "then the next nearest");
+        assert_eq!(shelf_relocation(old, &[Vec3::new(7755, 6412, 183), floor]), Some(floor), "a tie in x, y takes the lowest");
+        assert_eq!(shelf_relocation(old, &[far, old]), Some(old), "the old cell itself, when reached, stays");
+        assert_eq!(shelf_relocation(old, &[]), None, "no candidate: no move");
     }
 
     /// ★ TR1 pinned: a site with a reached cell two away in x, y and z has a

@@ -3128,6 +3128,177 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### b2's E2-i3b day (03:06, cascade reader, pair 5a5822c77f, hour 6 of day 1): THE BED-CELL LOOP RECURRED -- 113x (7716,6343,186) with W14-d strikes 13; the 02:07 call is WITHDRAWN to "intermittent, three of seven arm-nights"
+
+FLOOD 187 (whole-town 187): 113x (7716,6343,186) -- the cell beside
+bed (7715,6342,186), the H2-i night's target on both arms -- 43x
+(7728,6353,198) (the roof-snapped store goal), 8x (7742,6404,181).
+STRIKES: terminal chaser 3, longest exhausts 13 ("three exhausted
+Longest searches job=253 colonist=55" x3 ...): W14-d benched the
+job and the walker asked again -- 113 asks is ~38 benched jobs at
+three exhausts each, so the picker re-offered the bed after each
+bench, which W6-F2's list should refuse for that sleeper if the
+bench site's shun fired (W6-F records the shun at the chaser's
+three-exhausts bench too) -- unless the asker is not a RestAt
+(a Haul to that cell?) or several sleepers each struck it once.
+W14-i7b (the standing-walker table, landing ~04:00) names the
+walker and the job; H2-p (~03:40) takes a bed struck out three
+times out of the picker for everyone. LOOP: bans 2, held strikes
+0, STRUCK OUT 0 (no held-job strike: the loop is the chaser's, not
+the suspend path's). The old stair census at day 1: beds 114,
+upstairs 56, connected 52, cut 4. SHELF: colonist 45 x15 (traced
+above); starving 45 and 64. Arrivals 761 (bar 720 PASSED).
+
+THE CALL OF 02:07 IS WITHDRAWN: seven arm-nights since W6-F2 --
+b2 336, 16, 13, 187 (113 to the bed cell); b1 14, 27, 19 -- the
+bed-cell loop is intermittent, not closed; its remaining producer
+is the chaser's strike-bench-re-pick with a picker that re-offers
+the bed. The consumers to judge it against are H2-p and the
+picker's use of TR1's/H2-p's truth, after W14-i7b names the pair.
+
+### H2-i2's first census on b1 (02:53, pair cbda5eef47, at boot): beds 116, upstairs 56, connected 56, CUT 0 with the router's own steps -- THE STAIR IS NOT THE CUT; the bar (cut >= 1) FAILED as registered, and its falsification clause names the door
+
+The climb from each house's floor cells (floor_z..=floor_z+2) with
+colonist_step_admitted (the mirror the common pin holds to the
+router on the lab stairs) stands beside every upstairs bed: 56 of
+56. So the houses' stairs are climbable by the router's rule, and
+the live failures -- 144 striking out its house-86 bed, the loopers
+at the wall cell (7706,6310) below house (7690,6300), 290 exhausts
+to a z-188 bed -- are not at the stair. The registered clause: "cut
+= 0 again: the disagreement is not in the step rule: the house's
+floor cells are not where the probe seeds, or the router's failure
+is at the DOOR, not the stair -- then the next probe starts OUTSIDE
+the house". TR1 is that probe (from the road). The door evidence
+already in hand: W17-i's DOOR PROBE on the loopers' house
+(7690,6300,180) read "doors=0 door=None verdict=NoDoor ...
+doors_any_z=2" -- the house has two doors, neither at the approach
+height: a house on a plinth or slope whose door sits above the
+ground the colonist stands on. The sleepers who DO reach those
+beds (41-42 of 50 in bed) get in by the mover's leniency (the glide
+and the assist lifts up the wall). DISPOSITION: H2-i2 STANDS as an
+instrument and answers its question: not the stair. The bed judge-
+ment for Ben re-points from "router headroom under a rising step"
+to "the house's door above the ground" -- TR1's Bed cut and its
+cut-site lines (with the block above) name the houses at the next
+boots (b2 ~03:00, b1 ~03:25).
+
+### W14-i7b THE FLOOD NAMES ITS STANDING WALKER -- registered 03:00 (before the binary exists), queued behind E2-r
+
+The 162 asks of store cell (7683,6456,182) on b1's E2-i3b day were
+named by NO instrument: W14-i7's chaser witness reads the exhaust
+count only inside the kinematic write loop (bodies the mover
+pushed that tick; a walker standing at its flee point is not
+pushed), W14-i8's fill table never saw the target, the detour lane
+ran 14 tier-0 searches all day. MECHANISM (instrument): a per-tick
+pass over every colonist reads the chaser snapshot; on a rise
+(chaser_rise_witnessed: exhaust_rose whatever the push) the
+(walker, target cell) pair's count in chaser_repeats rises, the
+pair's 1st..4th and powers of two print THE FLOOD NAMES ITS
+STANDING WALKER (uid, job, kind, job_pos, target, exhausts,
+repeats, pushed, feet), and CHASER REPEAT CENSUS prints the hourly
+top eight; W14-i7's block, running after, falls silent. PIN the_
+flood_names_its_standing_walker (a rise without a push is
+witnessed; with a push too; no rise nothing; a reset is not a
+rise); falsifier plants the push required. BARS (each arm's first
+day): the chaser census's top pair by hour 16 is among the tally's
+top ends within 20%; the top pairs are Haul/DepositRun to store or
+threshold cells and RestAt to upstairs beds; pushed=false on most
+lines for the top pair. FALSIFIED if the census's total stays under
+half the day's whole-town count (a fourth producer: grep the
+remaining Longest-tier caller) or if the top pair's target never
+matches a top end (the frame is wrong). Chain chain-w14i7b on
+e2r-staged; falsifier armed; dry tree passed E2-q -> H2-p -> E2-r ->
+W14-i7b.
+
+### TR1 LANDED (02:56): 68e684fd78, both halves, markers 'SITE REACH CENSUS' and 'THE SITE IS CUT OFF' in the exe
+
+Both pins green (bastion-server 514 filtered / 1 passed; common 720
+filtered / 1 passed: the three-high wall keeps the yard out at
+reach 2, a doorway joins it, the wall top is not stood on, the set
+is whole). Committed 02:44, staged 02:55, pushed, shipped to lab-
+bin 02:56 (playable). The reach set is kept on the board for E2-q.
+Falsifier b6djbxo3i plants SITE_STAND_RING 0 at +90 s: RED (03:01).
+E2-q's chain fired at 03:01 (stage ~03:22) -> H2-p -> E2-r ->
+W14-i7b. The first
+SITE REACH CENSUS prints at each arm's next boot on a pair at or
+after this one (b2 ~03:00, b1 ~03:25); the waiter keys on the
+line's text.
+
+### b1's E2-i3b day and night (02:55, archive b1-log-0251, pair 5a5822c77f, boarded 02:11, to hour 6 of day 1): the best night ever (41-42 of 50 in bed, arrivals 1,142, no strike-out) beside the worst daytime flood (598, 162 of them to one general-store cell)
+
+NIGHT CENSUS hours 1-5: in_bed 41, 42, 42, 42, 41 of 50; to_bed 2-3;
+hour 6: 0 in bed, 1 to bed. Arrivals 1,142 (the previous best 1,033
+on W14-w2's day, 956 on S1-i's). STRUCK OUT 0, W14-d strikes 0.
+FLOOD: LONGEST-EXHAUST 599 (whole-town 598): 162x (7683,6456,182)
+-- a cell of general store 66 -- asked from three flee points
+(7670.., 7684.., 7685..) between 06:14 and 06:51 UTC (the afternoon
+to the night); 53x (7756,6395,180) and 51x (7756,6388,180) --
+house 86's row again. W14-i7's chaser witness: uid 70 Haul x10, 138
+EatFrom x2, 128 Designated x2, 124 Haul, 105 Cook (16 lines: a
+hauler asking a store cell). The fill table at hour 4: 200 pairs,
+1,057 fills, top 140@(7755,6411,186) x67 (house 86's upstairs
+shelf cell), 68@(7622,6274,180) x38 (the plaza), 973@(7698,6446,
+182) x25 (store), 109@(7654,6509,186) x23 (the guard post).
+SHELF: NIGHT SHELF EMPTY 14, all colonist 105, load 799 (traced
+below: delivered and eaten by a neighbour); private-source meals 32
+over the day (E2-r's class). The night is the town's; the day's
+flood is the search budget's -- a hauler standing thirteen blocks
+from a store cell the router cannot reach, asking 162 times. The
+consumer after TR1: the general store's DROP CELL (spread storage's
+least-filled standable cell) must be in the road's reach set.
+
+### E2-i3b's first named load, traced (02:47, b1, pair 5a5822c77f): "GONE" MEANS DELIVERED -- and a neighbour ate it 22 seconds later. E2-r THE NEIGHBOUR'S SUPPER STAYS ON THE SHELF registered 02:52 (before the binary exists), queued behind H2-p
+
+Colonist 105's NIGHT SHELF EMPTY x13 (home (7690,6300,180), round_
+need 2, round_loads 1, gone 1, loads=[799], ledgered=true, bed z
+186). Job 799 by id: MINTED 06:17:29 UTC (hour 12, 6 units of meat,
+eaters [105]); claimed by 193 at 06:21:37; W14-i8's fill witness
+x3 en route; "arrived at job site" at the store pile (7792,6361,
+182) 06:22:22; "haul deposited job=799 dropped=6 dest=(7701,6308,
+186)" and "haul delivered zone=29 amount=6" at 06:23:48; RELEASE-
+DIAG class "gone", reason Other -- the job was DONE. At 06:24:10:
+"need preempt -- hunger below interrupt colonist=127 item=1314
+item_pos=(7701,6308,186) pick_key=Store(29) supper=false"; 127
+arrived upstairs at (7703.7,6308.2,186) at 06:24:32 (the mover
+climbs what the router refuses) and "ate -- source=private
+hour=15". 127's bed is (7734,6351,181), another house. So the
+E2-i3 class "minted 1, claimed, GONE" (21/46/134/135, 52 x2, 30/39)
+is the supper delivered and eaten by whoever is hungry nearest;
+the hauls' destination pick applies store_admits (a private shelf
+is its household's), the hunger need-preempt's pick_food does not
+(it filters on the night rule, verdicts, walker shuns, closed
+stores, reach and FOOD_DEFS). GENERATOR AND CONSUMER MUST AGREE.
+
+The second replicate, b2 (03:02, pair 5a5822c77f, boarded 02:27,
+hour 6 of day 1): MINTED 55; NIGHT SHELF EMPTY x15, all colonist
+45, home (7714,6360,180), round_need 2, round_loads 1, gone 1,
+loads=[456], ledgered=true. Job 456 by id: MINTED 06:32:37 (8
+mushrooms, eaters [45]); claimed by 10 at 06:34:00; at the pile
+(7668,6367,182) 06:34:20; "haul deposited dropped=8 dest=(7725,
+6368,186)" and "haul delivered zone=54 amount=8" at 06:35:00; "ate
+-- source=private hour=19" by uid 47 at that cell; 47's bed is
+(7717,6406,181), another house; the head 45 ate at the general
+store at hour 6 the next morning. Two arms, two named loads, both
+delivered, both eaten by a colonist of another house. E2-r's
+class.
+
+E2-r: eater_admits_item(zone, houses, own_house, general_exists) =
+outside every zone, or store_admits; the hunger pick computes the
+Bed regions, general_exists and the eater's household house
+(household_house on its owned bed) and filters first on it; a
+refusal witnesses THE NEIGHBOUR'S SUPPER STAYS ON THE SHELF.
+Identity for general stores, the own shelf, unzoned items, a town
+with no general store, store kinds off. PIN the_neighbours_supper_
+stays_on_the_shelf; falsifier plants everything admitted. BARS
+(each arm's first day and night): witness >= 1 by hour 16;
+delivered-and-empty shelf lines <= 2 per arm-night (13 tonight);
+foreign private meals 0; starving sleepers 0-1; day starving <= 2.
+FALSIFIED if day starving > 3 with the witness (the emergency needs
+a nearer source) or if the delivered-and-empty lines stay >= 9
+(another consumer: name it by id). Prior art: The Sims' household
+fridge, Banished's family storage. Chain chain-e2r on h2p-staged;
+falsifier armed; dry tree passed TR1 -> E2-q -> H2-p -> E2-r.
+
 ### H2-i2 LANDED (02:28): cbda5eef47, both halves, markers 'H2-i2: up, not down' and the renamed STAIR CENSUS line in the exe
 
 Both pins green on the fresh compile: the bastion-server geometry
