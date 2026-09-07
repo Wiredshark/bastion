@@ -3128,6 +3128,128 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### TR1c THE ROUTER IS ASKED ONCE A DAY -- registered 03:26 (before the binary exists), queued at the end (behind TR1b)
+
+Whether the gap between the mirror (every bed reached) and the live
+router (~60,000 states, under the floor) is the jump-into-interior
+clause (TR1b) or the A* budget against a connected town, only the
+router can say. MECHANISM (instrument): at the day change after
+E2-q's pass, the first road seed (walkable height in 170..=205),
+the first upstairs bed (more than two above its house's floor) and
+the first ground bed; the trunk's own TraversalConfig (can_climb,
+trunk reach, road/wall-margin/interior sets from the board);
+FullPathSearch::new(Longest) stepped up to 400 polls; ROUTER PROBE
+prints label, seed, bed, outcome (path / path-empty / unreachable /
+budget-exhausted / pending-at-cap), polls, closest, closest_dist,
+the mirror's verdict for the same pair with the live jump rule, and
+agreement (agree-path / agree-cut / router-only / mirror-only). Two
+searches a day per arm. Also learned: the trunk runs a TILE GRAPH
+(roads and doors) first and the block search is its fallback. PIN
+the_router_is_asked_once_a_day; falsifier plants agree-cut named
+agree-path. BARS: the ground control agree-path in <= 5 polls; the
+upstairs probe agree-cut (the door is the geometry: the plot row)
+or mirror-only with budget-exhausted and closest under the bed (the
+budget/heuristic: the door-as-waypoint row, RimWorld's region
+portals). FALSIFIED as an instrument if the upstairs probe reads
+path (the walkers' STARTS are off the reach, not the beds: W14-i7b's
+feet) or both read pending-at-cap. Chain chain-tr1c on tr1b-staged;
+falsifier armed; waiter wait-probe-tr1c pending launch; dry tree
+passed H2-p -> E2-r -> W14-i7b -> TR1b -> TR1c.
+
+### E2-q LANDED (03:22): d894e9828a, marker 'SHELF MOVED' in the exe
+
+Pin the_shelf_moves_to_the_floor_the_road_reaches green (515
+filtered, 1 passed); committed 03:07, staged 03:22, pushed, shipped
+to lab-bin 03:22. Falsifier b5awp5hkt plants the choice never made
+at +90 s: RED (03:28). H2-p's chain fired at 03:27 (stage ~03:49) ->
+E2-r -> W14-i7b -> TR1b. First read: read-e2q-first (SHELF MOVED at
+the boot census, DROP CELL FILTER EMPTIED, the night's shelf
+lines). Expectation revised by TR1's read: the reach set reaches
+every bed's ring, so it likely reaches every shelf too and SHELF
+MOVED may read 0 -- a null that TR1b's live rule, not the placer,
+must explain.
+
+### b1's H2-i2 day at hour 19 (03:11, pair cbda5eef47): FLOOD 240 with 228x (7712,6341,186) -- the upstairs-shelf haul is the day's flood on b1 too
+
+Top ends 228x (7712,6341,186) (a cell of the loopers' house's upper
+floor, beside the shelf/bed at (7715..7716, 6342..6343, 186)), 10x
+(7712,6342,198) (the roof-snapped variant), 1x (7791,6366,182).
+Bans 1, held strikes 0, STRUCK OUT 0, arrivals 779, starving 0,
+STUCK CENSUS 6, idle 0 at hour 19: the flood costs the search
+budget, not the town's day. The same class as b2's 113x (a Haul
+to the upstairs shelf, destination 37): E2-q moves that shelf only
+if the reach set does not hold it, and TR1 read every bed's ring
+reached -- so E2-q's first census may move nothing there, and the
+row that decides is TR1b (the live jump rule) or, if the town is
+truly connected, the A* budget. W14-i7b names the walker meanwhile.
+
+### TR1b THE CENSUS REFUSES THE JUMPS THE ROUTER REFUSES -- registered 03:14 (before the binary exists), queued at the end (behind W14-i7b)
+
+MECHANISM: colonist_step_admitted gains jump_landing_blocked(xy)
+on every move with dir.z >= 2 (the router's own clause on
+climb_ban and interior_cells); H2-i2's stair census and TR1's site
+census pass |xy| board.interior_cells.contains(&xy) (the trunk
+search's set); the site census runs a second reach with the rule
+open and prints cut_open and reached_open beside cut and reached,
+each cut line gaining reached_with_open_jumps; the cap 400,000; a
+stockpile's site is the first of its probe cells (every fourth
+column at every height of its band) with a stand, else the corner.
+PINS: the common pin gains case F (a yard behind a two-high wall
+section with a step beyond: in with the landing open, out with the
+landing 'interior'); the ring pin unchanged. Falsifier plants the
+landing rule ignored -> case F red. BARS (each arm's boot census):
+Bed cut >= 12 with the live rule and cut_open < cut (the jump-into-
+interior door class is the difference); the cut lines' above blocks
+air or roof, not Earth; Stockpile cut 0-4 on surface cells; cap_hit
+false with reached in 150,000..400,000. FALSIFIED if Bed cut stays
+0 with the live rule (the disagreement is not the jump clause: the
+A* budget and heuristic against a connected town -- the next probe
+runs find_path_priced from one road cell to one cut bed and reads
+its expanded count and closest cell) or if cap_hit stays true.
+Rejected: raising the router's budget (taste, and the clock); the
+router per site; ignoring the corner artefact. Chain chain-tr1b
+(both halves) on w14i7b-staged; falsifier armed; waiter wait-reach-
+tr1b keys on cut_open=; dry tree passed E2-q -> H2-p -> E2-r ->
+W14-i7b -> TR1b.
+
+### TR1's first census on b2 (03:08, pair 68e684fd78, at boot): seeds 2,318, reached 150,000 (CAP HIT), sites 223, cut 2 -- Bed cut 0 of 116: THE TOWN IS CONNECTED BY THE MIRROR'S STEPS, AND THE LIVE ROUTER STILL EXHAUSTS
+
+SITE REACH CENSUS day=0: seeds 2318, reached 150000, cap_hit true,
+sites 223, cut 2; kinds Bed (116, 0), Craft (1, 0), Designated
+(14, 0), Stockpile (92, 2). The two cut sites are general-store
+corners at z 178 with Earth/Rock above -- the zone's min corner is
+underground, not a site (a false positive of the corner rule; the
+site should be the zone's surface cells). The bar "Bed cut >= 12"
+FAILED; the falsification clause "Bed cut = 0 while H2-i2 reads
+cut >= 1" is moot (H2-i2 read 0 too); the instrument's own bar
+"reached 8,000..150,000 with cap_hit false" FAILED on the cap: the
+town's standable ground exceeds 150,000 cells and the set is cut
+short -- yet every bed's ring was reached before the cap.
+
+b1 replicates it exactly (03:20, at boot on 68e684fd78): seeds
+2318, reached 150000 cap_hit true, sites 241, cut 2 (the same two
+store corners), Bed (116, 0), Designated (32, 0).
+
+Against it, the live searches: on b1's E2-i3b day 599 whole-town
+exhausts expanded 45,982-66,464 states (median 62,745) and ended
+2-48 blocks from their goals (median 23); the bed cell (7716,6343,
+186) on b2: closest (7715,6344,183), three below the floor, one
+beside, after 60,962 states; the store cell (7683,6456,182) on b1:
+closest 20 away after 63,349. A breadth-first reach from the road
+stands beside every bed inside 150,000 cells; an A* with the
+router's budget spends ~60,000 under the floor and gives up. Two
+readings: (a) the mirror is looser than the live search -- the
+live TraversalConfig carries climb_ban and interior_cells that
+refuse JUMPS (dir.z >= 2) whose landing is banned or inside a
+house; the mirror passes empty sets, so a plinth door that is a
+two-high step into the interior is climbed by the census and
+refused live (consistent with "doors_any_z=2"); (b) the geometry
+is connected but the A* heuristic leads the search under the
+floor until the budget ends (the way up is far from the straight
+line). TR1b (registered next) settles (a) by mirroring the live
+jump refusals and printing the cut with and without jumps, raises
+the cap, and sites stockpiles by their surface cells.
+
 ### b2's E2-i3b day (03:06, cascade reader, pair 5a5822c77f, hour 6 of day 1): THE BED-CELL LOOP RECURRED -- 113x (7716,6343,186) with W14-d strikes 13; the 02:07 call is WITHDRAWN to "intermittent, three of seven arm-nights"
 
 FLOOD 187 (whole-town 187): 113x (7716,6343,186) -- the cell beside
@@ -3148,6 +3270,17 @@ times out of the picker for everyone. LOOP: bans 2, held strikes
 the suspend path's). The old stair census at day 1: beds 114,
 upstairs 56, connected 52, cut 4. SHELF: colonist 45 x15 (traced
 above); starving 45 and 64. Arrivals 761 (bar 720 PASSED).
+
+NAMED (03:08, the archived log): job 253 = Haul { item 955,
+destination 37 } by colonist 55 -- W14-d struck it 7 times (job 493
+by 10 x4, 459 by 64, 427 by 12); the chaser witness: uid 55 Haul
+x15. Destination 37 is the private shelf beside bed (7715,6342,
+186), upstairs. So this instance of the "bed-cell loop" is a
+SUPPER HAUL to an upstairs shelf, E2-q's class (the shelf moves to
+the road-reached floor, landing ~03:22), not the bed picker's; no
+RestAt to (7715,6342,186) was claimed all day, shuns 1, STRUCK OUT
+0. The H2-i night's 148x/170x were mixed (72's RestAt reclaim loop
+on b2; unknown kinds on b1).
 
 THE CALL OF 02:07 IS WITHDRAWN: seven arm-nights since W6-F2 --
 b2 336, 16, 13, 187 (113 to the bed cell); b1 14, 27, 19 -- the

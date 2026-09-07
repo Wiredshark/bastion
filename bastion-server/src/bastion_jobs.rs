@@ -9717,6 +9717,28 @@ pub(crate) fn shun_bed_for_night(list: &mut Vec<(Vec3<i32>, f64)>, bed: Vec3<i32
     list.len()
 }
 
+/// ★ H2-p pinned: THE BED EARNS ITS REPUTATION. The shun is one sleeper's;
+/// this is the town's. Every strike-out of a bed job counts against the
+/// BED; at three with no sleeper since, the picker offers it to no one
+/// until a sleeper arrives in it (the bed census resets it) or three game
+/// days pass. Two strikes still offer it; the window reopens it.
+pub(crate) const BED_REPUTATION_STRIKES: u32 = 3;
+pub(crate) const BED_REPUTATION_WINDOW: f64 = 3.0 * 24.0 * 75.0;
+
+pub(crate) fn bed_strike(rep: &mut (u32, f64), now: f64) -> u32 {
+    rep.0 = rep.0.saturating_add(1);
+    rep.1 = now;
+    rep.0
+}
+
+pub(crate) fn bed_is_offered(rep: Option<&(u32, f64)>, now: f64) -> bool {
+    rep.is_none_or(|(n, t)| *n < BED_REPUTATION_STRIKES || now >= *t + BED_REPUTATION_WINDOW)
+}
+
+/// ★ H2-p: the witness counts.
+pub(crate) static BEDS_OUT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub(crate) static BEDS_BACK: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W6-F: the witness count.
 pub(crate) static BEDS_SHUNNED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
@@ -15812,6 +15834,10 @@ pub struct JobBoard {
     /// unreachable bed and flood the town with a fresh search every three
     /// timeouts.
     pub bed_shun: HashMap<Uid, Vec<(Vec3<i32>, f64)>>,
+    /// ★ H2-p: per bed, (strike-outs since it was last slept in, the time of
+    /// the last). At BED_REPUTATION_STRIKES the picker skips the bed town-wide
+    /// until a sleeper arrives in it or the window passes.
+    pub bed_reputation: HashMap<Vec3<i32>, (u32, f64)>,
     /// ★ E2-i3: the round's ledger per house (by the house's min corner):
     /// the shortfall at the round and the loads minted for it, so a
     /// sleeper's empty shelf can name what the round did for its house.
@@ -33817,6 +33843,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             };
                             if let Some(b) = shun_bed {
                                 let held = shun_bed_for_night(board.bed_shun.entry(*uid).or_default(), b, time.0);
+                                // ★ H2-p: and against the bed itself, town-wide.
+                                let rep_n = bed_strike(board.bed_reputation.entry(b).or_insert((0, 0.0)), time.0);
+                                if rep_n == BED_REPUTATION_STRIKES {
+                                    let q = BEDS_OUT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                    info!(
+                                        bed = ?b,
+                                        strikes = rep_n,
+                                        beds_out = q,
+                                        "bastion: THE BED IS OUT OF THE PICKER — three strike-outs and no sleeper since; skipped town-wide until slept in or the window passes (H2-p)"
+                                    );
+                                }
                                 let k = BEDS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                 if k <= 8 || k.is_power_of_two() {
                                     info!(colonist = %uid, bed = ?b, until = time.0 + BED_SHUN_SECS, held, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F; W6-F2: every bed struck out tonight, held names how many)");
@@ -33849,13 +33886,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 })
                             })
                             // ★ W6-F: not the bed struck out tonight.
-                            .filter(|p| !bed_is_shunned(board.bed_shun.get(uid), *p, time.0));
+                            .filter(|p| !bed_is_shunned(board.bed_shun.get(uid), *p, time.0) && bed_is_offered(board.bed_reputation.get(p), time.0));
                         let bed = own.or_else(|| {
                             board
                                 .beds
                                 .iter()
                                 .filter(|(_, s)| s.occupant.is_none())
-                                .filter(|(p, _)| !bed_is_shunned(board.bed_shun.get(uid), **p, time.0))
+                                .filter(|(p, _)| !bed_is_shunned(board.bed_shun.get(uid), **p, time.0) && bed_is_offered(board.bed_reputation.get(*p), time.0))
                                 // T0.39 (T0-003): beds iterate a HashMap —
                                 // equal-distance ties break on the bed
                                 // coordinate, never process-seeded hash
@@ -38895,6 +38932,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // ★ W6-F: a benched bed job shuns its bed for this sleeper too.
                                         if let common::bastion::JobKind::RestAt { bed_pos } = job.kind {
                                             let held = shun_bed_for_night(board.bed_shun.entry(u).or_default(), bed_pos, time.0);
+                                            // ★ H2-p: and against the bed itself, town-wide.
+                                            let rep_n = bed_strike(board.bed_reputation.entry(bed_pos).or_insert((0, 0.0)), time.0);
+                                            if rep_n == BED_REPUTATION_STRIKES {
+                                                let q = BEDS_OUT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                info!(
+                                                    bed = ?bed_pos,
+                                                    strikes = rep_n,
+                                                    beds_out = q,
+                                                    "bastion: THE BED IS OUT OF THE PICKER — three strike-outs and no sleeper since; skipped town-wide until slept in or the window passes (H2-p)"
+                                                );
+                                            }
                                             let k = BEDS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                             if k <= 8 || k.is_power_of_two() {
                                                 info!(colonist = u.0.get(), bed = ?bed_pos, until = time.0 + BED_SHUN_SECS, held, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F; W6-F2: every bed struck out tonight, held names how many)");
@@ -51112,6 +51160,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let mut lying = 0usize;
                     let mut downed_in_bed = 0usize;
                     let mut standers: Vec<u64> = Vec::new();
+                    // ★ H2-p: the beds a sleeper arrived in this hour.
+                    let mut slept_beds: Vec<Vec3<i32>> = Vec::new();
                     for (aj, _, e) in (&active_jobs, &colonists, &entities).join() {
                         if let Some(u) = uids.get(e)
                             && let Some(j) = board.jobs.get(&aj.job)
@@ -51127,6 +51177,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             continue;
                         }
                         in_bed += 1;
+                        if let Some(common::bastion::JobKind::RestAt { bed_pos }) = board.jobs.get(&aj.job).map(|j| j.kind) {
+                            slept_beds.push(bed_pos);
+                        }
                         // ★ ROW 50 FIX (review rank 13): CRAWL IS TWO
                         // THINGS. Vanilla uses the same state for "asleep
                         // in bed" and "downed and bleeding out", and this
@@ -51164,6 +51217,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // stander, a uid that appears once is a body
                             // still arriving.
                             standers.push(u.0.get());
+                        }
+                    }
+                    // ★ H2-p: a bed slept in earns its reputation back.
+                    for b in slept_beds {
+                        if let Some(rep) = board.bed_reputation.remove(&b)
+                            && rep.0 >= BED_REPUTATION_STRIKES
+                        {
+                            let q = BEDS_BACK.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                            info!(
+                                bed = ?b,
+                                strikes = rep.0,
+                                beds_back = q,
+                                "bastion: THE BED IS SLEPT IN AGAIN — a sleeper arrived; its strike-outs are forgotten (H2-p)"
+                            );
                         }
                     }
                     if in_bed > 0 {
@@ -58336,6 +58403,25 @@ mod tests {
         assert!(!bed_is_shunned(Some(&shun), other, 1000.0), "another bed is never shunned by this entry");
         assert!(!bed_is_shunned(None, bed, 1000.0), "no shun: no skip");
         assert!((BED_SHUN_SECS - 600.0).abs() < f32::EPSILON as f64, "a Sleep block: eight game hours of 75 s");
+    }
+
+    /// ★ H2-p pinned: two strike-outs still offer the bed; the third takes it
+    /// out for everyone; a reset (the entry removed) offers it again; the
+    /// window reopens it without a sleeper. Planted defect: the bed always
+    /// offered -> red.
+    #[test]
+    fn the_bed_earns_its_reputation() {
+        let mut rep = (0u32, 0.0f64);
+        assert_eq!(bed_strike(&mut rep, 100.0), 1);
+        assert!(bed_is_offered(Some(&rep), 101.0), "one strike-out: still offered");
+        assert_eq!(bed_strike(&mut rep, 200.0), 2);
+        assert!(bed_is_offered(Some(&rep), 201.0), "two: still offered");
+        assert_eq!(bed_strike(&mut rep, 300.0), 3);
+        assert!(!bed_is_offered(Some(&rep), 301.0), "three with no sleeper since: out of the picker");
+        assert!(!bed_is_offered(Some(&rep), 300.0 + BED_REPUTATION_WINDOW - 1.0), "still out inside the window");
+        assert!(bed_is_offered(Some(&rep), 300.0 + BED_REPUTATION_WINDOW), "the window reopens it");
+        assert!(bed_is_offered(None, 0.0), "no entry (never struck, or slept in since): offered");
+        assert!((BED_REPUTATION_WINDOW - 5400.0).abs() < 1e-9, "three game days of 24 hours of 75 s");
     }
 
     /// ★ W6-F2 pinned: the second strike-out joins the first instead of
