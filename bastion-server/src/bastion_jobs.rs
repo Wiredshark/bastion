@@ -10354,6 +10354,27 @@ pub const URGENCY_FLEE: f32 = 1.0;
 pub const URGENCY_WORK: f32 = 0.5;
 pub const URGENCY_IDLE: f32 = 0.1;
 
+/// ★ H1-a pinned: THE SLEEP BLOCK PUTS THE UNTIRED TO BED. In a colonist's
+/// own Sleep block the Personal drive's severity has this floor, so
+/// personal_urgency(w, severity) beats Work (0.5, modulated to at most 0.7)
+/// and Idle (0.1, at most 0.14) but never Flee (1.0), and the need pass --
+/// which already admits the rest candidate in the block whatever the meter
+/// -- is reached. Twenty-one colonists stood idle and untired at midnight
+/// on the first night census. Off the block, or on the preempt cooldown,
+/// the severity is untouched (identity).
+pub(crate) const SLEEP_BLOCK_SEVERITY: f32 = 0.5;
+
+pub(crate) fn sleep_block_severity(severity: f32, own_sleep_block: bool, on_cooldown: bool) -> f32 {
+    if own_sleep_block && !on_cooldown {
+        severity.max(SLEEP_BLOCK_SEVERITY)
+    } else {
+        severity
+    }
+}
+
+/// ★ H1-a: the witness count (the floor lifted a colonist's drive).
+pub(crate) static SLEEP_BLOCK_FLOORS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// Chunks the harness (and future scenario tooling) forces to stay loaded —
 /// the server unload sweep skips them. Empty in normal play.
 #[derive(Default)]
@@ -30836,6 +30857,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         } else {
                             0.0
                         };
+                        // ★ H1-a: THE SLEEP BLOCK PUTS THE UNTIRED TO BED -- in the
+                        // colonist's own Sleep block the severity has a floor.
+                        let own_sleep_block = matches!(
+                            colonist_schedule_block(
+                                &board.night_watch,
+                                uids.get(entity),
+                                hour_of_day(rtsim.rt_state().data().time_of_day.0)
+                            ),
+                            ScheduleBlock::Sleep
+                        );
+                        let floored = sleep_block_severity(severity, own_sleep_block, on_cooldown);
+                        if floored > severity {
+                            let k = SLEEP_BLOCK_FLOORS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                            if k <= 8 || k.is_power_of_two() {
+                                info!(
+                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                    severity,
+                                    floored,
+                                    work = w,
+                                    floors = k,
+                                    "bastion: THE SLEEP BLOCK PUTS THE UNTIRED TO BED — a colonist in its own Sleep block wants rest whatever the meter (H1-a)"
+                                );
+                            }
+                        }
+                        let severity = floored;
                         if std::env::var_os("BASTION_ARB_PERSONAL_DIAG").is_some() {
                             info!(
                                 tick = tick.0,
@@ -57252,6 +57298,26 @@ mod tests {
         assert!(!reservation_yields_to_owner(true, "haul"), "a claimed haul stands");
         assert!(!reservation_yields_to_owner(false, "eat"), "an unclaimed eat stands");
         assert!(!reservation_yields_to_owner(false, "deposit"), "an unclaimed deposit stands");
+    }
+
+    /// ★ H1-a pinned: in the colonist's own Sleep block an untired colonist's
+    /// Personal urgency beats Work and Idle (the drive choice's own
+    /// conditions: p > w and p >= i) and never Flee; off the block or on the
+    /// cooldown the severity is identity. Planted defect: the floor at zero
+    /// -> red.
+    #[test]
+    fn the_sleep_block_puts_the_untired_to_bed() {
+        let sev = sleep_block_severity(0.0, true, false);
+        for w in [0.0f32, URGENCY_WORK, URGENCY_WORK * 1.4] {
+            let p = comp::bastion::personal_urgency(w, sev);
+            assert!(p > w, "in the Sleep block Personal beats Work (w {w}, p {p})");
+            assert!(p >= URGENCY_IDLE * 1.4, "and Idle (p {p})");
+            assert!(p < URGENCY_FLEE, "but never Flee (p {p})");
+        }
+        assert_eq!(sleep_block_severity(0.3, true, false), 0.5, "a tired colonist keeps at least the floor");
+        assert_eq!(sleep_block_severity(0.9, true, false), 0.9, "a very tired one keeps its own severity");
+        assert_eq!(sleep_block_severity(0.0, false, false), 0.0, "off the block: identity");
+        assert_eq!(sleep_block_severity(0.0, true, true), 0.0, "on the cooldown: identity");
     }
 
     /// ★ W17-c pinned: a floor the router walks is landed on; a fence top the

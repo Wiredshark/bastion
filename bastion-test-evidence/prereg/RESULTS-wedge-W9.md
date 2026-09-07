@@ -3128,6 +3128,130 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### E2-i3 LANDED (21:01): a05f19c6df, both halves, marker 'the loads named' 1 in the exe
+
+Pin the_empty_shelf_names_its_loads green on the fresh compile;
+committed 20:44, staged 21:01:41, pushed, shipped to lab-bin
+21:02:05 (playable). Falsifier bd35ehi8y planted `claimed || true`
+at 21:03: the pin went RED (0 passed, 1 failed), 0 dirty files
+restored at 21:06. E2-i3 is red on its plant. The H1-a chain fires at
++300 s (~21:07; stage ~21:22). The arms board E2-i3 at their next
+reader restarts (the E2-i3 readers, after the W17-c days: b2 ~21:27
+at hour 6, b1 ~21:35); the first ledgered NIGHT SHELF EMPTY lines
+come from those nights.
+
+### W6-E's b1 day (20:57, pair ae6b8fd42d, night block at hour 6): the strike works, the re-pick loop takes over -- DISPOSED: stands, bar failed on the residual it named
+
+The W14-g reader's night block: CLIMB BANNED(other) 129 (261 the
+night before), colonist 148 x42, 138 x24, 133 x22; reclaims 133 x86,
+148 x35 (157 for one colonist before: the bar of 12 FAILED); THE HELD
+JOB STRIKES 10; STRUCK OUT 36 -- thirty-six strike-outs in a night,
+i.e. twelve bed jobs for the same unreachable beds struck out three
+timeouts apiece; benched by banned climbs 9; route-proof benches 78;
+LONGEST-EXHAUST 238 (52 on the W14-g2 day: the re-pick flood);
+arrivals 886 (bar 900 missed by 14: the flood's clock); bobs 138
+x32 with 10 stall witnesses (25 x8, 138 x2: W18-e's consumer fires
+and the clock is reset again -- W18-e2's case); FETCH STALLED 14;
+starving 1; STUCK CENSUS 18; p95 690 us; panics 0. Disposition:
+W6-E's mechanism does what it says (the held job strikes and strikes
+out; the nine-second reclaim loop is halved), its registered bar
+fails on the residual its own text named (the picker re-offers the
+struck-out bed), and that residual is W6-F, queued behind H1-a. The
+flood it re-opened is the same residual's cost.
+
+### b1's W6-E night through hour 4 (20:55, pair ae6b8fd42d) and desktop probe #12
+
+NIGHT CENSUS hours 1-4: in_bed 12 / 13 / 16 / 18, to_bed 5-6, watch
+6, working 1, idle 26 / 24 / 22 / 20, untired 27 / 25 / 19 / 19 --
+H1-a's class on the ledge arm too. W6-E: CLIMB BANNED(other) 117
+(261), colonist 148 x42 (20 at the wall), 138 x22, 133 x18;
+reclaims 133 x71, 148 x35 (157 the night before); held strikes 10;
+benched by banned climbs 9; LONGEST-EXHAUST 235 (the re-pick flood:
+W6-F's case); bobs peak 32 with 10 stall witnesses (W18-e2's case);
+arrivals 863 by hour 4; starving 143 and 148. Desktop probe #12 at
+20:55: 0x0 (locked); the render sweep stays owed.
+
+### W17-c on b2 at hour 10 (20:54, pair 54435acd14): the snapped starts are gone; the surfaces are named
+
+Hand read of the live log three game hours in: starts snapped more
+than two: 0 of 778 Longest searches (451 on the pre-fix day: the bar
+of 40 passes at hour 10); THE MOVER STANDS WHERE THE ROUTER WALKS 15
+-- the surfaces the mover used to stand bodies on: a fancy table
+corner x6, a flowerpot x3, a chair x2, a fence x1; two-block mover
+drops from z >= 185: 6 (bar 8 for the day: WATCH); arrivals 204 by
+hour 10; LONGEST-EXHAUST 4; FETCH STALLED 19 (4-10 for a whole day
+before: WATCH -- the bodies that used to climb the furniture now
+stall at it and the shun sends them elsewhere; the day's arrivals
+decide). The day block at hour 6 is the read.
+
+### W6-F registered (20:53): THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT -- behind H1-a, ahead of W18-e2 and H2-i
+
+Mechanism: JobBoard.bed_shun: Uid -> (bed, until); recorded at BOTH
+discard paths of a bed job -- W6-E's reclaim-cap discard and the
+chaser's three-exhausts bench (UNREACHABLE PROVEN) -- with until =
+now + BED_SHUN_SECS (one Sleep block, 8 x 75 s = 600 s) and the
+witness THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT (colonist, bed,
+until, count) at the first eight and powers of two; the picker's
+own-bed filter and the nearest-free-slot search skip a bed for which
+bed_is_shunned(shun, bed, now) = the entry names this bed and now <
+until. Pin the_struck_out_bed_is_shunned_for_the_night (inside the
+window yes, after no, another bed never, no entry no skip, the
+window is a Sleep block); falsifier plants `&& false` on the rule.
+The queue was reordered again: the W18-e2 chain and readers killed
+by pid and re-derived behind W6-F; W6-F's readers keyed on H1-a's;
+dry tree HEAD a05f19c6df (E2-i3, building) + H1-a + W6-F + W18-e2
++ H2-i (8 uses, 5 of the shun). Launched 20:54. Order: E2-i3 (stage
+~20:57) -> H1-a (~21:17) -> W6-F (~21:37) -> W18-e2 (~21:57) ->
+H2-i (~22:17).
+
+Bars (each arm's first night): LONGEST-EXHAUST for the day <= 80
+(518 / 226 by hour 1); no bed cell above 20 exhaustions; STRUCK OUT
+per colonist per night <= 2 (12); the shun witness >= 1; reclaims
+per colonist <= 8; starving unchanged; arrivals >= 900 / 720; the
+day back near 35 min. Falsified if the exhaustions stay above 200
+with the witness present (another re-ask engine), or in_bed at
+hour 2 falls (the nearest-slot fallback is the same upstairs class:
+then the shun must be by bed, not by sleeper).
+
+### THE FLOOD CAME BACK THROUGH W6-E'S STRIKE-OUT (20:49): 518 exhaustions on b2's first W6-E day, 196 to one upstairs bed
+
+The W6-E b2 reader's day block (ae6b8fd42d, hour 6): LONGEST-
+EXHAUST 518 (20 and 71 on the W14-g2 days), top end (7716,6343,186)
+x196; FETCH STALLED 23 (4); arrivals 862; starving sleepers 3;
+bobs peak 4; CLIMB BANNED(other) 6; STRUCK OUT 8. b1 on the same
+pair at hour 1 of its night: 226 exhaustions (52 for the whole
+W14-g2 day), STRUCK OUT 18. The mechanism: W6-E's strike-out
+discards the bed job; the picker offers the sleeper's own bed (or
+the nearest free slot) again; a new RestAt, a fresh Longest search
+that floods and exhausts; three timeouts; struck out again --
+twelve strike-outs a night for one sleeper, each costing a whole-
+town search or three. A CHURN ENGINE FLOODS ITS NEIGHBOURS: the
+strike-out is the engine. W6-F THE STRUCK-OUT BED IS SHUNNED FOR
+THE NIGHT (a per-sleeper shun of the discarded bed for one Sleep
+block, honoured by the own-bed and nearest-slot filters) is written
+and goes directly behind H1-a, ahead of W18-e2 and H2-i.
+
+### The full night on both arms (20:47) and W6-E's first hours on b1
+
+b2 (H1-i pair), the whole night: idle 21 / 19 / 19 / 17 / 15 / 13
+at hours 0-5, in_bed 14 / 16 / 17 / 19 / 21 / 21, to_bed 5-9,
+untired 20 -> 11, the watch 6; hour 6: working 37, idle 0 (the day
+starts). b1 (W6-E + H1-i pair), hours 21-0: in_bed 2 / 2 / 10 / 10,
+idle 6 / 20 / 27 / 27, untired 28 / 28 / 26 / 27, the watch 7: the
+ledge arm has 27 of 50 idle at midnight. H1-a's class on both arms.
+
+W6-E on b1 by hour 0: CLIMB BANNED(other) 56 (261 the night
+before), the top banner colonist 148 x16 (5 at the wall cell), 138
+x11, 133 x10; reclaims 133 x25, 148 x16 (157 for one colonist the
+night before); THE HELD JOB STRIKES 9; STRUCK OUT 12; benched by
+banned climbs 9. The strike fires and the reclaim stops at three --
+and the picker re-offers the same bed: 12 strike-outs in a night
+is four bed jobs for the same unreachable bed, each struck out
+after three timeouts. The registered bar (top reclaims per colonist
+<= 12) is missed by 2x while the loop shrank 6x; the residual is
+the one the row named: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT
+(a small row after H2-i), and the cause is the stair (H2-i, Ben).
+
 ### H1-a registered (20:43): THE SLEEP BLOCK PUTS THE UNTIRED TO BED -- and the queue reordered to land it first
 
 Hours 1-2 on b2 confirmed the shape: in_bed 16-17, to_bed 7, watch
