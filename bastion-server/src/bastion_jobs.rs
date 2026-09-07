@@ -10981,6 +10981,24 @@ pub(crate) fn household_house<'a>(
 
 pub(crate) fn store_kinds_on() -> bool { std::env::var_os("BASTION_NO_STORE_KINDS").is_none() }
 
+/// ★ E2-r pinned: THE NEIGHBOUR'S SUPPER STAYS ON THE SHELF. May this eater
+/// take this item? An item outside every zone: yes. An item in a zone: as
+/// store_admits says -- a general store admits anyone, a private shelf only
+/// its household, and when the town has no general store (or store kinds
+/// are off) everyone may use everything. The hauls' rule, now the hunger
+/// pick's too.
+pub(crate) fn eater_admits_item(
+    zone: Option<&Region>,
+    houses: &[Region],
+    own_house: Option<Region>,
+    general_exists: bool,
+) -> bool {
+    zone.is_none_or(|r| store_admits(r, houses, own_house, general_exists))
+}
+
+/// ★ E2-r: the witness count (private shelves a hungry pick skipped).
+pub(crate) static NEIGHBOUR_SUPPERS_KEPT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// May this colonist use this store? A general store: anyone. A private
 /// store: only its household. When the town has NO general store, identity
 /// (everyone may use everything) so a shelves-only town keeps working.
@@ -33455,12 +33473,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     }
                                 }
                             }
+                            // ★ E2-r: THE NEIGHBOUR'S SUPPER STAYS ON THE SHELF -- the hunger
+                            // pick admits a private shelf only to its household (store_admits,
+                            // the hauls' rule).
+                            let houses_r: Vec<Region> = board
+                                .designated
+                                .iter()
+                                .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                                .map(|(r, _)| *r)
+                                .collect();
+                            let general_exists_r = board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses_r.iter()));
+                            let own_bed_r = board.beds.iter().find(|(_, sl)| sl.owner == Some(*uid)).map(|(pb, _)| *pb);
+                            let own_house_r = household_house(own_bed_r, houses_r.iter());
                             let pick_food = |respect_verdicts: bool| pick_within_store(
                                 (&pickup_items, &positions, &uids)
                                 .join()
                                 .filter(|(pi, ipos, iuid)| {
                                     let icell = ipos.0.map(|e| e.floor() as i32);
-                                    (night_ok(icell) || night_home.is_none())
+                                    let admitted_r = eater_admits_item(
+                                        board.stockpiles.iter().find(|(_, r)| r.contains_point_xy(icell)).map(|(_, r)| r),
+                                        &houses_r,
+                                        own_house_r,
+                                        general_exists_r,
+                                    );
+                                    if !admitted_r {
+                                        let n = NEIGHBOUR_SUPPERS_KEPT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                                        if n <= 8 || n.is_power_of_two() {
+                                            info!(
+                                                colonist = uid.0.get(),
+                                                item_cell = ?icell,
+                                                own_house = ?own_house_r.map(|h| h.min),
+                                                kept = n,
+                                                "bastion: THE NEIGHBOUR'S SUPPER STAYS ON THE SHELF — a hungry pick skipped a private shelf not its own (E2-r)"
+                                            );
+                                        }
+                                    }
+                                    admitted_r
+                                    && (night_ok(icell) || night_home.is_none())
                                     && (!respect_verdicts
                                         || (!goal_verdict_blocks(
                                             &board.goal_verdicts,
@@ -58092,6 +58141,29 @@ mod tests {
         assert!(store_cell_has_stand(Vec3::new(5, 2, 2), floor), "two cells from the floor row: a stand within reach");
         assert!(!store_cell_has_stand(Vec3::new(20, 20, 2), floor), "deep in the crate field: no stand within reach");
         assert!(!store_cell_has_stand(Vec3::new(20, 4, 2), floor), "four rows in: still none (the reach is three)");
+    }
+
+    /// ★ E2-r pinned: an item in a foreign private shelf is refused while a
+    /// general store exists; the household's own shelf, a general store, an
+    /// item outside every zone, and a town with no general store are all
+    /// admitted. Planted defect: everything admitted -> red on the foreign
+    /// shelf.
+    #[test]
+    fn the_neighbours_supper_stays_on_the_shelf() {
+        let a = Region { min: Vec3::new(0, 0, 180), max: Vec3::new(10, 10, 190) };
+        let b = Region { min: Vec3::new(20, 20, 180), max: Vec3::new(30, 30, 190) };
+        let houses = [a, b];
+        let shelf_b = Region { min: Vec3::new(25, 25, 186), max: Vec3::new(25, 25, 186) };
+        let general = Region { min: Vec3::new(50, 50, 182), max: Vec3::new(90, 90, 184) };
+        if !store_kinds_on() {
+            return;
+        }
+        assert!(!eater_admits_item(Some(&shelf_b), &houses, Some(a), true), "the neighbour's shelf: refused");
+        assert!(eater_admits_item(Some(&shelf_b), &houses, Some(b), true), "the household's own shelf: admitted");
+        assert!(eater_admits_item(Some(&general), &houses, Some(a), true), "a general store: anyone");
+        assert!(eater_admits_item(None, &houses, Some(a), true), "an item outside every zone: admitted");
+        assert!(eater_admits_item(Some(&shelf_b), &houses, Some(a), false), "no general store in town: identity");
+        assert!(eater_admits_item(Some(&shelf_b), &houses, None, false), "and for a colonist with no house");
     }
 
     /// ★ E2-q pinned: the nearest candidate in x and y wins; a tie takes the

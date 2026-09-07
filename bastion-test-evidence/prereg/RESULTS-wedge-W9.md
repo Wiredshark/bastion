@@ -3226,6 +3226,24 @@ cut >= 1" is moot (H2-i2 read 0 too); the instrument's own bar
 town's standable ground exceeds 150,000 cells and the set is cut
 short -- yet every bed's ring was reached before the cap.
 
+b2's day-1 census (03:35, after a day of jobs): sites 464, cut 34:
+Bed (116, 0), Cook (58, 0), Craft (3, 0), Designated (132, 32),
+Guard (8, 0), Haul (13, 0), Recreate (1, 0), RestAt (41, 0),
+Stockpile (92, 2). The 32 cut Designated sites are work cells at z
+181 with Air above, clustered at the town's south end (y 6442-6484
+of bounds 6068-6549: jobs 814, 818-820, 823-824 ...) -- the reach
+set's cap (150,000) truncates the far side of the town from the
+(x, y)-ordered seeds, so the south end reads cut for want of
+budget, not geometry; TR1b's cap of 400,000 is the test (the
+Designated bar of <= 20% cut is not judged until then). H2-i2's
+day-1 stair census on the same boot: cut 2 of 56.
+
+b1's TR1 day 0 at hour 19 (cascade reader, 03:39): FLOOD 187
+(30x (7687,6451,182), 16x (7673,6203,182), 14x (7679,6197,182):
+general-store cells, the daytime class), bans 0, strikes 0, STUCK
+CENSUS 2, arrivals 987 by hour 19 (on pace for the best day),
+starving 0, NIGHT SHELF EMPTY 0 so far.
+
 b1 replicates it exactly (03:20, at boot on 68e684fd78): seeds
 2318, reached 150000 cap_hit true, sites 241, cut 2 (the same two
 store corners), Bed (116, 0), Designated (32, 0).
