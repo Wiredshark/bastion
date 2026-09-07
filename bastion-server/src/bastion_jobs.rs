@@ -3150,6 +3150,18 @@ pub(crate) fn over_reach_anchor(
 
 pub(crate) static ANCHOR_STEERS_WAITED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// ★ W6-J pinned: THE LADDER NOBODY CLIMBS DOES NOT STAGE. The kinematic
+/// mover does not climb a ladder (Ben's judgement on climbing is open), so
+/// a built anchor stages a climb only once the mover can make it. Until
+/// then a walker keeps its route, whatever stands at the anchor.
+pub const LADDER_CLIMBABLE: bool = false;
+
+pub(crate) fn anchor_stages(built: bool, climbable: bool) -> bool {
+    built && climbable
+}
+
+pub(crate) static ANCHOR_STEERS_UNCLIMBED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn night_class(watch: bool, holds_rest: bool, arrived: bool, bed_held: bool, has_job: bool) -> NightClass {
     if watch {
         NightClass::Watch
@@ -36967,7 +36979,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .iter()
                                 .map(|a| (*a, board.anchor_built.contains(a)))
                                 .collect();
-                            let built_pick = over_reach_anchor(&anchors_w6i, feet, job.pos.z, pos.0.xy(), true);
+                            let built_any = over_reach_anchor(&anchors_w6i, feet, job.pos.z, pos.0.xy(), true);
+                            // ★ W6-J: THE LADDER NOBODY CLIMBS DOES NOT STAGE.
+                            let built_pick = built_any.filter(|_| anchor_stages(true, LADDER_CLIMBABLE));
+                            if let Some(unclimbed) = built_any
+                                && built_pick.is_none()
+                            {
+                                let n = ANCHOR_STEERS_UNCLIMBED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if n <= 8 || n.is_power_of_two() {
+                                    info!(
+                                        uid = uids.get(entity).map(|u| u.0.get()),
+                                        job_pos = ?job.pos,
+                                        ?feet,
+                                        ?unclimbed,
+                                        declined = n,
+                                        "bastion: THE LADDER NOBODY CLIMBS DOES NOT STAGE — a built anchor within reach, but the mover cannot climb it; the walker keeps its route (W6-J)"
+                                    );
+                                }
+                            }
                             if built_pick.is_none()
                                 && let Some(planned) = over_reach_anchor(&anchors_w6i, feet, job.pos.z, pos.0.xy(), false)
                             {
@@ -58794,6 +58823,17 @@ mod tests {
         assert_eq!(shelf_relocation(old, &[Vec3::new(7755, 6412, 183), floor]), Some(floor), "a tie in x, y takes the lowest");
         assert_eq!(shelf_relocation(old, &[far, old]), Some(old), "the old cell itself, when reached, stays");
         assert_eq!(shelf_relocation(old, &[]), None, "no candidate: no move");
+    }
+
+    /// ★ W6-J pinned: a built ladder stages only when the mover can climb
+    /// it, and today it cannot. Planted defect: the ladder climbable -> red.
+    #[test]
+    fn the_ladder_nobody_climbs_does_not_stage() {
+        assert!(!anchor_stages(false, false));
+        assert!(!anchor_stages(true, false), "built, unclimbable");
+        assert!(!anchor_stages(false, true), "climbable, unbuilt");
+        assert!(anchor_stages(true, true));
+        assert!(!LADDER_CLIMBABLE, "the mover cannot climb a ladder yet (Ben's judgement is open)");
     }
 
     /// ★ W6-I pinned: a planned anchor never stages a climb; a built one
