@@ -3128,6 +3128,111 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### S1-i LANDED (00:36): 504eebc174, both halves, marker 'STORE AISLE CENSUS' in the exe; TR1 THE TOWN NAMES ITS CUT-OFF SITES registered 00:37 (before the binary exists), queued behind H2-i2
+
+S1-i: pin the_store_names_its_aisles green; staged 00:35:54,
+shipped 00:36:31 (playable). Falsifier bt6e8r0bm at +90 s: RED
+(00:41). W18-i2 fired at 00:41 -> W6-G -> E2-i3b -> H2-i2 -> TR1. The
+first STORE AISLE CENSUS prints at each arm's next boot on the
+pair or later.
+
+TR1 (registered; fix-tr1.py / .msg / chain-tr1 / falsify-tr1):
+prior art RimWorld's region reachability (CanReach before a pawn
+is sent) and DF's walkability components. MECHANISM: common::path
+::reach_set_with_steps (H2-i2's move set and admission, breadth-
+first, capped); once a day and at boot, seeds = every eighth road
+cell at its first walkable height inside the town's box (every
+designated region, bed and stockpile, padded 8/8/12), the reach
+with the trunk's reach and can_climb (cap 150,000); every job (by
+id), bed (by cell) and stockpile (min corner) asked site_has_stand
+(a reached cell within 2 in x, y and z); SITE REACH CENSUS (seeds,
+reached, cap_hit, sites, cut, per-kind (total, cut)) and up to 12
+THE SITE IS CUT OFF lines (kind, pos, job, claimed, the block
+above). PINS: (common) the_road_reaches_the_plaza_not_the_walled_
+yard (a three-high wall keeps the yard out at reach 2, a doorway
+joins it, the wall top is not stood on, the set is whole); (bastion-
+server) the_town_names_its_cut_off_sites (the ring: the site's own
+cell, two away in every axis and two below count; three away does
+not). Falsifier plants SITE_STAND_RING 2 -> 0. BARS (each arm's
+boot census on the pair): reached 8,000..150,000 with cap_hit
+false; Bed cut >= 12 of ~34 and within 2 of H2-i2's count on the
+same boot; the cut lines include a Guard job at (7654,6509,186), a
+Cook job at (7758,6346,181), DepositRun jobs at z 182 in the store
+field, Haul jobs at house 86; Mine/Chop/Build/Gather cut <= 20%;
+Stockpile cut >= 8. FALSIFIED as an instrument if reached < 5,000
+or cap_hit, if Bed cut = 0 while H2-i2 reads cut >= 1, or if the
+work sites read > 50% cut (then the reach, not the sites, is
+wrong: compare with ARRIVED AT JOB SITE). Rejected: reusing
+colony_component_labels (its passable rule is not the router's);
+the router per site; a reach from the colonists' feet. NOT
+evidenced: the consumers (a poster that refuses a cut-off site, a
+shelf placer that stays on the floor, a guard post on the ground).
+
+### W6-F2's first night on b2 (00:27, pair 976ce4fb5b, boarded 23:49, read at hour 3 of day 1): UNEXERCISED (no climb strike-out, 0 shuns); HUMAN HOURS held; the flood 336 at house 86's threshold; the wall-cell walker 928 reclaimed 22 times
+
+SHUN witness 0, STRUCK OUT 0, held strikes 0: no climb strike-out
+happened tonight, so W6-F2's list had no work (the falsifier's RED
+is the witness the rule works; the live path was not hit). Bars:
+no pair repeated inside 600 s (vacuous), STRUCK OUT per colonist
+<= 4 (0), arrivals 820 (bar 720 PASSED), LONGEST-EXHAUST 336 (bar
+80 FAILED, by a producer outside the row: 46x (7738,6405,181), 30x
+(7743,6400,180), 23x (7734,6405,181) -- house 86's threshold and
+ground floor, the hauls to its shelf). LOOP: reclaims top 121 x27,
+928 x22 (928 walked toward the wall cell (7706,6310,181) all night
+at dist 224: the non-climb reclaim loop, W6-G's class); other
+bans 1; STRIKES longest exhausts 1. NIGHT CENSUS: hour 21 in_bed 2
+/ working 28 (Recreate 16); 22: in_bed 4, to_bed 25; 23: 26; 0: 32;
+1-3: 32-34 of 50, to_bed 10-15, idle 0, watch 5-8. FED starving 1.
+DISPOSITION: STANDS, unexercised on its first night (three
+replicates rule: the next nights on any later pair carry it; the
+reader read-w6f2-first also reads b1 when it boards). The to_bed
+count (10-15 vs 2-3 on b2's H2-i night) is the night-to-night
+swing of the far-bed class, not a code difference.
+
+### W14-i8's first table on b1 (00:23, pair 4450039094, boarded 00:12, hour 16 of day 0): the instrument works; its bar was MIS-FRAMED -- the fill lane's exhaustions are a spread of short searches (top 8 = 26%), the whole-town count by day is 11
+
+EXHAUST REPEAT CENSUS x7 by hour 14: pairs 124, total 778, top 8:
+19@(7654,6509,186) x42 (Guard), 49@(7758,6346,181) x36 (Cook),
+33@(7654,6509,186) x25 (Guard, the same post), 71@(7597,6376,181)
+x22, 801@(7700,6446,182) x22 (DepositRun, the store field),
+13@(7765,6352,181) x19, 20@(7652,6466,181) x19 (Cook),
+14@(7742,6403,181) x18 (Haul, house 86's threshold). Witness lines
+400 over 124 pairs; each top pair asked from 6-7 DIFFERENT cells
+(the asker walks and re-asks: not stationary). TOP-8 SHARE 203 of
+778 = 26%: below the registered 30% -> the "spread" arm of the
+falsification. But the frame: these are the pump's FILL
+exhaustions (budget 512/1,024 per poll), of which the whole-town
+ones (expanded >= 50,000) today by hour 16 number ELEVEN
+(LONGEST-EXHAUST 11; chaser witnesses 9). The registration
+conflated "exhausted fill deliveries" with "whole-town searches":
+TWO FRAMES COMPARED AS ONE, mine. The whole-town flood by DAY is
+small on this pair; at NIGHT (the H2-i nights: 148x / 170x to the
+cell beside one upstairs bed, W14-d strikes 60) it is the bed
+walk's chaser and its strike-bench-re-pick loop.
+
+What the table DOES name (new, real): guards 19 and 33 walking to a
+post at (7654,6509,186) -- a wall-top post the router cannot reach
+(the Guard lane's day: travel 204 blocks per claim, far 100%); cook
+49 to a station at (7758,6346,181) (36 asks; beside the shelf zone
+(7766,6353,181) the drop-cell filter emptied); haul 14 to house
+86's threshold; haul 46 to an upstairs shelf (7553,6400,186).
+Sites the town laid out where its people cannot stand: the guard
+post, the cook station, the upstairs shelf and bed, the store
+field -- one class, four generators.
+
+DISPOSITION: STANDS as an instrument (the read is the read); the
+bar is re-registered for the NIGHT table (b1's hour 3 of day 1,
+~00:45): the night's top pair repeats >= 30 and names the bed-walk
+pair; if the night table's top pairs are NOT the 148x cell, the
+night flood is the chaser alone and W14-i7's per-walker witness
+(head-sampled at 16) is the gap to widen. NEXT ROW after the queue
+(prior art: RimWorld's region reachability, DF's walkability
+components; W15-i4's component labels exist in the probes): T1 THE
+TOWN NAMES ITS CUT-OFF SITES -- a daily reachability census from
+the road's component over every designated site (guard posts,
+stations, shelves, beds, store cells) with the router's own steps
+(H2-i2's climb), so each generator can be held to the consumer.
+
 ### W18-i2 THE BOB NAMES ITS COLUMN -- registered 00:18 (before the binary exists), inserted behind S1-i
 
 The pit at (7700,6303) on b1 (see the H2-i night above): 86 and 87

@@ -9784,6 +9784,22 @@ pub(crate) fn bob_is_a_stall(bobs: u32) -> bool {
     bobs >= BOB_STALL_COUNT
 }
 
+/// ★ W18-i2 pinned: THE BOB NAMES ITS COLUMN. The column printed at a
+/// stall runs from one block below the landing to two above the lift's
+/// height, inclusive, and never inverts (a drop from 185.86 to 183.0
+/// spans 182..=187).
+pub(crate) fn bob_column_span(z_to: f32, z_from: f32) -> (i32, i32) {
+    let lo = z_to.floor() as i32 - 1;
+    let hi = z_from.floor() as i32 + 2;
+    (lo.min(hi), hi.max(lo))
+}
+
+/// ★ W18-i2: whether the job at this stall differs from the body's last
+/// stall (None at the first).
+pub(crate) fn stall_job_changed<J: PartialEq>(last: Option<(J, u64)>, job: J) -> Option<bool> {
+    last.map(|(j, _)| j != job)
+}
+
 /// ★ W18-e2 pinned: THE STALL PINS ITS RESET POINT. The per-tick progress
 /// check zeroes the stuck clock when the walker has come a block closer than
 /// its reset point (reset_dist - sdist >= 1.0); a two-block bob's lift is
@@ -14873,6 +14889,9 @@ pub struct JobBoard {
     /// and how many bobs it has made at that cell since.
     pub bob_last: HashMap<Uid, (Vec2<i32>, u64)>,
     pub bob_count: HashMap<Uid, u32>,
+    /// ★ W18-i2: the job and tick at each body's last bob stall (the bob
+    /// names its column: same job or a new one since).
+    pub bob_stall_job: HashMap<Uid, (JobId, u64)>,
     /// (refusals, admits-by-reason x5, same-component) shadow counters since
     /// the last census emit, so the fail-open ladder is provable from a log.
     pub shadow_conn: [u32; 7],
@@ -43218,6 +43237,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 && let Some(aj) = active_jobs.get_mut(entity)
                                 && aj.stuck_time < STUCK_TIMEOUT
                             {
+                                // ★ W18-i2: the clock and the reset point as found.
+                                let clock_found = aj.stuck_time;
+                                let reset_found = aj.reset_dist;
                                 aj.stuck_time = STUCK_TIMEOUT;
                                 // ★ W18-e2: and the reset point, so the next
                                 // lift cannot zero the clock again.
@@ -43232,6 +43254,50 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         stalls = k,
                                         "bastion: THE BOB IS A STALL — sixteen two-block drops at one cell inside the window; the stuck clock is set to its timeout (W18-e; W18-e2: the reset point pinned)"
                                     );
+                                }
+                                // ★ W18-i2: THE BOB NAMES ITS COLUMN -- at each power of two
+                                // of this body's bobs: the cell's blocks, the job, whether
+                                // it is the job of the last stall, and the clock found.
+                                if bobs_now.is_power_of_two() {
+                                    let (lo, hi) = bob_column_span(new_pos.z, prev.z);
+                                    let column: Vec<String> = (lo..=hi)
+                                        .map(|z| {
+                                            terrain
+                                                .get(Vec3::new(cell.x, cell.y, z))
+                                                .ok()
+                                                .map(|b| {
+                                                    b.get_sprite()
+                                                        .map(|sp| format!("{sp:?}"))
+                                                        .unwrap_or_else(|| format!("{:?}", b.kind()))
+                                                })
+                                                .unwrap_or_else(|| "?".to_string())
+                                        })
+                                        .collect();
+                                    let last = board.bob_stall_job.get(&u).copied();
+                                    let (kind, job_pos) = board
+                                        .jobs
+                                        .get(&aj.job)
+                                        .map(|j| (format!("{:?}", j.kind), Some(j.pos)))
+                                        .unwrap_or_else(|| ("none".to_string(), None));
+                                    info!(
+                                        uid = u.0.get(),
+                                        ?cell,
+                                        z_from = prev.z,
+                                        z_to = new_pos.z,
+                                        site,
+                                        column_lo = lo,
+                                        column = ?column,
+                                        job = aj.job,
+                                        kind = %kind,
+                                        ?job_pos,
+                                        same_job = ?stall_job_changed(last, aj.job).map(|c| !c),
+                                        ticks_since_stall = ?last.map(|(_, t)| tick.0.saturating_sub(t)),
+                                        clock_found,
+                                        reset_found,
+                                        bobs = bobs_now,
+                                        "bastion: THE BOB NAMES ITS COLUMN — what the cell is, which job, and the clock the stall found (W18-i2)"
+                                    );
+                                    board.bob_stall_job.insert(u, (aj.job, tick.0));
                                 }
                             }
                         } else {
@@ -57770,6 +57836,21 @@ mod tests {
         for sdist in [0.0f32, 1.0, 50.0, 1.0e6] {
             assert!(!progress_past_reset(STALL_RESET_POINT, sdist), "the stalled walker's lift is never progress (sdist {sdist})");
         }
+    }
+
+    /// ★ W18-i2 pinned: the column spans one below the landing to two above
+    /// the lift, inclusive, and never inverts; the first stall has no last
+    /// job, the same id reads unchanged, a new id reads changed. Planted
+    /// defect: the span reversed -> red.
+    #[test]
+    fn the_bob_names_its_column() {
+        assert_eq!(bob_column_span(183.0, 185.86), (182, 187), "a two-block drop's column");
+        assert_eq!(bob_column_span(185.86, 183.0), (184, 185), "inputs the wrong way round still run upward");
+        let (lo, hi) = bob_column_span(-4.5, -2.0);
+        assert!(lo <= hi, "never inverts below zero either");
+        assert_eq!(stall_job_changed::<u64>(None, 7), None, "the first stall has no last job");
+        assert_eq!(stall_job_changed(Some((7u64, 100)), 7), Some(false), "the same job");
+        assert_eq!(stall_job_changed(Some((7u64, 100)), 9), Some(true), "a new job since the last stall");
     }
 
     /// ★ W18-e pinned: fifteen bobs are not a stall, sixteen are, and so is
