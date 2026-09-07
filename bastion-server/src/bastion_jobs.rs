@@ -9838,6 +9838,26 @@ pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
 /// at 0.033 s -- no assist, no re-plan; the per-tick distance check reset it
 /// every lift). At the count the mover sets the walker's stuck_time to the
 /// timeout and the stall's consumers act.
+/// ★ W18-j pinned: THE STALL HOLDS ITS CLOCK. The bridge probe zeroed the
+/// stuck clock on every landed step longer than a third of a walk step --
+/// a two-block bob is 2.0 -- so the stall's clock (W18-e) was back at one
+/// tick by the next bob (b2, 03:33-03:49: uid 134, 1,024 bobs, clock found
+/// 0.033 s at every power of two). And the stall set the clock EQUAL to the
+/// timeout while the ladder reads it strictly greater. The stall now sets
+/// the clock past the timeout and holds it for STALL_HOLD_TICKS (30 s);
+/// inside the hold a landed probe step does not reset it.
+pub(crate) const STALL_HOLD_TICKS: u64 = 900;
+
+pub(crate) fn stall_clock_past(timeout: f32) -> f32 {
+    timeout + 1.0
+}
+
+pub(crate) fn bob_reset_allowed(hold_until: Option<u64>, now: u64, displaced: bool) -> bool {
+    displaced && hold_until.is_none_or(|h| now >= h)
+}
+
+pub(crate) static STALL_HOLDS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub(crate) const BOB_STALL_COUNT: u32 = 16;
 
 pub(crate) fn bob_is_a_stall(bobs: u32) -> bool {
@@ -14992,6 +15012,9 @@ pub struct JobBoard {
     /// ★ W18-i2: the job and tick at each body's last bob stall (the bob
     /// names its column: same job or a new one since).
     pub bob_stall_job: HashMap<Uid, (JobId, u64)>,
+    /// ★ W18-j: the tick until which a body's stall holds its stuck clock
+    /// against the mover's own resets.
+    pub stall_hold: HashMap<Uid, u64>,
     /// (refusals, admits-by-reason x5, same-component) shadow counters since
     /// the last census emit, so the fail-open ladder is provable from a log.
     pub shadow_conn: [u32; 7],
@@ -38727,8 +38750,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             anim,
                                             "bridge-probe",
                                         ));
-                                        if displaced {
+                                        // ★ W18-j: THE STALL HOLDS ITS CLOCK -- a landed step
+                                        // zeroes the stuck clock only while no stall holds it.
+                                        let hold_w18j = uids.get(entity).and_then(|u| board.stall_hold.get(u).copied());
+                                        if bob_reset_allowed(hold_w18j, tick.0, displaced) {
                                             active.stuck_time = 0.0;
+                                        } else if displaced {
+                                            let n = STALL_HOLDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if n <= 8 || n.is_power_of_two() {
+                                                info!(
+                                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                                    stuck_time = active.stuck_time,
+                                                    hold_until = ?hold_w18j,
+                                                    tick = tick.0,
+                                                    held = n,
+                                                    "bastion: THE STALL HOLDS ITS CLOCK — a landed probe step would have zeroed the stuck clock; the stall's hold keeps it past the timeout for the ladder (W18-j)"
+                                                );
+                                            }
                                         }
                                     } else if std::env::var_os(
                                         "BASTION_NO_GLIDE_OVERRIDE"
@@ -43635,10 +43673,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // ★ W18-i2: the clock and the reset point as found.
                                 let clock_found = aj.stuck_time;
                                 let reset_found = aj.reset_dist;
-                                aj.stuck_time = STUCK_TIMEOUT;
+                                aj.stuck_time = stall_clock_past(STUCK_TIMEOUT);
                                 // ★ W18-e2: and the reset point, so the next
                                 // lift cannot zero the clock again.
                                 aj.reset_dist = STALL_RESET_POINT;
+                                // ★ W18-j: and the hold, so the mover's own resets
+                                // cannot zero the clock before the ladder reads it.
+                                board.stall_hold.insert(u, tick.0 + STALL_HOLD_TICKS);
                                 let k = BOB_STALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                 if k <= 8 || k.is_power_of_two() {
                                     info!(
@@ -43668,6 +43709,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 .unwrap_or_else(|| "?".to_string())
                                         })
                                         .collect();
+                                    // ★ W18-j: the landing cell's column beside the from-cell's.
+                                    let landing_cell = new_pos.xy().map(|e| e.floor() as i32);
+                                    let landing_column: Vec<String> = (lo..=hi)
+                                        .map(|z| {
+                                            terrain
+                                                .get(Vec3::new(landing_cell.x, landing_cell.y, z))
+                                                .ok()
+                                                .map(|b| {
+                                                    b.get_sprite()
+                                                        .map(|sp| format!("{sp:?}"))
+                                                        .unwrap_or_else(|| format!("{:?}", b.kind()))
+                                                })
+                                                .unwrap_or_else(|| "?".to_string())
+                                        })
+                                        .collect();
                                     let last = board.bob_stall_job.get(&u).copied();
                                     let (kind, job_pos) = board
                                         .jobs
@@ -43682,6 +43738,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         site,
                                         column_lo = lo,
                                         column = ?column,
+                                        landing = ?landing_cell,
+                                        landing_column = ?landing_column,
                                         job = aj.job,
                                         kind = %kind,
                                         ?job_pos,
@@ -58263,6 +58321,19 @@ mod tests {
         assert_eq!(shelf_relocation(old, &[Vec3::new(7755, 6412, 183), floor]), Some(floor), "a tie in x, y takes the lowest");
         assert_eq!(shelf_relocation(old, &[far, old]), Some(old), "the old cell itself, when reached, stays");
         assert_eq!(shelf_relocation(old, &[]), None, "no candidate: no move");
+    }
+
+    /// ★ W18-j pinned: the stall's clock is past the timeout the ladder
+    /// reads strictly, and a landed probe step cannot zero it inside the
+    /// hold. Planted defect: the hold ignored -> red.
+    #[test]
+    fn the_stall_holds_its_clock() {
+        assert!(stall_clock_past(STUCK_TIMEOUT) > STUCK_TIMEOUT, "past the strict read");
+        assert!(bob_reset_allowed(None, 100, true), "no stall: a displaced step resets");
+        assert!(!bob_reset_allowed(None, 100, false), "no displacement: no reset");
+        assert!(!bob_reset_allowed(Some(1000), 100, true), "inside the hold: no reset");
+        assert!(bob_reset_allowed(Some(1000), 1000, true), "the hold expired: reset again");
+        assert!(STALL_HOLD_TICKS >= 300, "the hold outlasts the ladder's next pass");
     }
 
     /// ★ TR1 pinned: a site with a reached cell two away in x, y and z has a
