@@ -9772,6 +9772,17 @@ pub(crate) fn exhaust_rose(seen: u8, now: u8) -> bool {
     now != seen && now > 0
 }
 
+/// ★ W14-i7b pinned: THE FLOOD NAMES ITS STANDING WALKER. A rise in the
+/// chaser's exhaust count is witnessed whether or not the mover pushed the
+/// body this tick -- the walker at its flee point asks without moving.
+pub(crate) fn chaser_rise_witnessed(seen: u8, now: u8, pushed: bool) -> bool {
+    let _ = pushed;
+    exhaust_rose(seen, now)
+}
+
+/// ★ W14-i7b: the hour the chaser table last printed.
+pub(crate) static CHASER_REPEAT_LAST_HOUR: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(u32::MAX);
+
 /// ★ W14-i8 pinned: THE EXHAUSTED DELIVERY NAMES ITS ASKER. W14-i7 names
 /// the chaser's exhausts; the pump's fill lane is the other whole-town
 /// producer (b1: 214 whole-town searches, 2 chaser witnesses) and its
@@ -14962,6 +14973,10 @@ pub struct JobBoard {
     /// ★ W14-i7: the last Longest-exhaust count seen per walker at the mover's
     /// write (the flood names its walker).
     pub exhausts_seen: HashMap<Uid, u8>,
+    /// ★ W14-i7b: how many times each (walker, target cell) pair's chaser
+    /// search exhausted the Longest tier this run, read every tick for every
+    /// colonist, pushed or not.
+    pub chaser_repeats: HashMap<(Uid, Vec3<i32>), u32>,
     /// ★ W14-i8: how many times the pump's fill spent its budget for each
     /// (asker, target cell) pair this run (the exhausted delivery names its
     /// asker). Cumulative; the reader diffs by hour.
@@ -43488,6 +43503,53 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.path_cache.remove(&u);
                 board.route_built_at.remove(&u);
             }
+            // ★ W14-i7b: THE FLOOD NAMES ITS STANDING WALKER -- every colonist's
+            // chaser count, every tick, pushed or not; each rise counts against
+            // the (walker, target) pair and the pair's 1st, 2nd, 4th ... are
+            // witnessed with the held job.
+            {
+                let pushed_now: Vec<specs::Entity> = pending_kinematic.iter().map(|(e, ..)| *e).collect();
+                for (_, entity) in (&colonists, &entities).join() {
+                    let (Some(a), Some(u)) = (agents.get(entity), uids.get(entity).copied()) else {
+                        continue;
+                    };
+                    let snap = a.chaser.diagnostic_snapshot();
+                    let seen = board.exhausts_seen.get(&u).copied().unwrap_or(0);
+                    if snap.longest_exhausts == seen {
+                        continue;
+                    }
+                    board.exhausts_seen.insert(u, snap.longest_exhausts);
+                    let pushed = pushed_now.contains(&entity);
+                    if !chaser_rise_witnessed(seen, snap.longest_exhausts, pushed) {
+                        continue;
+                    }
+                    let tcell = snap.last_search_target.map(|t| t.map(|e| e.floor() as i32)).unwrap_or(Vec3::zero());
+                    let reps = {
+                        let e = board.chaser_repeats.entry((u, tcell)).or_insert(0);
+                        *e = e.saturating_add(1);
+                        *e
+                    };
+                    if exhaust_repeat_witnessed(reps) {
+                        let job = active_jobs.get(entity).map(|aj| aj.job);
+                        let (kind, job_pos) = job
+                            .and_then(|j| board.jobs.get(&j))
+                            .map(|j| (format!("{:?}", j.kind), Some(j.pos)))
+                            .unwrap_or_else(|| ("none".to_string(), None));
+                        info!(
+                            uid = u.0.get(),
+                            ?job,
+                            kind = %kind,
+                            ?job_pos,
+                            target = ?tcell,
+                            exhausts = snap.longest_exhausts,
+                            repeats = reps,
+                            pushed,
+                            feet = ?positions.get(entity).map(|p| p.0),
+                            "bastion: THE FLOOD NAMES ITS STANDING WALKER — a whole-town search exhausted by this walker for this target again, pushed or not (W14-i7b)"
+                        );
+                    }
+                }
+            }
             for (entity, new_pos, vel, site) in pending_kinematic.drain(..) {
                 if let Some(u) = uids.get(entity) {
                     board.last_push_site.insert(*u, site);
@@ -45067,6 +45129,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         total,
                         top = ?rows,
                         "bastion: EXHAUST REPEAT CENSUS — the (asker, target) pairs the pump's fill exhausted most this run (W14-i8)"
+                    );
+                }
+            }
+            // ★ W14-i7b: CHASER REPEAT CENSUS -- once per tick-clock hour, the
+            // eight (walker, target) pairs whose chaser exhausted most.
+            {
+                let hour = (((tick.0 % 54_000) / 2_250 + 7) % 24) as u32;
+                let last = CHASER_REPEAT_LAST_HOUR.swap(hour, core::sync::atomic::Ordering::Relaxed);
+                if last != hour && !board.chaser_repeats.is_empty() {
+                    let top = exhaust_repeat_top(&board.chaser_repeats, 8);
+                    let rows: Vec<String> = top
+                        .iter()
+                        .map(|((u, t), c)| format!("{}@({},{},{})x{}", u.0.get(), t.x, t.y, t.z, c))
+                        .collect();
+                    let total: u64 = board.chaser_repeats.values().map(|c| *c as u64).sum();
+                    info!(
+                        hour,
+                        pairs = board.chaser_repeats.len(),
+                        total,
+                        top = ?rows,
+                        "bastion: CHASER REPEAT CENSUS — the (walker, target) pairs whose chaser search exhausted the whole town most this run (W14-i7b)"
                     );
                 }
             }
@@ -58345,6 +58428,16 @@ mod tests {
     /// exhaustion; the same count, or a reset to zero, does not; a reset
     /// followed by a fresh exhaustion between two writes (2 -> 1) does.
     /// Planted defect: "rose" as a plain greater-than -> red on 2 -> 1.
+    #[test]
+    fn the_flood_names_its_standing_walker() {
+        assert!(chaser_rise_witnessed(0, 1, false), "a first exhaust with no push: witnessed");
+        assert!(chaser_rise_witnessed(1, 2, true), "a rise with a push: witnessed");
+        assert!(!chaser_rise_witnessed(1, 1, false), "no rise: nothing");
+        assert!(!chaser_rise_witnessed(2, 0, true), "a reset to zero is not a rise");
+    }
+
+    /// ★ W14-i8 pinned: the table is ordered by count with a tie broken by
+    /// the asker, truncated to the asked count, whole when fewer.
     #[test]
     fn the_exhausted_delivery_names_its_asker() {
         let u = |n: u64| Uid(std::num::NonZeroU64::new(n).unwrap());
