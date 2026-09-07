@@ -8738,6 +8738,13 @@ pub(crate) enum SupperFate {
     Gone,
 }
 
+/// ★ E2-i3b pinned: the ledger names its loads -- the job ids minted for a
+/// house, in mint order, so a GONE load can be followed by id through the
+/// release and deposit lines.
+pub(crate) fn supper_ledger_ids(ledger: Option<&(u32, Vec<JobId>)>) -> Vec<JobId> {
+    ledger.map(|l| l.1.clone()).unwrap_or_default()
+}
+
 pub(crate) fn supper_load_fate(on_board: bool, claimed: bool) -> SupperFate {
     if !on_board {
         SupperFate::Gone
@@ -29843,6 +29850,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         };
                         let have = shelf_units.get(&z).copied().unwrap_or(0);
                         let need = supper_shortfall(heads, have, SUPPER_UNITS_PER_HEAD);
+                        // ★ E2-i3b: ledgered even at need 0 (colonist 34's house read
+                        // round_need 0 with no way to tell an uncounted head from a
+                        // shelf that held food at noon).
+                        board.supper_ledger.entry(h.min).or_insert((need, Vec::new()));
                         shortfall_total += need;
                         if need > 0 {
                             // ★ E2-g: the house's eaters -- its bed owners.
@@ -29897,6 +29908,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             if let Some(l) = board.supper_ledger.get_mut(&hmin) {
                                 l.1.push(id);
                             }
+                            // ★ E2-i3b: the load is named at birth.
+                            info!(
+                                house_min = ?hmin,
+                                job = %id,
+                                units = n,
+                                eaters = ?eaters.iter().map(|u| u.0.get()).collect::<Vec<_>>(),
+                                "bastion: SUPPER LOAD MINTED — one load for one house (E2-i3b)"
+                            );
                             loads += 1;
                             need = need.saturating_sub(n);
                         }
@@ -33530,6 +33549,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         unclaimed,
                                         in_flight,
                                         gone,
+                                        loads = ?supper_ledger_ids(ledger),
+                                        ledgered = ledger.is_some(),
                                         bed_z = ?bed_z,
                                         night_no_food = k,
                                         "bastion: NIGHT SHELF EMPTY — a sleeper's night pick found nothing at home; what the home held and what refused it (E2-i3: the loads named)"
@@ -58037,6 +58058,15 @@ mod tests {
         assert!(bench_is_new(true, false), "the third strike on a claimable job: a bench");
         assert!(!bench_is_new(true, true), "the fourth strike on a benched job: the same bench, not a new one");
         assert!(!bench_is_new(false, false) && !bench_is_new(false, true), "no bench is never new");
+    }
+
+    /// ★ E2-i3b pinned: the ledger's ids are the loads minted for the house in
+    /// mint order; no ledger, no ids. Planted defect: the list emptied -> red.
+    #[test]
+    fn the_supper_load_is_named() {
+        let ledger = (2u32, vec![JobId::from(7u64), JobId::from(9u64)]);
+        assert_eq!(supper_ledger_ids(Some(&ledger)), vec![JobId::from(7u64), JobId::from(9u64)], "the loads in mint order");
+        assert!(supper_ledger_ids(None).is_empty(), "no ledger: no loads");
     }
 
     /// ★ E2-i3 pinned: a load off the board is gone; on the board and

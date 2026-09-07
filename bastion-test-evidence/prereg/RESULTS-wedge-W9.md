@@ -3128,6 +3128,102 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### b1's S1-i night (01:33, pair 504eebc174, boarded 00:55, hour 8 of day 1): W6-F2 EXERCISED -- colonist 85 struck out five upstairs beds in a row, each shunned (held 1 -> 5); the per-colonist bar FAILS by design of the picker
+
+LOOP: other bans 132 (85 x67 at the wall cell (7705,6310,181),
+05:09-05:23 wall; 79 x19; 69 x19), benched by banned climbs 27,
+held strikes 10, STRUCK OUT 21 (85: jobs 1336, 1371, 1394, 1401,
+1417, 1429 ... each at strikes 3), shun witness lines 9 (sampled at
+<= 8 and powers of two: ~16 shuns); 85's shuns name (7769,6401,186)
+held 1 and (7748,6314,186) held 5 -- THE LIST HOLDS FIVE BEDS for
+one sleeper. FLOOD 27 (whole-town 27: the strike-outs did not
+flood -- W6-F2's list stops the re-pick of the SAME bed). Arrivals
+956 (the best day yet), STUCK CENSUS 12, bob stalls 0, starving 0,
+EXPERIENCE at hour 6: moving 36, idle 7, stuck 0.
+
+Reading: W6-F2 does what it says (no (colonist, bed) pair repeated;
+the flood stays closed) and its per-colonist strike-out bar (<= 4)
+FAILS because the picker's "nearest unoccupied slot" walks the
+sleeper through the upstairs list one bed at a time -- five beds,
+three strikes each, a timeout per strike: colonist 85's whole
+night. The consumer is the PICKER, and it needs the truth about
+which beds are reached: TR1's router reach over-counts the cut
+(the bed census reads 31-33 of 50 in 34 registered beds with 16
+"upstairs", so most upstairs beds ARE slept in -- the mover's
+leniency climbs what the router refuses), so the picker's rule
+must be the ARRIVAL truth (a bed nobody reached last night), not
+the router's. Registered after TR1's read: H2-p THE BED REMEMBERS
+ITS SLEEPER.
+
+### E2-q THE SHELF MOVES TO THE FLOOR THE ROAD REACHES -- registered 01:34 (before the binary exists), queued behind TR1; TR1 amended to keep the reach set on the board
+
+The first consumer of TR1. DEFECT: adopt_beds_surface puts a
+house's supper shelf beside its lowest bed (sorted z, y, x) --
+upstairs when every bed is upstairs (zone 86: bed (7756,6412,186),
+shelf (7755,6412,186)); shelf_cell_beside asks standable, not
+reachable; ten shelves per arm emptied by the drop-cell filter, the
+hauls to them flooding (46-77 asks a day at house 86's threshold),
+the loads GONE, the sleepers starving; three rules (S1-i's reach 3,
+the filter's surface, the router) and no consumer. MECHANISM: once
+a day after TR1's census, a one-cell private shelf with no reached
+cell in its stand ring moves to shelf_relocation(old, candidates)
+-- the reached, standable, non-bed cells of its house's footprint
+at floor_z..=floor_z+3, nearest in x, y, then lowest, then (x, y) --
+keeping its zone id and its hauls' destination; SHELF MOVED (zone,
+from, to, house_min, moved); a shelf whose footprint has no reached
+cell stays (the house is the defect, TR1 names it); the set is
+taken off the board and put back (no clone, no overlapping borrow).
+PIN the_shelf_moves_to_the_floor_the_road_reaches (nearest, tie
+lowest, the old cell stays when reached, none without a candidate);
+falsifier plants the choice never made. BARS (each arm's boot
+census on the pair): SHELF MOVED >= 6; DROP CELL FILTER EMPTIED <= 3
+the next day (from 10-11); empty-shelf sleepers with gone >= 1 and
+bed z 186 -> 0 for the moved houses; the house-86 hauls leave
+W14-i8's top pairs if its floor is reached. FALSIFIED if SHELF MOVED
+= 0 while TR1 reads Stockpile cut >= 8; if a moved shelf reads DROP
+CELL FILTER EMPTIED the next day (the filter's surface rule is the
+next consumer); if starving sleepers rise (a shelf moved away from
+a sleeper who reached it upstairs). Rejected: the placer alone
+(boot precedes any reach set); a pantry outside the footprint;
+deleting the shelf. Chain chain-e2q on tr1-staged; falsifier armed;
+dry tree passed E2-i3b -> H2-i2 -> TR1 -> E2-q.
+
+### W6-G LANDED (01:27): 11555b6c1c, both halves, marker 'RAN OUT OF PATIENCE' 1 in the exe
+
+Pin the_held_jobs_queue_has_a_patience green (512 filtered, 1
+passed); committed 01:12, staged 01:27, pushed. Falsifier bspazvpja
+plants the patience ignored at +90 s. E2-i3b's chain fires at +300 s
+(~01:33; stage ~01:53) -> H2-i2 -> TR1. Bars (each arm's first
+night): reclaims per colonist per night <= 20 (30-44 tonight on
+both arms: 812/68 x44 on b2, 52/69 x31/x26 on b1); PATIENCE strikes
+>= 1 on a night with a wall stall; STRUCK OUT <= 2 with W6-F2's
+list aboard; LONGEST-EXHAUST <= 80; starving unchanged; STALL
+BLAMED not 2x. The reader read-w6g-first keys on either arm
+boarding a pair at or after this one (b1's next restart ~01:30,
+b2's ~01:50).
+
+### S1-i's day-1 census on b1 (01:22, pair 504eebc174): twelve zones, no_stand 0 on every one -- including the two shelves the drop-cell filter emptied: S1-i's rule is BLIND to the private-shelf class
+
+Day 1 (12 lines): the four general stores (zones 36, 66, 68, 92:
+2,268-2,304 cells, 1,961-2,015 walkable columns, 12-230 stocked, no_
+stand 0) and eight one-cell private shelves, among them zone 70
+(7788,6341,181) -- the shelf DROP CELL FILTER EMPTIED THE STORE
+named (surface 1, standable 0) -- and zone 82 (7743,6404,181), house
+86's shelf that the hauls asked for 46-63 times a day: both read
+walkable_cols 0 and no_stand 0. S1-i's rule (a stand within the
+search-stand reach of 3 counts) finds a standable cell near every
+shelf; the drop-cell filter (a standable SURFACE cell of the zone)
+finds none; the router (from the road) never arrives. Two rules
+that disagree on the same cell, and neither is the router's. The
+registered falsification ("no_stand 0 on a shelf the filter
+emptied: the rules disagree and need one rule") is met.
+DISPOSITION: S1-i STANDS for the general stores (walkable as built,
+the aisle question withdrawn) and is BLIND for the private shelves;
+TR1's reach from the road with the router's feet is the one rule
+(its bar: Stockpile cut >= 8 names these). The consumer after TR1:
+the shelf placer (E2-p) and the round's haul poster hold to the
+reach set.
+
 ### b2's W14-i8 night (01:03, pair 4450039094, boarded 00:36, read at hour 3 of day 1): flood 16 for the whole day and night; STRUCK OUT 0; in bed 32-33 of 50, idle 0-1 -- both arms clean on this pair
 
 FLOOD: LONGEST-EXHAUST 16 (whole-town 16; top ends 3x (7724,6400,181)
