@@ -9577,6 +9577,19 @@ pub fn generator_enabled(_kind: GeneratorKind) -> bool { true }
 /// firing — 625 → 2,401, about 4×, still bounded and still cursor-swept. The
 /// per-firing budget discipline the original design chose is unchanged.
 pub const MINE_GEN_RADIUS: i32 = 24;
+
+/// ★ Q1 pinned: THE QUARRY SPARES THE HOUSES. A cell inside an adopted
+/// house's footprint, or within QUARRY_HOUSE_MARGIN of it, is never a
+/// quarry cell: the generator skipped bed cells and mined the walls and
+/// floors around them (b1: 80 of 111 mine completions inside houses; b2:
+/// 97 of 144).
+pub const QUARRY_HOUSE_MARGIN: i32 = 2;
+
+pub(crate) fn quarry_spares(house: &Region, xy: Vec2<i32>, margin: i32) -> bool {
+    xy.x >= house.min.x - margin && xy.x <= house.max.x + margin && xy.y >= house.min.y - margin && xy.y <= house.max.y + margin
+}
+
+pub(crate) static QUARRY_PASSES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 /// bastion (AUTON-1): scan volume top, relative to the anchor's z.
 pub const MINE_GEN_Z_TOP: i32 = 2;
 /// bastion (AUTON-1): scan volume height — one z-slab per firing (the
@@ -25855,6 +25868,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     for pos in board.beds.keys() {
                         skip_xy.insert(pos.xy());
                     }
+                    // ★ Q1: THE QUARRY SPARES THE HOUSES -- every adopted house's
+                    // footprint (a Bed designation region) and its margin.
+                    let houses_q1: Vec<Region> = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .map(|(r, _)| *r)
+                        .collect();
+                    let mut spared_q1 = 0usize;
                     // One z-slab per firing, top-down (surface digs come
                     // first — reachable without access work); the cursor
                     // wraps, so a full sweep re-tries as the world and the
@@ -25876,6 +25898,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             let pos = Vec3::new(x, y, slab_z);
                             if skip_xy.contains(&pos.xy()) || occupied.contains(&pos) {
+                                continue;
+                            }
+                            // ★ Q1: THE QUARRY SPARES THE HOUSES.
+                            if houses_q1.iter().any(|h| quarry_spares(h, pos.xy(), QUARRY_HOUSE_MARGIN)) {
+                                spared_q1 += 1;
                                 continue;
                             }
                             // Unloaded-read policy (deliberate): the generator
@@ -25965,6 +25992,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             occupied.insert(pos);
                             board.gen_mine_jobs += 1;
                             emitted += 1;
+                        }
+                    }
+                    {
+                        let n = QUARRY_PASSES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                        if n <= 8 || n.is_power_of_two() {
+                            info!(
+                                houses = houses_q1.len(),
+                                spared = spared_q1,
+                                emitted,
+                                slab_z,
+                                pass = n,
+                                "bastion: THE QUARRY SPARES THE HOUSES — the mine generator skipped every cell inside an adopted house's footprint and margin (Q1)"
+                            );
                         }
                     }
                     // ★ A NULL NEEDS A COULDN'T-HAPPEN WITNESS. The miner
@@ -58788,6 +58828,20 @@ mod tests {
         assert_eq!(dist_label(f32::MAX), "MAX");
         assert_eq!(dist_label(f32::MIN), "MIN");
         assert_eq!(dist_label(12.34), "12.3");
+    }
+
+    /// ★ Q1 pinned: inside the footprint and on its margin the quarry
+    /// spares; past the margin it does not. Planted defect: the rule false
+    /// -> red.
+    #[test]
+    fn the_quarry_spares_the_houses() {
+        let house = Region { min: Vec3::new(7696, 6336, 180), max: Vec3::new(7719, 6347, 190) };
+        assert!(quarry_spares(&house, Vec2::new(7700, 6340), QUARRY_HOUSE_MARGIN), "inside");
+        assert!(quarry_spares(&house, Vec2::new(7694, 6336), QUARRY_HOUSE_MARGIN), "on the margin");
+        assert!(quarry_spares(&house, Vec2::new(7719, 6349), QUARRY_HOUSE_MARGIN), "the far margin");
+        assert!(!quarry_spares(&house, Vec2::new(7693, 6336), QUARRY_HOUSE_MARGIN), "past the margin");
+        assert!(!quarry_spares(&house, Vec2::new(7700, 6350), QUARRY_HOUSE_MARGIN), "past the far margin");
+        assert!(QUARRY_HOUSE_MARGIN >= 1, "a wall's thickness at least");
     }
 
     /// ★ E2-u pinned: the cargo is never the ration; any other food is.
