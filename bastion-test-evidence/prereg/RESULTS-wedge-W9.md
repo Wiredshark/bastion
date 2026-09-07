@@ -3128,6 +3128,166 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### E2-i3b registered (22:23): THE SUPPER LOAD IS NAMED -- an amendment at the end of the queue
+
+Mechanism: one SUPPER LOAD MINTED line per load at the round
+(house_min, job id, units, eaters); supper_ledger_ids(ledger)
+returns the house's minted ids, printed on the NIGHT SHELF EMPTY
+line as `loads`, so a GONE load is followed by id through the
+RELEASE-DIAG and deposit lines. Pin the_supper_load_is_named (the
+ids in mint order; no ledger, no ids); falsifier plants the list
+emptied. Chain (holds on w6g-staged), falsifier and readers
+wait-e2i3b-b1/b2 launched 22:23; dry tree HEAD a81dbd9c9d + W18-e2
++ H2-i + S1-i + W6-G + E2-i3b (4 uses). Bars: every empty-shelf
+line carries the ids; for the night's starver the ids' RELEASE-DIAG
+lines name a site and reason (or a deposit line names another
+zone). The queue: W18-e2 (building) -> H2-i -> S1-i -> W6-G -> E2-i3b.
+
+### The drop-cell witnesses on the same night (22:20): ten private shelves have no standable drop cell
+
+DROP CELL FILTER EMPTIED THE STORE x10 on b2's day: private shelves
+at (7640,6317,181), (7644,6394,181), (7823,6258,181), (7797,6250,
+181), (7788,6341,181), (7767,6370,181), (7737,6338,181), (7710,6359,
+181) and two more -- "no surface cell passed the standable test;
+the spread runs over the surface cells" (surface 1, standable 0,
+voids 1-2): a one-cell shelf whose cell the router cannot stand on,
+so the haul's drop falls back to the surface anyway. Colonist 21's
+home (7546,6396) is not among them, so its GONE load is another
+fate: released (the RELEASE CENSUS lists haul releases by site but
+not by load) or deposited into a neighbouring zone. The ledger
+prints counts, not job ids; E2-i3b (queued behind W6-G) prints one
+SUPPER LOAD MINTED line per load (house, job id, eaters) and the
+ledger's job ids on the empty-shelf line, so the RELEASE-DIAG and
+deposit lines name the fate. The general store's own drop cells:
+DROP CELLS LIFTED ONTO THE FLOOR (surface under a plank floor;
+lifted 698 of 1,005) x15 -- the memory's drop-cell class, working.
+
+### E2-i3's first read (22:20, b2 on cd29099433, hour 4): the empty shelf's load was minted, claimed and GONE
+
+NIGHT SHELF EMPTY 15 lines, all ledgered: colonist 21 x13 and
+colonist 46 x2, both present 0, round_need 2, round_loads 1,
+unclaimed 0, in_flight 0, GONE 1, bed_z 186. The SUPPER ROUND
+minted one load (of the two units needed) for each house; a hauler
+claimed it; the job left the board and the shelf holds nothing --
+not the cap, not the sweep: the load was carried and never landed
+on this shelf. Both sleepers' beds are upstairs; colonist 21's home
+is (7546,6396,180). The night's starvers are 21 and 46 (hunger
+0.03-0.05). The bar "the read names which" is met: the class is a
+claimed load that does not arrive. Read next: the drop-cell
+resolver's own witnesses on this log (DROP CELL FILTER EMPTIED THE
+STORE x10, DROP CELLS LIFTED ONTO THE FLOOR x15) -- whether the
+upstairs house's shelf cells resolve to no valid drop cell, so the
+haul deposits elsewhere or is dropped. W6-E on b2's night (W6-F not
+yet aboard): CLIMB BANNED(other) 50, colonist 57 x19 at the wall
+(7705,6310,181), reclaims 57 x19, struck out 12, held strikes 9.
+
+### H1-a's first night, both arms (22:18): PASSED -- b2 in bed 35 of 50 at 3 am, idle 0 all night; b1's hour 22 sends 35 to bed
+
+b2 (cd29099433), the whole night: hour 1 in_bed 34, to_bed 10,
+watch 6, idle 0; hour 2 in_bed 34, to_bed 10; hour 3 in_bed 35,
+to_bed 9, idle 0. BED CENSUS peaks: h22 27, h23 32, h0 33, h1 34,
+h2 35, h3 35 (the H1-i nights: h22 9-16, h0 12-14, h5 22-25). The
+floor witness 10. The day: arrivals 818, FETCH STALLED 4, starving
+0, hour-21 Recreate 17 (14 the night before: no leak). Bars: idle
+at hours 23-2 = 0 (<= 5); in_bed at hour 0 = 33 (>= 28) and at hour
+2 = 34 (>= 35: one short); to_bed at hour 0 = 9 (<= 8: one over);
+BED CENSUS peak 35 (>= 35); the watch 6-8; Recreate unchanged.
+DISPOSITION: PASSED on the mechanism's bars (idle, in_bed at 0,
+the peak, the evening), a one-off miss on the two walker bars,
+which are the far and upstairs beds (W6-F landed; H2-i queued;
+Ben's stair judgement). b1 (cd29099433) at hour 22: in_bed 3,
+TO_BED 35, watch 6, working 2, idle 3, untired 4 (the H1-i night at
+hour 22: idle 20); floors 10; its day: arrivals 821, stalls 21,
+starving 1. The rest of b1's night reads at its night block
+(~22:33).
+
+W6-F falsifier b7v202pil planted `&& false` at 22:14: the pin went
+RED (recorded 22:18). W6-F is red on its plant.
+
+### W6-G registered (22:18): THE HELD JOB'S QUEUE HAS A PATIENCE -- at the end of the queue
+
+Colonist 122 on b1 (cd29099433): bed (7724,6368,186), the same
+house whose wall stopped 961, 71 and 51; feet at (7706,6310,181),
+speed 0, dist 60.7, front Empty -- no window, so no climb ban, so
+W6-E's strike never fired: 42 suspends and reclaims in eighteen
+minutes, no strike-out, no shun. Mechanism: JobBoard.held_suspends:
+JobId -> u8 (counted at the staged-at-anchor self-job arm, kept
+across reclaims, cleaned on remove_job); held_job_stall_strike(
+climbing, suspends, strikes) = job_strike when climbing OR suspends
+>= HELD_QUEUE_PATIENCE (6); the reclaim cap, the strike-out and
+W6-F's shun follow. Witness THE HELD JOB'S QUEUE RAN OUT OF
+PATIENCE for strikes the patience produced. Pin the_held_jobs_
+queue_has_a_patience (a climb at once; the first and fifth suspends
+not; the sixth; the third strike strikes out); falsifier plants the
+patience away. Chain (holds on s1i-staged), falsifier and readers
+wait-w6g-b1/b2 launched 22:18; dry tree HEAD a81dbd9c9d + W18-e2 +
+H2-i + S1-i + W6-G (7 uses). Bars: reclaims per colonist per night
+<= 20 (42 by hour 19; 86 / 157 before); PATIENCE strikes >= 1;
+STRUCK OUT per colonist <= 2 with W6-F; LONGEST-EXHAUST for the day
+<= 80; STALL BLAMED not up more than 2x (real queues untouched).
+Falsified if reclaims stay above 30 with the witness (a third
+door), or STALL BLAMED doubles (six is too short for a real queue).
+
+### b1 hour 19 on W17-c-r (22:14, pair cd29099433): arrivals 679, stalls 17; one sleeper reclaimed 40 times without a climb
+
+The W14-g2 reader's hour-19 block: arrivals 679 (645-831 at this
+hour on the good days; 566 under W17-c), FETCH STALLED 17, STUCK
+CENSUS 6, bobs peak 2, CLIMB BANNED(other) 3, starving 0, NIGHT
+SHELF EMPTY 0 (daytime), LONGEST-EXHAUST 287 (the re-pick flood on
+b1; W6-F boards b1 at ~22:35). Reclaims: colonist 122 x40 with NO
+climb ban -- a RestAt suspended and reclaimed forty times by hour 19
+through the staged-at-anchor branch's non-climb arm, which W6-E
+leaves unstruck by design (a stall at an anchor is queueing). Forty
+in a day is not queueing: a WATCH for a W6-G (a held job's stall at
+an anchor strikes after N suspends, climb or not) once W6-F's read
+says what the shun leaves.
+
+### H1-a's FIRST NIGHT on b2 (22:14, pair cd29099433, hours 21-0): the town goes to bed
+
+NIGHT CENSUS: hour 21 -- in_bed 0, to_bed 4, bed_held 1, watch 8,
+working 27, idle 9, untired 34 (the evening: unchanged, no leak into
+Leisure); hour 22 -- in_bed 4, TO_BED 28, watch 8, working 5, idle
+4, untired 9; hour 23 -- IN_BED 29, to_bed 12, watch 8, working 0,
+IDLE 0, untired 0; hour 0 -- IN_BED 33, to_bed 9, watch 8, working
+0, idle 0. The floor witness fired 10 times by hour 0. Against the
+registered bars: idle at hours 23-0 = 0 (bar <= 5; was 21); in_bed
+at hour 0 = 33 (bar >= 28; was 14); to_bed at hour 0 = 9 (bar <= 8:
+missed by one -- the walkers to far and upstairs beds, W6-F's and
+H2-i's class); the watch 8; Recreate at hour 21 unchanged (the
+hour-21 line reads working 27 as on the H1-i nights). The "untired
+unchanged" bar was mis-worded: untired counts colonists WITHOUT a
+bed job above the interrupt, and every colonist now has one, so it
+reads 0 by construction -- the rest meter itself is untouched
+(rest_mean the same as the night before at the same hour). The
+midnight town: 33 asleep, 9 walking to bed, 8 on the watch. b1's
+night (hour 20 at 22:14, floors 7 so far) reads at 22:19.
+
+### W6-F LANDED (22:13): a81dbd9c9d, both halves, marker 'THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT' 1 in the exe
+
+Pin the_struck_out_bed_is_shunned_for_the_night green on the fresh
+compile; committed 21:59, staged 22:13:10, pushed, shipped to
+lab-bin 22:13:31 (playable; W17-c-r, H1-a and everything below
+aboard). Falsifier b7v202pil plants `&& false` on the rule at +90 s
+(verdict recorded when it prints). The W18-e2 chain fires at +300 s
+(~22:18). The arms board W6-F at their next reader restarts (after
+the W17-c-r days: b2 ~22:25 at hour 6, b1 ~22:35).
+
+### W17-c-r at 25 minutes on both arms (22:13, hour 23): PASSED on every bar read so far; the snapped starts did not come back
+
+b1: FETCH STALLED 18 (183 by hour 19 under W17-c; bar 25), arrivals
+692 by hour 23, starving 1 at the sample (the night class),
+would-refuse witness 15 (a fancy table corner x7, a chair x3, a
+lantern post x1), LONGEST-EXHAUST 303 (the re-pick flood: W6-F's
+case, now landing), snapped starts 0, H1-a floor witness 7. b2:
+FETCH STALLED 4 (171), arrivals 801 by hour 23 (the best day at
+this hour), starving 0, would-refuse 15 (table corner x7, chair x4,
+table body x1), LONGEST-EXHAUST 33, snapped starts 0, H1-a floors
+10. W17-c-r's bars (stalls <= 25, starving 0 at hours 16-21,
+would-refuse >= 10) PASS on both arms; its prediction that the
+snapped starts return to 400-450 was WRONG: 0 on both arms -- the
+451 were one walker's re-asks on one day (colonist 37 on the fence
+line), not a standing class. The diag stays; the count is honest.
+
 ### W17-c-r at hour 11 on both arms (21:52): stalls 0, starving 0 -- the store is reachable again
 
 Five minutes in, both arms at hour 11: b1 FETCH STALLED 0 (183 by

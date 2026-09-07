@@ -9737,6 +9737,21 @@ pub(crate) fn bob_is_a_stall(bobs: u32) -> bool {
     bobs >= BOB_STALL_COUNT
 }
 
+/// ★ W18-e2 pinned: THE STALL PINS ITS RESET POINT. The per-tick progress
+/// check zeroes the stuck clock when the walker has come a block closer than
+/// its reset point (reset_dist - sdist >= 1.0); a two-block bob's lift is
+/// such a block, so W18-e's clock was zeroed eleven times in a night while
+/// colonist 26 bobbed 64 times. A stalled walker's reset point is moved out
+/// of reach: no finite distance is a block closer than it.
+pub(crate) const STALL_RESET_POINT: f32 = f32::MIN;
+
+/// The progress check's own condition, so the pin reads the same rule the
+/// site does: has the walker come a block closer than its reset point?
+pub(crate) fn progress_past_reset(reset_dist: f32, sdist: f32) -> bool {
+    reset_dist - sdist >= 1.0
+}
+// (the falsifier plants the line above: `>= 1.0` -> `>= 1.0 || true`)
+
 /// ★ W18-e: the witness count.
 pub(crate) static BOB_STALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
@@ -38415,7 +38430,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // last zero — sub-block wobble (magnet/hover/
                             // physics jitter clears the 0.5 EPSILON
                             // easily) must not starve the watchdog.
-                            if active.reset_dist - sdist >= 1.0 {
+                            if progress_past_reset(active.reset_dist, sdist) {
                                 active.reset_dist = sdist;
                                 active.stuck_time = 0.0;
                             }
@@ -42954,6 +42969,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 && aj.stuck_time < STUCK_TIMEOUT
                             {
                                 aj.stuck_time = STUCK_TIMEOUT;
+                                // ★ W18-e2: and the reset point, so the next
+                                // lift cannot zero the clock again.
+                                aj.reset_dist = STALL_RESET_POINT;
                                 let k = BOB_STALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                 if k <= 8 || k.is_power_of_two() {
                                     info!(
@@ -42962,7 +42980,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         bobs = bobs_now,
                                         job = aj.job,
                                         stalls = k,
-                                        "bastion: THE BOB IS A STALL — sixteen two-block drops at one cell inside the window; the stuck clock is set to its timeout (W18-e)"
+                                        "bastion: THE BOB IS A STALL — sixteen two-block drops at one cell inside the window; the stuck clock is set to its timeout (W18-e; W18-e2: the reset point pinned)"
                                     );
                                 }
                             }
@@ -57400,6 +57418,19 @@ mod tests {
         assert!(!probe_landing_ok(false, false, false, true), "no support: refused whatever the router says");
         assert!(!probe_landing_ok(true, true, false, true), "feet in a block: refused");
         assert!(!probe_landing_ok(true, false, true, true), "head in a block: refused");
+    }
+
+    /// ★ W18-e2 pinned: a walker a block closer than its reset point has
+    /// progressed; a stalled walker's reset point is out of reach of every
+    /// finite distance, so a two-block lift is not progress. Planted defect:
+    /// the reset point within reach -> red.
+    #[test]
+    fn the_stall_pins_its_reset_point() {
+        assert!(progress_past_reset(10.0, 8.0), "two blocks closer than the reset point: progress");
+        assert!(!progress_past_reset(10.0, 9.5), "half a block: not yet");
+        for sdist in [0.0f32, 1.0, 50.0, 1.0e6] {
+            assert!(!progress_past_reset(STALL_RESET_POINT, sdist), "the stalled walker's lift is never progress (sdist {sdist})");
+        }
     }
 
     /// ★ W18-e pinned: fifteen bobs are not a stall, sixteen are, and so is
