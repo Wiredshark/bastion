@@ -7785,6 +7785,15 @@ pub const SLEEP_MARGIN: f32 = 0.1;
 // designed extension point ("extends as food"), and the death-spiral
 // recovery's load-bearing line: without it the farm's whole output is
 // inedible and no shortage can recover through production.
+/// ★ E2-u pinned: THE CARGO IS NOT A RATION. A hauler's pack meal is any
+/// food it carries EXCEPT the item its active job hauls for a household.
+pub(crate) fn ration_admitted(def: &str, cargo: Option<&str>) -> bool {
+    cargo != Some(def)
+}
+
+pub(crate) static CARGO_KEPT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub(crate) static EMPTY_DELIVERIES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub const FOOD_DEFS: &[&str] = &[
     "common.items.food.mushroom",
     FARM_WHEAT_ITEM,
@@ -33662,13 +33671,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // farm verbs, and till and sow produce no food at
                             // all — so it was starving colonists in the name of
                             // a harvest that was not happening.
-                            let pack_def = inventories.get(entity).and_then(|inv| {
+                            // ★ E2-u: THE CARGO IS NOT A RATION -- the food this walker
+                            // hauls for a household is not its own pack meal.
+                            let cargo_def = active_jobs
+                                .get(entity)
+                                .and_then(|a| board.jobs.get(&a.job))
+                                .and_then(|j| j.required_item);
+                            let pack_any = inventories.get(entity).and_then(|inv| {
                                 inv.slots().flatten().find_map(|i| {
                                     i.item_definition_id().itemdef_id().and_then(|d| {
                                         FOOD_DEFS.iter().find(|f| **f == d).copied()
                                     })
                                 })
                             });
+                            let pack_def = inventories.get(entity).and_then(|inv| {
+                                inv.slots().flatten().find_map(|i| {
+                                    i.item_definition_id().itemdef_id().and_then(|d| {
+                                        FOOD_DEFS
+                                            .iter()
+                                            .find(|f| **f == d && ration_admitted(f, cargo_def))
+                                            .copied()
+                                    })
+                                })
+                            });
+                            if pack_any.is_some() && pack_def.is_none() {
+                                let n = CARGO_KEPT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if n <= 8 || n.is_power_of_two() {
+                                    info!(
+                                        colonist = %uid,
+                                        cargo = ?cargo_def,
+                                        job = ?active_jobs.get(entity).map(|a| a.job),
+                                        kept = n,
+                                        "bastion: THE CARGO IS NOT A RATION — a hungry hauler carries only the household's load; it eats from a store instead (E2-u)"
+                                    );
+                                }
+                            }
                             let on_imminent_food = active_jobs
                                 .get(entity)
                                 .filter(|a| matches!(a.state, ActiveJobState::Arrived))
@@ -42053,6 +42090,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             dest = ?job.pos,
                             "bastion: haul deposited"
                         );
+                        // ★ E2-u: THE DELIVERY OF NOTHING -- witnessed; the completion
+                        // is unchanged until the witness says what remains.
+                        if dropped == 0 {
+                            let n = EMPTY_DELIVERIES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                            if n <= 8 || n.is_power_of_two() {
+                                info!(
+                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                    job = active.job,
+                                    item = ?job.required_item,
+                                    dest = ?job.pos,
+                                    empty = n,
+                                    "bastion: THE DELIVERY OF NOTHING — the hauler reached the destination with none of the load; the job completes as delivered (E2-u witness)"
+                                );
+                            }
+                        }
                         // Last read of `job` — it is dead after this,
                         // freeing `board` for the admission-ledger borrow.
                         // T1.15: remove_job (below) releases the reservation
@@ -58736,6 +58788,15 @@ mod tests {
         assert_eq!(dist_label(f32::MAX), "MAX");
         assert_eq!(dist_label(f32::MIN), "MIN");
         assert_eq!(dist_label(12.34), "12.3");
+    }
+
+    /// ★ E2-u pinned: the cargo is never the ration; any other food is.
+    /// Planted defect: the cargo admitted -> red.
+    #[test]
+    fn the_cargo_is_not_a_ration() {
+        assert!(ration_admitted("common.items.food.carrot", None), "no cargo: any food");
+        assert!(!ration_admitted("common.items.food.meat.bird_raw", Some("common.items.food.meat.bird_raw")), "the cargo");
+        assert!(ration_admitted("common.items.food.carrot", Some("common.items.food.meat.bird_raw")), "another food");
     }
 
     /// ★ W14-j pinned: the three verdicts are named apart and the rim glyphs

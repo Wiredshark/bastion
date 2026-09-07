@@ -3128,6 +3128,10 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W14-j LANDED (07:21): b68d3b1532, marker 'THE BASIN NAMES ITS RIM' server=1 in stage-bin; shipped 07:21:18
+
+- Chain benctvver: check ok 07:03, pin the_basin_names_its_rim, commit b68d3b1532, both halves built, staged 07:21:11. Falsifier baw1mszzw planted closed named open: "went RED (good)"; reader wait-rim-w14j bmtt7ng86 reads the first rim lines. E2-u's chain fires 07:26:11. W6-I's witness meanwhile: WAITS 15 on each arm by hour 18-19 of day 0 (b1 with 5 planned anchors, b2 with 1); the nights (~07:35-07:55) are the outcome read.
+
 ### A1 THE ACCESS PLANNER SPARES THE HOUSES -- registered 07:05 (before the binary exists), queued behind Q1 with a 45-minute hold so Q1's residual reads alone
 
 - THE MECHANISM (read in the code): in_access_mask(designated, p) (~1500) = p within any region of the mask +-1 in x, y, at or above the region's floor -1, unbounded upward ("a colony may always rise from its own claim"); emergency_escape_shaft (~875) and plan_access (~6207) dig only where it holds; both callers (46162 self-rescue, 50156 proactive descent) build the mask from board.designated_regions() -- Mine, Chop, Build, Stockpile, Ladder, Gather and BED regions alike. A house is a Bed designation; the planner reads it as a claim, so its shafts, stairs and ladders may run through houses: the access anchors on b1 ((7713,6342), (7705,6346) in the loopers' house; (7698,6303), (7706,6310) in the pit's house) and b2 ((7698,6303), (7706,6310)) are Ladder designations inside house footprints -- the anchors W6-H found eight sleepers queued at.
