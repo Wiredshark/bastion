@@ -7813,6 +7813,16 @@ pub(crate) fn ration_admitted(def: &str, cargo: Option<&str>) -> bool {
 pub(crate) static CARGO_KEPT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 pub(crate) static EMPTY_DELIVERIES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// ★ E2-v pinned: THE HAUL HAS NO CARGO. A Haul is claimable only if the
+/// claimant already carries the required item or the Haul's item still
+/// stands in the world as a pickup; a load in another hauler's pack, or
+/// consumed, is not walked to its shelf empty-handed.
+pub(crate) fn haul_claim_admitted(carried: bool, cargo_in_world: bool) -> bool {
+    carried || cargo_in_world
+}
+
+pub(crate) static HAULS_WITHOUT_CARGO: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub const FOOD_DEFS: &[&str] = &[
     "common.items.food.mushroom",
     FARM_WHEAT_ITEM,
@@ -51120,6 +51130,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     priority
                 };
+                // ★ E2-v: THE HAUL HAS NO CARGO -- a Haul whose item is neither in
+                // the world nor in this claimant's hands is refused, not walked.
+                let priority = if priority > 0
+                    && let common::bastion::JobKind::Haul { item: cargo_uid, .. } = job.kind
+                {
+                    let carried_e2v = job.required_item.is_some_and(|req| {
+                        inventories.get(entity).is_some_and(|inv| {
+                            inv.slots().flatten().any(|i| i.item_definition_id().itemdef_id() == Some(req))
+                        })
+                    });
+                    let in_world_e2v = id_maps
+                        .uid_entity(cargo_uid)
+                        .is_some_and(|ie| pickup_items.get(ie).is_some());
+                    if haul_claim_admitted(carried_e2v, in_world_e2v) {
+                        priority
+                    } else {
+                        let n = HAULS_WITHOUT_CARGO.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                        if n <= 8 || n.is_power_of_two() {
+                            info!(
+                                job = id,
+                                colonist = uid.0.get(),
+                                cargo = ?cargo_uid,
+                                required_item = ?job.required_item,
+                                refused = n,
+                                "bastion: THE HAUL HAS NO CARGO — the load is in another hauler's pack or gone; the claim is refused, not walked (E2-v)"
+                            );
+                        }
+                        0
+                    }
+                } else {
+                    priority
+                };
                 if priority == 0 {
                     if own_load {
                         own_load_verdict = Some(if own_supper {
@@ -59027,6 +59069,16 @@ mod tests {
         assert!(!quarry_spares(&house, Vec2::new(7693, 6336), QUARRY_HOUSE_MARGIN), "past the margin");
         assert!(!quarry_spares(&house, Vec2::new(7700, 6350), QUARRY_HOUSE_MARGIN), "past the far margin");
         assert!(QUARRY_HOUSE_MARGIN >= 1, "a wall's thickness at least");
+    }
+
+    /// ★ E2-v pinned: carried or in the world admits; neither refuses.
+    /// Planted defect: every claim admitted -> red.
+    #[test]
+    fn the_haul_has_no_cargo() {
+        assert!(!haul_claim_admitted(false, false), "in another pack, or gone");
+        assert!(haul_claim_admitted(true, false), "already carried");
+        assert!(haul_claim_admitted(false, true), "standing in the world");
+        assert!(haul_claim_admitted(true, true));
     }
 
     /// ★ E2-u pinned: the cargo is never the ration; any other food is.
