@@ -9658,6 +9658,22 @@ pub(crate) fn held_job_reclaim_allowed(strikes: u8) -> bool {
 /// ★ W6-E: the witness count.
 pub(crate) static HELD_STRIKES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// ★ W6-F pinned: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT. W6-E's
+/// strike-out discarded the bed job and the picker offered the same bed
+/// again -- a fresh job, a fresh whole-town search, three more timeouts:
+/// 196 exhaustions to one upstairs bed on b2's first W6-E night, the flood
+/// W14-g2 had closed. A struck-out bed is skipped by that sleeper until a
+/// Sleep block has passed; any other bed, or the same bed after the window,
+/// is offered as before.
+pub(crate) const BED_SHUN_SECS: f64 = 8.0 * 75.0;
+
+pub(crate) fn bed_is_shunned(shun: Option<&(Vec3<i32>, f64)>, bed: Vec3<i32>, now: f64) -> bool {
+    shun.is_some_and(|(b, until)| *b == bed && now < *until)
+}
+
+/// ★ W6-F: the witness count.
+pub(crate) static BEDS_SHUNNED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W14-d pinned: THE TERMINAL CHASER SEARCH STRIKES THE JOB. The chaser
 /// climbs its tiers to Longest and, exhausted there with its last target at
 /// the job, asks again from a flee point -- the whole-town floods (60,696
@@ -15584,6 +15600,11 @@ pub struct JobBoard {
     /// ★ E2-g: each supper load's eaters (the bed owners of its house);
     /// an eater claims its own load at 6. Cleaned on remove_job.
     pub supper_eaters: HashMap<JobId, Vec<Uid>>,
+    /// ★ W6-F: a sleeper's struck-out bed and the time until which the picker
+    /// skips it (one Sleep block), so the strike-out does not re-pick the same
+    /// unreachable bed and flood the town with a fresh search every three
+    /// timeouts.
+    pub bed_shun: HashMap<Uid, (Vec3<i32>, f64)>,
     /// ★ E2-i3: the round's ledger per house (by the house's min corner):
     /// the shortfall at the round and the loads minted for it, so a
     /// sleeper's empty shelf can name what the round did for its house.
@@ -33293,6 +33314,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // cooldown treatment as the eat arm above.
                             // ★ W6-E: the discard is witnessed (it was silent).
                             info!(colonist = %uid, job = pending_id, strikes = job.stuck_strikes, "bastion: THE HELD JOB STRUCK OUT — the suspended RestAt is discarded past the reclaim cap; the picker chooses again (W6-E)");
+                            // ★ W6-F: and the bed is shunned by this sleeper for a Sleep block.
+                            let shun_bed = match job.kind {
+                                common::bastion::JobKind::RestAt { bed_pos } => Some(bed_pos),
+                                _ => None,
+                            };
+                            if let Some(b) = shun_bed {
+                                board.bed_shun.insert(*uid, (b, time.0 + BED_SHUN_SECS));
+                                let k = BEDS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                if k <= 8 || k.is_power_of_two() {
+                                    info!(colonist = %uid, bed = ?b, until = time.0 + BED_SHUN_SECS, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F)");
+                                }
+                            }
                             board.remove_job(pending_id);
                             if let Some(arb) = arbiters.get_mut(entity) {
                                 arb.pending_self_job = None;
@@ -33318,12 +33351,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     s.occupant.is_none()
                                         || s.occupant == Some(*uid)
                                 })
-                            });
+                            })
+                            // ★ W6-F: not the bed struck out tonight.
+                            .filter(|p| !bed_is_shunned(board.bed_shun.get(uid), *p, time.0));
                         let bed = own.or_else(|| {
                             board
                                 .beds
                                 .iter()
                                 .filter(|(_, s)| s.occupant.is_none())
+                                .filter(|(p, _)| !bed_is_shunned(board.bed_shun.get(uid), **p, time.0))
                                 // T0.39 (T0-003): beds iterate a HashMap —
                                 // equal-distance ties break on the bed
                                 // coordinate, never process-seeded hash
@@ -38360,6 +38396,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             exhausts = count,
                                             "bastion: UNREACHABLE PROVEN — job benched off the board (three exhausted Longest searches)"
                                         );
+                                        // ★ W6-F: a benched bed job shuns its bed for this sleeper too.
+                                        if let common::bastion::JobKind::RestAt { bed_pos } = job.kind {
+                                            board.bed_shun.insert(u, (bed_pos, time.0 + BED_SHUN_SECS));
+                                            let k = BEDS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if k <= 8 || k.is_power_of_two() {
+                                                info!(colonist = u.0.get(), bed = ?bed_pos, until = time.0 + BED_SHUN_SECS, shunned = k, "bastion: THE STRUCK-OUT BED IS SHUNNED FOR THE NIGHT — this sleeper's picker skips it for a Sleep block (W6-F)");
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -57500,6 +57544,22 @@ mod tests {
         assert!(night_census_hour(21) && night_census_hour(0) && night_census_hour(6), "the block and its shoulders");
         assert!(!night_census_hour(7) && !night_census_hour(20), "the day is not counted");
         assert_eq!(job_kind_name(&common::bastion::JobKind::RestAt { bed_pos: Vec3::zero() }), "RestAt");
+    }
+
+    /// ★ W6-F pinned: the struck-out bed is shunned inside the window, not
+    /// after it, and no other bed is; no shun, no skip. Planted defect: the
+    /// window ignored -> red.
+    #[test]
+    fn the_struck_out_bed_is_shunned_for_the_night() {
+        let bed = Vec3::new(7716, 6343, 186);
+        let other = Vec3::new(7700, 6308, 186);
+        let shun = (bed, 1000.0 + BED_SHUN_SECS);
+        assert!(bed_is_shunned(Some(&shun), bed, 1000.0), "just struck out: shunned");
+        assert!(bed_is_shunned(Some(&shun), bed, 1000.0 + BED_SHUN_SECS - 1.0), "still inside the block: shunned");
+        assert!(!bed_is_shunned(Some(&shun), bed, 1000.0 + BED_SHUN_SECS), "the block has passed: offered again");
+        assert!(!bed_is_shunned(Some(&shun), other, 1000.0), "another bed is never shunned by this entry");
+        assert!(!bed_is_shunned(None, bed, 1000.0), "no shun: no skip");
+        assert!((BED_SHUN_SECS - 600.0).abs() < f32::EPSILON as f64, "a Sleep block: eight game hours of 75 s");
     }
 
     /// ★ W6-E pinned: a banned climb strikes the held job; the first two

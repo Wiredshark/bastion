@@ -3128,6 +3128,31 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W17-c-r at hour 11 on both arms (21:52): stalls 0, starving 0 -- the store is reachable again
+
+Five minutes in, both arms at hour 11: b1 FETCH STALLED 0 (183 by
+hour 19 under W17-c), arrivals 304, starving none, would-refuse
+witness 12, LONGEST-EXHAUST 49; b2 FETCH STALLED 0 (171), arrivals
+301, starving none, would-refuse 14, LONGEST-EXHAUST 22. The revert
+does what it says; the witness keeps naming the surfaces. The
+25-minute read and the day blocks confirm. Desktop probe #13 at
+21:52: 0x0 (locked).
+
+### W17-c-r LANDED (21:46): cd29099433, both halves, marker 'the check is off, the mover lands anyway' 1 in the exe
+
+Pin the_router_check_on_landings_is_off green on the fresh compile;
+committed 21:37, staged 21:46:48, pushed, shipped to lab-bin
+21:47:18 (playable: the first pair with H1-a aboard and without
+W17-c's starvation; b2 boarded it at 21:47, b1 at 21:48). Falsifier
+bqg2ctmc7 planted the check switched on at 21:48: the pin went RED
+(0 passed, 1 failed), 0 dirty files restored at 21:51. W17-c-r is
+red on its plant. The four
+gated readers restart both arms onto it now; the W6-F chain fires
+at +300 s (~21:52). W17-c's toll at the revert: b2 starving 18 at
+hour 13 of its second W17-c day, b1 starving 10 at hour 1. The
+read: FETCH STALLED back under 25, starving 0 at hours 16-21, the
+would-refuse witness >= 10 naming the surfaces.
+
 ### S1-i registered (21:31): THE STORE NAMES ITS AISLES -- an instrument at the end of the queue
 
 Mechanism: store_cell_has_stand(cell, standable) = standable(cell)
