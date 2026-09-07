@@ -3128,6 +3128,130 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### b2's H2-i day (23:45, pair 8e72bfaee3, boarded 23:12, read at hour 6 of day 1): the flood is ONE pair -- 170 of 192 to the cell beside an upstairs bed, from a non-climb reclaim loop (W6-G's class); the best night yet (40 of 50 in bed)
+
+FLOOD: LONGEST-EXHAUST 192 (whole-town 192), top ends 170x
+(7716,6343,186) -- the cell beside the upstairs bed (7715,6342,186)
+of the house whose wall stopped 961/71/51/122 -- then 4x and 3x.
+LOOP: reclaims top colonist 72 x30 (34 x1); other bans 2; held
+strikes 0; STRUCK OUT 0 (no climb, no strike, no shun: the
+non-climb suspend loop W6-G's patience is built for, now at 30
+reclaims and ~6 whole-town searches per reclaim). The night's far
+walker (72, dist 80, stuck 0.5-9.5 s, feet (7713,6342,18x)) is the
+same colonist all night. STRIKES: terminal chaser 3 (17, 30, 62:
+W14-d fired), longest exhausts 1. Arrivals 980 (bar 720 PASSED);
+FETCH STALLED 19; bobs: lifts_repeated 8, stalls 0.
+NIGHT CENSUS: hour 21 in_bed 0 / working 35 (Recreate 20, EatFrom
+10: the evening); 22: in_bed 3, to_bed 31; 23: 35; 0: 39; 1-4: 39-40
+of 50, idle 0, to_bed 2-3, watch 7-8, working 1 (EatFrom); 5: 39; 6:
+in_bed 0, working 40 (Recreate 34): the morning. HUMAN HOURS at its
+best reading yet on this pair.
+SHELF: NIGHT SHELF EMPTY x12, all colonist 34, round_need 0,
+round_loads 0, unclaimed/in_flight/gone 0, bed z 186 -- a NEW
+fingerprint: the supper round computed no need for this house at
+all (no load minted), against the "minted one, gone" class of 21/
+46/134/135. Starving over the day: 10, 29, 61 (FED starving 1 at
+hour 6). E2-i3b's per-load lines will not name a load that was
+never minted: the round's need for house 34 is the next question
+(an upstairs sleeper not counted as the house's eater?).
+
+23:55 follow-up from the code: the round counts a house's heads as
+the OWNED BEDS inside its footprint (xy), finds the private shelf
+whose min lies inside, need = heads x 2 - units on the shelf, and
+writes the ledger ONLY when need > 0. So round_need 0 on the night
+line is either (a) heads 0 / no shelf for the house the sleeper
+calls home (no entry; the default prints 0) or (b) a shelf that
+held two units at noon (SUPPER ROUND day 0: houses 49, heads 49,
+shortfall 72, loads 41, no_shelf 0) and was empty by night. The
+line cannot tell them apart. E2-i3b (queued) now ledgers every
+house with a head and prints ledgered=true/false on the night
+line; its read decides.
+
+### W6-F2 LANDED (23:43): 976ce4fb5b, both halves, marker 'W6-F2: every bed struck out tonight' 1 in the exe
+
+Pin the_shun_holds_every_bed_struck_out_tonight green on the fresh
+compile (508 filtered, 1 passed); committed 23:34 (the second run,
+after the shadowed-name failure), staged 23:43, pushed. Falsifier
+blb2pimu6 plants the list cleared on every shun at +90 s: RED
+(23:47, "0 passed; 1 failed"). The W14-i8 chain fired at 23:48
+(stage ~00:08). First-night
+reader read-w6f2-first keys on the pair boarding each arm (b2's
+next restart ~00:00 by the S1-i reader; b1's ~00:20).
+
+### H2-i2 THE STAIR PROBE CLIMBS WITH THE ROUTER'S FEET -- registered 23:47 (before the binary exists), queued at the end (behind E2-i3b)
+
+MECHANISM: common::path gains the router's move set as data
+(COLONIST_STEP_DIRS 13, JUMPS 4, SCRAMBLES 4), colonist_step_
+admitted(vol, pos, dir, reach, can_climb) -- a mirror of the
+neighbour filter (both cells walkable; a rise needs the block two
+above the feet free, three for a jump, four for a scramble; a fall
+needs two above the landing free; jumps when jumps_admitted) --
+and climb_with_steps (a bounded breadth-first climb in a fixed
+order: Ok(cells) on a goal, Err((cells, top)) otherwise). The
+census's stair_probe seeds from the house footprint's walkable
+cells at floor_z..=floor_z+2, climbs with the trunk's reach and
+can_climb, and stops beside the bed; Cut names `top`, the highest
+cell reached; the cut-bed line prints top/under/head/above2 and
+"(H2-i2: up, not down)".
+
+PINS: (common) the_stair_probe_climbs_with_the_routers_feet: on
+the stairs-lab shapes the mirror and find_path_priced agree -- the
+open staircase (A) climbed by both; the staircase with one ceiling
+block two above one step's feet (E) refused by both, the mirror
+stopping on that step. (bastion-server) the_upstairs_bed_names_
+its_stair rewritten: Ground; open staircase from the floor
+Connected; a rising step refused under a ceiling while the fall
+through it is open -> Cut naming the step (H2-i's blind shape); a
+gapped staircase names the step below the gap. Falsifier plants
+the rise's clearance ignored in the mirror -> the common pin red.
+
+BARS (each arm's first census on the pair): cut >= 1 per arm; the
+cut beds include (7756,6412,186) and the loopers' beds
+(7724,6368,186), (7700,6309,186), (7715,6342,186); connected + cut
+= 16 per arm; each cut bed's top inside the footprint at z <=
+bed.z - 1 with a solid block two above it or no walkable rise.
+FALSIFIED if cut = 0 again (the disagreement is at the door or the
+seeding, not the step rule: the next probe starts outside the
+house) or if a bed the loopers reached every night reads cut (the
+mirror stricter than the router: compare on that shape).
+Rejected: calling the router per bed (34 whole-town searches a
+day on purpose); a small-budget synchronous search (its tiers are
+the thing under test); refactoring the router's closure to call
+the mirror (a hot-loop change beyond the row; the pin holds them
+together instead).
+
+Chain chain-h2i2 (both halves; two pins) holds on e2i3b-staged;
+falsifier armed; dry tree passed in the order W6-F2 -> W14-i8 ->
+S1-i -> W6-G -> E2-i3b -> H2-i2 (both files).
+
+### H2-i's first STAIR CENSUS (23:27-23:29, pair 8e72bfaee3, both arms at boot): beds 34 / 32, upstairs 16 / 16, connected 16 / 16, CUT 0 / 0 -- the probe disagrees with the router: FAILED AS AN INSTRUMENT
+
+The census fires at boot (growth_logged_day is None on the first
+tick, so day_changed is true). b2: beds 34, upstairs 16, connected
+16, cut 0; b1: beds 32, upstairs 16, connected 16, cut 0. No cut-bed
+line on either arm. Against this: colonist 144 struck out its own
+upstairs bed (7756,6412,186), house 86, three times today on the
+same town; the wall loopers 961/71/59/51/57/122/83 all had z-186
+beds; 290 exhausts to one z-188 bed on b1's W17-c-r night; and the
+stairs lab (stairs-lab.py) showed the router climbs an open block
+staircase but not the live shape (an upper slab over the stair run
+with a one-cell hole: UP None in 2,316 expansions). The probe's BFS
+steps laterally with dz 0/+1/-1 whenever the destination cell is
+colonist_walkable; the router's +1 step needs clearance the probe
+does not ask for (the slab over the rising step). GENERATOR AND
+CONSUMER MUST AGREE: the census asked its own rule, not the
+router's. H2-i's bar ("cut >= 1 on each arm, the cut beds naming
+the loopers' beds") FAILED; the pin held on a lab shape the router
+would also fail, so the pin cannot bless the rule.
+
+DISPOSITION: FAILED as an instrument; the count (16 of 34 / 32
+registered beds upstairs: half the housing) stands as the one
+number it produced. NEXT: H2-i2 THE STAIR PROBE WALKS WITH THE
+ROUTER'S FEET -- the BFS steps only where the router's own step
+rule admits (the neighbour/step function find_path_priced uses
+under colonist rules, exposed from common::path), falsified by
+planting the loose rule back (cut returns to 0 on the slab shape).
+
 ### W6-F's full day and night on b1 (23:25, pair a81dbd9c9d, read at hour 6 of day 1): the shun had no work (STRUCK OUT 0); the flood 471; arrivals 935
 
 b1: LONGEST-EXHAUST 471 (whole-town 469; 243 at hour 19), top ends

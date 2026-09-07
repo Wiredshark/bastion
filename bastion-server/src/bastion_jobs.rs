@@ -9723,6 +9723,34 @@ pub(crate) fn exhaust_rose(seen: u8, now: u8) -> bool {
     now != seen && now > 0
 }
 
+/// ★ W14-i8 pinned: THE EXHAUSTED DELIVERY NAMES ITS ASKER. W14-i7 names
+/// the chaser's exhausts; the pump's fill lane is the other whole-town
+/// producer (b1: 214 whole-town searches, 2 chaser witnesses) and its
+/// exhausted arm named nobody past the first eight. Every exhausted fill
+/// delivery counts against its (asker, target cell) pair; the pair's
+/// first, second, fourth, eighth ... are witnessed with the job, and an
+/// hourly table prints the eight pairs exhausted most, in a total order
+/// (count desc, then asker, then cell).
+pub(crate) fn exhaust_repeat_witnessed(n: u32) -> bool {
+    n <= 4 || n.is_power_of_two()
+}
+
+pub(crate) fn exhaust_repeat_top(map: &HashMap<(Uid, Vec3<i32>), u32>, n: usize) -> Vec<((Uid, Vec3<i32>), u32)> {
+    let mut v: Vec<((Uid, Vec3<i32>), u32)> = map.iter().map(|(k, c)| (*k, *c)).collect();
+    v.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.0.cmp(&b.0.0))
+            .then_with(|| a.0.1.x.cmp(&b.0.1.x))
+            .then_with(|| a.0.1.y.cmp(&b.0.1.y))
+            .then_with(|| a.0.1.z.cmp(&b.0.1.z))
+    });
+    v.truncate(n);
+    v
+}
+
+/// ★ W14-i8: the hour the table last printed (tick-clock hour, 7 at boot).
+pub(crate) static EXHAUST_REPEAT_LAST_HOUR: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(u32::MAX);
+
 /// ★ W14-i7: the witness count.
 pub(crate) static FLOOD_NAMED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
@@ -14837,6 +14865,10 @@ pub struct JobBoard {
     /// ★ W14-i7: the last Longest-exhaust count seen per walker at the mover's
     /// write (the flood names its walker).
     pub exhausts_seen: HashMap<Uid, u8>,
+    /// ★ W14-i8: how many times the pump's fill spent its budget for each
+    /// (asker, target cell) pair this run (the exhausted delivery names its
+    /// asker). Cumulative; the reader diffs by hour.
+    pub exhaust_repeats: HashMap<(Uid, Vec3<i32>), u32>,
     /// ★ W18-i: each body's last two-block-or-more mover drop (cell, tick)
     /// and how many bobs it has made at that cell since.
     pub bob_last: HashMap<Uid, (Vec2<i32>, u64)>,
@@ -44555,6 +44587,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                      and for how long, what was delivered and how long it waited"
                 );
             }
+            // ★ W14-i8: EXHAUST REPEAT CENSUS -- once per tick-clock hour, the
+            // eight (asker, target) pairs the pump's fill exhausted most.
+            {
+                let hour = (((tick.0 % 54_000) / 2_250 + 7) % 24) as u32;
+                let last = EXHAUST_REPEAT_LAST_HOUR.swap(hour, core::sync::atomic::Ordering::Relaxed);
+                if last != hour && !board.exhaust_repeats.is_empty() {
+                    let top = exhaust_repeat_top(&board.exhaust_repeats, 8);
+                    let rows: Vec<String> = top
+                        .iter()
+                        .map(|((u, t), c)| format!("{}@({},{},{})x{}", u.0.get(), t.x, t.y, t.z, c))
+                        .collect();
+                    let total: u64 = board.exhaust_repeats.values().map(|c| *c as u64).sum();
+                    info!(
+                        hour,
+                        pairs = board.exhaust_repeats.len(),
+                        total,
+                        top = ?rows,
+                        "bastion: EXHAUST REPEAT CENSUS — the (asker, target) pairs the pump's fill exhausted most this run (W14-i8)"
+                    );
+                }
+            }
             let keys: Vec<u64> = board.path_searches.keys().copied().collect();
             if !keys.is_empty() {
                 let rot = (tick.0 as usize) % keys.len();
@@ -44838,6 +44891,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if matches!(o, common::path::FullPathOutcome::BudgetExhausted) {
                                         let dz = ps.target.z.floor() as i32 - ps.startf.z.floor() as i32;
                                         board.pump_census.note_exhausted(dz);
+                                        // ★ W14-i8: THE EXHAUSTED DELIVERY NAMES ITS ASKER --
+                                        // every exhausted fill counts against its (asker,
+                                        // target) pair; the pair's 1st, 2nd, 4th, 8th ... are
+                                        // witnessed with the held job.
+                                        {
+                                            let tcell = ps.target.map(|e| e.floor() as i32);
+                                            let reps = {
+                                                let e = board.exhaust_repeats.entry((u, tcell)).or_insert(0);
+                                                *e = e.saturating_add(1);
+                                                *e
+                                            };
+                                            if exhaust_repeat_witnessed(reps) {
+                                                let held_job: Option<JobId> = (&entities, &active_jobs)
+                                                    .join()
+                                                    .find(|(e2, _)| uids.get(*e2) == Some(&u))
+                                                    .map(|(_, aj)| aj.job);
+                                                let (kind, job_pos) = held_job
+                                                    .and_then(|j| board.jobs.get(&j))
+                                                    .map(|j| (format!("{:?}", j.kind), Some(j.pos)))
+                                                    .unwrap_or_else(|| ("none".to_string(), None));
+                                                info!(
+                                                    uid = k,
+                                                    target = ?tcell,
+                                                    from = ?ps.startf.map(|e| e.floor() as i32),
+                                                    job = ?held_job,
+                                                    kind = %kind,
+                                                    ?job_pos,
+                                                    repeats = reps,
+                                                    waited = tick.0.saturating_sub(ps.since),
+                                                    "bastion: THE EXHAUSTED DELIVERY NAMES ITS ASKER — the pump's fill spent its budget for this pair again (W14-i8)"
+                                                );
+                                            }
+                                        }
                                         let n = SEARCHES_EXHAUSTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                         if n <= 8 || n.is_power_of_two() {
                                             info!(
@@ -57682,6 +57768,28 @@ mod tests {
     /// exhaustion; the same count, or a reset to zero, does not; a reset
     /// followed by a fresh exhaustion between two writes (2 -> 1) does.
     /// Planted defect: "rose" as a plain greater-than -> red on 2 -> 1.
+    #[test]
+    fn the_exhausted_delivery_names_its_asker() {
+        let u = |n: u64| Uid(std::num::NonZeroU64::new(n).unwrap());
+        let mut m: HashMap<(Uid, Vec3<i32>), u32> = HashMap::new();
+        m.insert((u(21), Vec3::new(7746, 6399, 180)), 34);
+        m.insert((u(135), Vec3::new(7743, 6404, 181)), 9);
+        m.insert((u(7), Vec3::new(7700, 6300, 181)), 1);
+        m.insert((u(3), Vec3::new(7700, 6300, 181)), 9);
+        let top = exhaust_repeat_top(&m, 2);
+        assert_eq!(top.len(), 2, "truncated to the asked count");
+        assert_eq!(top[0], ((u(21), Vec3::new(7746, 6399, 180)), 34), "the most-exhausted pair first");
+        assert_eq!(top[1], ((u(3), Vec3::new(7700, 6300, 181)), 9), "a tie breaks by the asker: a total order");
+        assert_eq!(exhaust_repeat_top(&m, 8).len(), 4, "all pairs when fewer than asked");
+        for n in [1u32, 2, 3, 4, 8, 16, 64] {
+            assert!(exhaust_repeat_witnessed(n), "witnessed at {n}");
+        }
+        for n in [5u32, 6, 7, 9, 33] {
+            assert!(!exhaust_repeat_witnessed(n), "sampled out at {n}");
+        }
+    }
+
+    /// ★ W14-i7 pinned: the flood names its walker (the rise rule).
     #[test]
     fn the_flood_names_its_walker() {
         assert!(exhaust_rose(0, 1), "the first exhaustion");
