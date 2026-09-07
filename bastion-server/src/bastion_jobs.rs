@@ -9650,6 +9650,26 @@ pub(crate) fn held_job_strike(climbing: bool, strikes: u8) -> Option<(u8, bool)>
     banned_climb_strike(climbing, strikes)
 }
 
+/// ★ W6-G pinned: THE HELD JOB'S QUEUE HAS A PATIENCE. The staged-at-anchor
+/// timeout spares a self job's stall because a stall at an anchor is
+/// queueing; W6-E strikes it only when the body was on a wall. Colonist 122
+/// stood at the same wall cell as 961, 71 and 51, bound for the same
+/// upstairs bed, with no window in front: no ban, 42 suspends and reclaims
+/// in eighteen minutes. A real queue resolves in a few timeouts; the sixth
+/// suspend of one job strikes it as a banned climb would.
+pub(crate) const HELD_QUEUE_PATIENCE: u8 = 6;
+
+pub(crate) fn held_job_stall_strike(climbing: bool, suspends: u8, strikes: u8) -> Option<(u8, bool)> {
+    if climbing || suspends >= HELD_QUEUE_PATIENCE {
+        Some(job_strike(strikes))
+    } else {
+        None
+    }
+}
+
+/// ★ W6-G: the witness count (strikes the patience produced, not the climb).
+pub(crate) static PATIENCE_STRIKES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W6-E: the reclaim's side of the same cap (the consumer of the strikes).
 pub(crate) fn held_job_reclaim_allowed(strikes: u8) -> bool {
     strikes < PERSIST_ESCALATE_STRIKES
@@ -15758,6 +15778,10 @@ pub struct JobBoard {
     /// ★ E2-g: each supper load's eaters (the bed owners of its house);
     /// an eater claims its own load at 6. Cleaned on remove_job.
     pub supper_eaters: HashMap<JobId, Vec<Uid>>,
+    /// ★ W6-G: how many times a held self job has been suspended at an anchor
+    /// (reclaims keep the job id, so the count spans them). Cleaned on
+    /// remove_job.
+    pub held_suspends: HashMap<JobId, u8>,
     /// ★ W6-F: a sleeper's struck-out bed and the time until which the picker
     /// skips it (one Sleep block), so the strike-out does not re-pick the same
     /// unreachable bed and flood the town with a fresh search every three
@@ -17976,6 +18000,7 @@ impl JobBoard {
         self.par_jobs.remove(&id);
         self.chop_crew.remove(&id);
         self.supper_jobs.remove(&id);
+        self.held_suspends.remove(&id);
         self.supper_eaters.remove(&id);
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
@@ -39411,8 +39436,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if is_labor_hold_self_job(&job.kind) {
                                         // ★ W6-E: A BANNED CLIMB STRIKES THE HELD
                                         // JOB TOO -- the reclaim cap's producer.
-                                        if let Some((next, bench)) = held_job_strike(climbing, job.stuck_strikes) {
+                                        // ★ W6-G: the suspend is counted per job; the sixth
+                                        // strikes though the body never climbed.
+                                        let suspends_n = {
+                                            let e = board.held_suspends.entry(active.job).or_insert(0);
+                                            *e = e.saturating_add(1);
+                                            *e
+                                        };
+                                        if let Some((next, bench)) = held_job_stall_strike(climbing, suspends_n, job.stuck_strikes) {
                                             job.stuck_strikes = next;
+                                            if !climbing {
+                                                let q = PATIENCE_STRIKES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                if q <= 8 || q.is_power_of_two() {
+                                                    info!(
+                                                        job = active.job,
+                                                        colonist = uids.get(entity).map(|u| u.0.get()),
+                                                        kind = ?job.kind,
+                                                        job_pos = ?job.pos,
+                                                        ?feet,
+                                                        suspends = suspends_n,
+                                                        strikes = next,
+                                                        struck_out = bench,
+                                                        patience_strikes = q,
+                                                        "bastion: THE HELD JOB'S QUEUE RAN OUT OF PATIENCE — a self job suspended at an anchor six times strikes though it never climbed (W6-G)"
+                                                    );
+                                                }
+                                            }
                                             let k = HELD_STRIKES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                             if k <= 8 || k.is_power_of_two() {
                                                 info!(
@@ -58017,6 +58066,19 @@ mod tests {
         assert!(night_census_hour(21) && night_census_hour(0) && night_census_hour(6), "the block and its shoulders");
         assert!(!night_census_hour(7) && !night_census_hour(20), "the day is not counted");
         assert_eq!(job_kind_name(&common::bastion::JobKind::RestAt { bed_pos: Vec3::zero() }), "RestAt");
+    }
+
+    /// ★ W6-G pinned: a climb strikes at once; a stall that never climbed
+    /// strikes on its sixth suspend and not before; the strikes count as
+    /// W6-D's do (the third strikes out). Planted defect: the patience
+    /// ignored -> red.
+    #[test]
+    fn the_held_jobs_queue_has_a_patience() {
+        assert_eq!(held_job_stall_strike(true, 0, 0), Some((1, false)), "a banned climb strikes at once (W6-E)");
+        assert_eq!(held_job_stall_strike(false, 1, 0), None, "the first suspend: queueing");
+        assert_eq!(held_job_stall_strike(false, HELD_QUEUE_PATIENCE - 1, 0), None, "the fifth: still queueing");
+        assert_eq!(held_job_stall_strike(false, HELD_QUEUE_PATIENCE, 0), Some((1, false)), "the sixth: a strike");
+        assert_eq!(held_job_stall_strike(false, 20, 2), Some((3, true)), "and the third strike strikes out");
     }
 
     /// ★ W6-F pinned: the struck-out bed is shunned inside the window, not

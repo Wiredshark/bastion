@@ -3128,6 +3128,127 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### b2's W14-i8 night (01:03, pair 4450039094, boarded 00:36, read at hour 3 of day 1): flood 16 for the whole day and night; STRUCK OUT 0; in bed 32-33 of 50, idle 0-1 -- both arms clean on this pair
+
+FLOOD: LONGEST-EXHAUST 16 (whole-town 16; top ends 3x (7724,6400,181)
+house 86's threshold, 2x (7728,6353,198) the roof-snapped store
+goal, 2x (7721,6354,183)). SHUN 0, STRUCK OUT 0, held strikes 0
+(W6-F2 unexercised again: no climb strike-out). LOOP: reclaims 53
+x30, 29 x30 (the non-climb suspend/reclaim loop -- W6-G's row,
+staging ~01:27 -- running without a flood); other bans 5 (55 x3 at
+(7709,6349,181)). STRIKES terminal chaser 2, longest exhausts 2.
+Arrivals 861 (bar 720 PASSED), FETCH STALLED 1, starving 0. NIGHT:
+hour 21 in_bed 1 / working 35 (Recreate 22); 22: 5 / to_bed 26; 23:
+27 / 14; 0: 32 / 10; 1-3: 32-33 / 11-12, idle 0-1, watch 6-8; the
+far walker 812 at the wall cell (7706,6310,181), dist 224, all night
+with stuck_time 0.9-8.7 s.
+
+The fill table at hour 1: pairs 164, total 738 (55 by hour 14: the
+evening and night add 680), top 8 = 22%: Recreate walks to the
+plaza cells (7623-7625, 6272-6277, 180) x28/x20 and RestAt to the
+upstairs bed (7831,6271,186) x18 -- the evening's social walk and
+the bed walk spend fill budgets by the hundreds without a single
+whole-town search: the fill lane's exhaustions are the pre-path
+glide's normal cost, not the flood (the frame lesson again).
+
+The full day at hour 6 of day 1 (cascade reader, 01:12): flood 22
+whole-town for the whole day and night; reclaims 812 x44, 68 x44
+(the non-climb loop, W6-G's row); bobs 40 x16 at (7700,6303) with
+one stall (the pit is on b2 too, mildly); NIGHT SHELF EMPTY 0
+lines (no empty-shelf sleeper tonight); starving 0; arrivals 897;
+router-refused landings (W17-c-r's witness, check off) 15 on table
+corners, fences and chairs; drops from z >= 185: 29. b2 restarted
+onto W18-i2 at 01:12.
+
+Replicates on pairs at or after W6-F2: b2 336 (W6-F2 night, house
+86's hauls, not the bed cell), b2 16, b1 14. The 148x/170x bed-cell
+flood of the H2-i night has not recurred in three arm-nights since
+W6-F2 landed; W14-i8 changed no behaviour, so the 336 -> 16 swing
+on b2 is the night's draw, not code. One more clean night on each
+arm and the night flood's consumers (W6-F2 + W6-G) can be judged;
+the steady quarter walking to upstairs beds (to_bed 10-14) is the
+class that remains, for H2-i2/TR1 and Ben's stair judgement.
+
+### W18-i2 LANDED (01:02): c670efb527, both halves, marker 'THE BOB NAMES ITS COLUMN' 1 in the exe
+
+Pin the_bob_names_its_column green (511 filtered, 1 passed);
+committed 00:47, staged 01:01, pushed, shipped to lab-bin 01:02.
+Falsifier bnduvtkn1 plants the column span reversed at +90 s: RED
+(01:06). W6-G's chain fires at +300 s (~01:07; stage ~01:27) -> E2-i3b -> H2-i2 -> TR1. The first read
+(read-w18i2-first) keys on either arm boarding a pair at or after
+this one, then hour 3 of day 1: b2's next restart ~01:10, b1's
+~01:30. The pit's walkers are a per-night draw (quiet on b1's
+W14-i8 night), so the column lines may need a second night.
+
+### S1-i's first STORE AISLE CENSUS (00:57, b1 at boot on 504eebc174): the general store has stands for every stocked cell -- the aisle hypothesis is FALSIFIED for the general store
+
+STORE AISLE CENSUS day=0 zone=36 min (7642,6342,178) max
+(7689,6389,184) private=false cells 2304, walkable_cols 2015 (87%),
+stocked 280, no_stand 0. The general store is not a crate field the
+router cannot enter: seven of eight columns are walkable and every
+stocked cell has a standable cell within the search-stand reach.
+W17-c's stalls at "store items on tables z 182-183" were the mover
+refusing to land on TABLE TOPS (the leniency W17-c-r restored),
+not a store without aisles; the whole-town searches ending in the
+store field (endf z 180 snapped up to 182) are goals resolved under
+the store's floor, a different defect (W14-i8's table names the
+askers: deposit runs by 801). The "keep stores solid or cut aisles"
+question put to Ben is withdrawn: the store is walkable as built.
+Only one zone printed at boot (private shelves hold 0 units at
+boot); the day-1 census on any arm prints the stocked shelves --
+the ten DROP CELL FILTER EMPTIED shelves should read no_stand > 0
+there, or S1-i's rule (a stand within reach 3 counts) is looser
+than the drop-cell filter's (a standable SURFACE cell of the zone)
+and the two need one rule.
+
+### b1's W14-i8 full day and night (00:52, cascade reader, hour 6 of day 1): flood 14 confirmed; the pit QUIET (bob stalls 0, top bobber x2); reclaim loops 52 x31 / 69 x26 without flooding; in bed 31-32 of 50 with 14 to_bed all night; stuck census 27 distinct
+
+FLOOD 14 (whole-town 14; top ends 9x (7742,6404,181) = house 86's
+threshold). STRIKES: route proofs 2, terminal chaser 1, longest
+exhausts 3. BOB: lines 10, top bobbers 53 x2, 801 x1, bob stalls 0,
+lifts_repeated 10 -- the pit at (7700,6303) that bobbed 86/87 x1024
+the night before did not fire tonight (its walkers are a per-night
+draw too; W18-i2's column line will catch it when it does). LOOP:
+reclaims 52 x31, 69 x26 (the non-climb suspend/reclaim loop, W6-G's
+class, running WITHOUT a whole-town flood tonight: the re-asks
+stayed bounded), other bans 3, STRUCK OUT 0. Arrivals 887 (bar 900:
+13 under). STUCK CENSUS distinct 27 (18 the night before) with
+EXPERIENCE at hour 6 stuck 4, idle 11, moving 33. NIGHT: hour 22
+in_bed 6 / to_bed 30; 23: 25 / 16; 0: 32 / 11; 1-5: 31 / 14, idle 0,
+watch 5-7; the far walkers 22 and 71 stood at (7687,6317,181) at
+dist 175 the whole night (stuck_time 0.03: the pre-path glide's
+clock, never a stall), colonist 21 at dist 155. Starving sleepers 0.
+
+So b1's night has a steady quarter (11-14) walking or standing all
+night for beds they never reach, whatever the flood does; H2-i2
+and TR1 name the beds; the consumer is Ben's stair judgement.
+
+### W14-i8's night table on b1 (00:45, pair 4450039094, hour 3 of day 1): the whole-town flood is 14 for the whole day and night -- the lowest ever; the fill table is the same daytime spread (238 pairs, 1,383 fills, top 8 = 16%)
+
+FLOOD: LONGEST-EXHAUST 14 (whole-town 14) from boot to hour 3 of
+day 1 -- against 173-471 on the H2-i / W6-F nights and 148x/170x
+to one upstairs-bed cell on the H2-i night. Chaser witnesses 9,
+STRUCK OUT 0, arrivals 872 by hour 3 (on pace past 900), starving
+0. The fill table at hour 1: pairs 238, total 1,383, top 8 = 222
+(16%): guard 19 x42 and 33 x25 -> the wall-top post (7654,6509,186),
+cook 49 x36 -> (7758,6346,181), cook 20 x27 -> (7745,6142,182),
+71 x25, deposit 801 x24 / x22 -> the store field, 67 x21 ->
+(7739,6416,181) (house 86's row); each asked from 6-7 moving cells.
+
+The registered night bar ("the night's top pair repeats >= 30 and
+names the bed-walk pair") is NOT MET because the bed-walk flood did
+not happen tonight: a null with a witness (LONGEST-EXHAUST 14 says
+so; the instrument counted every fill). The night flood is
+INTERMITTENT: present on both arms on the H2-i night (148x / 170x
+to the cell beside bed (7715,6342,186)), absent on b1's W14-i8
+night; which sleeper picks that bed is a per-night draw of the
+picker, so the three-replicates rule applies before any consumer
+is judged. Its producer when present is the chaser's bed walk
+(W14-d strikes 60 that night), whose consumers are queued (W6-F2's
+list landed, W6-G's patience, H2-i2's stair truth). DISPOSITION:
+W14-i8 STANDS as an instrument; the fill lane's class is the
+daytime "site the town laid out where nobody can stand" (TR1).
+
 ### S1-i LANDED (00:36): 504eebc174, both halves, marker 'STORE AISLE CENSUS' in the exe; TR1 THE TOWN NAMES ITS CUT-OFF SITES registered 00:37 (before the binary exists), queued behind H2-i2
 
 S1-i: pin the_store_names_its_aisles green; staged 00:35:54,
