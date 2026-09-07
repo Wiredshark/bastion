@@ -9838,6 +9838,79 @@ pub(crate) fn landing_gate(check: bool, routable: bool) -> bool {
 /// ★ W17-c: the witness count (landings the router refused).
 pub(crate) static LANDINGS_REFUSED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// ★ H2-i pinned: THE UPSTAIRS BED NAMES ITS STAIR. A bed more than two
+/// blocks above its house's floor is upstairs; from the walkable cells
+/// around it, a bounded search over the router's own walkable cells (the
+/// eight lateral moves at dz 0/+1/-1 and straight down one) either reaches
+/// the floor (Connected) or runs out (Cut), and Cut names the lowest cell
+/// it reached -- the step under which the stair is blocked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StairVerdict {
+    Ground,
+    Connected { cells: usize },
+    Cut { cells: usize, lowest: Vec3<i32> },
+}
+
+pub(crate) fn stair_probe(
+    walkable: impl Fn(Vec3<i32>) -> bool,
+    bed: Vec3<i32>,
+    floor_z: i32,
+    min: Vec2<i32>,
+    max: Vec2<i32>,
+    max_cells: usize,
+) -> StairVerdict {
+    if bed.z <= floor_z + 2 {
+        return StairVerdict::Ground;
+    }
+    let inside = |c: Vec3<i32>| {
+        c.x >= min.x - 2 && c.x <= max.x + 2 && c.y >= min.y - 2 && c.y <= max.y + 2 && c.z >= floor_z - 1 && c.z <= bed.z + 3
+    };
+    let mut seen: HashSet<Vec3<i32>> = HashSet::new();
+    let mut queue: std::collections::VecDeque<Vec3<i32>> = std::collections::VecDeque::new();
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            for dz in -1..=1 {
+                let c = bed + Vec3::new(dx, dy, dz);
+                if inside(c) && walkable(c) && seen.insert(c) {
+                    queue.push_back(c);
+                }
+            }
+        }
+    }
+    let mut lowest = bed;
+    while let Some(c) = queue.pop_front() {
+        if c.z < lowest.z {
+            lowest = c;
+        }
+        if c.z <= floor_z + 1 {
+            return StairVerdict::Connected { cells: seen.len() };
+        }
+        if seen.len() >= max_cells {
+            break;
+        }
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                for dz in [0i32, 1, -1] {
+                    let n = c + Vec3::new(dx, dy, dz);
+                    if inside(n) && !seen.contains(&n) && walkable(n) {
+                        seen.insert(n);
+                        queue.push_back(n);
+                    }
+                }
+            }
+        }
+        let d = c - Vec3::unit_z();
+        if inside(d) && !seen.contains(&d) && walkable(d) {
+            seen.insert(d);
+            queue.push_back(d);
+        }
+    }
+    StairVerdict::Cut { cells: seen.len(), lowest }
+}
+
 /// The drop is taken unless its landing is a closed basin.
 pub(crate) fn drop_is_safe(
     standable: impl Fn(Vec3<i32>) -> bool,
@@ -26918,6 +26991,69 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // from here. `growth_logged_day` is the sibling of
                     // `immigration_day` in every respect.
                     let day_changed = board.growth_logged_day != Some(today);
+                    // ★ H2-i: THE UPSTAIRS BED NAMES ITS STAIR -- once a day, every
+                    // registered bed above its house's floor is probed for a
+                    // walkable way down; the cut ones name their lowest cell.
+                    if day_changed {
+                        let houses: Vec<Region> = board
+                            .designated
+                            .iter()
+                            .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                            .map(|(r, _)| *r)
+                            .collect();
+                        let (mut upstairs, mut connected, mut cut, mut named) = (0usize, 0usize, 0usize, 0usize);
+                        let blk = |q: Vec3<i32>| {
+                            terrain.get(q).ok().map(|b| {
+                                b.get_sprite().map(|sp| format!("{:?}", sp)).unwrap_or_else(|| format!("{:?}", b.kind()))
+                            })
+                        };
+                        for (pos, slot) in board.beds.iter() {
+                            let Some(h) = houses.iter().find(|h| h.contains_point_xy(*pos)) else {
+                                continue;
+                            };
+                            match stair_probe(
+                                |c| common::path::colonist_walkable(&*terrain, c),
+                                *pos,
+                                h.min.z,
+                                h.min.xy(),
+                                h.max.xy(),
+                                400,
+                            ) {
+                                StairVerdict::Ground => {},
+                                StairVerdict::Connected { .. } => {
+                                    upstairs += 1;
+                                    connected += 1;
+                                },
+                                StairVerdict::Cut { cells, lowest } => {
+                                    upstairs += 1;
+                                    cut += 1;
+                                    if named < 12 {
+                                        named += 1;
+                                        info!(
+                                            bed = ?pos,
+                                            owner = ?slot.owner.map(|u| u.0.get()),
+                                            house_min = ?h.min,
+                                            floor_z = h.min.z,
+                                            cells,
+                                            ?lowest,
+                                            under = ?blk(lowest - Vec3::unit_z()),
+                                            under2 = ?blk(lowest - Vec3::unit_z() * 2),
+                                            head = ?blk(lowest + Vec3::unit_z()),
+                                            "bastion: THE UPSTAIRS BED NAMES ITS STAIR — no walkable way down from this bed to its house's floor; the lowest cell reached and what is around it (H2-i)"
+                                        );
+                                    }
+                                },
+                            }
+                        }
+                        info!(
+                            day = today,
+                            beds = board.beds.len(),
+                            upstairs,
+                            connected,
+                            cut,
+                            "bastion: STAIR CENSUS — upstairs beds, and whether the router can climb to them (H2-i)"
+                        );
+                    }
                     // ★ THE DAILY CENSUSES RUN ONCE A DAY (2026-09-02 00:05).
                     // They were inserted between `let day_changed` and the
                     // `if day_changed` below and fired every arbitration
@@ -57406,6 +57542,28 @@ mod tests {
         assert!(landing_gate(LANDING_ROUTER_CHECK, true), "off: a floor too");
         assert!(!landing_gate(true, false) && landing_gate(true, true), "on: only routable landings");
         assert!(probe_landing_ok(true, false, false, landing_gate(LANDING_ROUTER_CHECK, false)), "the fence top lands while the check is off");
+    }
+
+    /// ★ H2-i pinned: a ground-floor bed is Ground; an upstairs bed with an
+    /// open staircase of walkable cells to the floor is Connected; the same
+    /// staircase with one step removed is Cut, and the lowest cell named is
+    /// the step above the gap. Planted defect: the floor never recognised
+    /// -> red on the connected case.
+    #[test]
+    fn the_upstairs_bed_names_its_stair() {
+        // a staircase: (10-k, 0, 6-k) walkable for k in 0..=5 (from beside the bed at z 6
+        // down to the floor's feet cell at z 1), plus the bed's neighbour (9, 0, 6)
+        let stair: Vec<Vec3<i32>> = (0..=5).map(|k| Vec3::new(10 - k, 0, 6 - k)).collect();
+        let open = |c: Vec3<i32>| stair.contains(&c) || c == Vec3::new(9, 0, 6);
+        let bed = Vec3::new(10, 1, 6);
+        assert_eq!(stair_probe(open, Vec3::new(3, 1, 1), 0, Vec2::new(0, 0), Vec2::new(12, 4), 400), StairVerdict::Ground, "a ground-floor bed");
+        assert!(matches!(stair_probe(open, bed, 0, Vec2::new(0, 0), Vec2::new(12, 4), 400), StairVerdict::Connected { .. }), "an open staircase reaches the floor");
+        let gap = Vec3::new(7, 0, 3);
+        let cut = |c: Vec3<i32>| open(c) && c != gap;
+        match stair_probe(cut, bed, 0, Vec2::new(0, 0), Vec2::new(12, 4), 400) {
+            StairVerdict::Cut { lowest, .. } => assert_eq!(lowest, Vec3::new(8, 0, 4), "the step above the gap is named"),
+            other => panic!("a gapped staircase is cut, got {other:?}"),
+        }
     }
 
     /// ★ W17-c pinned: a floor the router walks is landed on; a fence top the

@@ -3128,6 +3128,117 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W6-F2 THE SHUN HOLDS EVERY BED STRUCK OUT TONIGHT -- registered 22:52 (before the binary exists), inserted behind H2-i
+
+W6-F FAILED ITS STRIKE-OUT BAR ON ITS FIRST DAY. b2 on a81dbd9c9d
+(boarded 22:27, hour 7): by hour ~16 (22:47 wall) colonist 144 read
+THE STRUCK-OUT BED IS SHUNNED seven times, alternating bed
+(7756,6412,186) and (7700,6309,186), until 1072.9 -> 1120.9 ->
+1147.4 -> 1178.9 -> 1205.4 ..., one every 26-48 s; STRUCK OUT 7
+for one colonist against the registered bar of 2. The shun is one
+slot per sleeper (HashMap<Uid, (bed, until)>): the second strike-
+out's insert overwrote the first, the picker saw the first bed
+unshunned and offered it again. The pin could not see it (it holds
+one bed). Exhausts stayed at 11 for the day (W14-g2 bounds each
+re-pick's search): the cost is the sleeper's afternoon, not the
+town's clock. b1 (boarded 22:37): STRUCK OUT 0 so far.
+
+MECHANISM: bed_shun becomes HashMap<Uid, Vec<(bed, until)>>;
+shun_bed(list, bed, now) prunes expired entries, refreshes or
+pushes, returns the count; both recording sites call it; the
+witness gains held=N; bed_is_shunned asks the list; the picker's
+two filters unchanged in text. W6-F's pin holds a one-entry list
+(its first doc line, W6-G's anchor, untouched).
+
+PIN the_shun_holds_every_bed_struck_out_tonight: the second joins
+the first; a third bed is offered; refresh not duplicate; prune on
+record. Falsifier plants the list cleared on every shun -> red on
+the second bed.
+
+BARS (each arm's first day and night on the pair): no (colonist,
+bed) pair shunned twice inside 600 sim-s (held climbs 1, 2, 3 and
+never returns to 1 inside the window); STRUCK OUT per colonist per
+day <= 4; LONGEST-EXHAUST <= 80; arrivals >= 900 / 720; starving
+unchanged. FALSIFIED if a pair repeats inside the window with the
+witness present (a picker path off the list), or if one sleeper's
+held climbs past 4 (the picker walks the town's upstairs beds:
+reachability is not in the slot choice -- H2-i / Ben, not this
+row). Rejected: a per-sleeper strike-out budget; shunning the whole
+house; a longer window.
+
+Queue after the insertion: H2-i (building, ~23:03) -> W6-F2 (~23:25)
+-> S1-i (re-anchored) -> W6-G -> E2-i3b. Dry tree re-run in the new
+order.
+
+### W18-e2 LANDED (22:38): fbc710b221, both halves, marker 'the reset point pinned' 1 in the exe
+
+Pin the_stall_pins_its_reset_point green on the fresh compile;
+committed 22:26, staged 22:38:38, pushed, shipped to lab-bin
+22:38:40 (playable; W6-F, W17-c-r, H1-a and everything below
+aboard). Falsifier b5wm94b8d plants `>= 1.0 || true` at +90 s
+(verdict recorded when it prints). The H2-i chain fires at +300 s
+(~22:44; stage ~23:00). The arms board W18-e2 at their next reader
+restarts (after the W6-F days: b2 ~23:05, b1 ~23:15).
+
+### E2-i3 on b1 (22:38, the archived W17-c-r night): the same fingerprint -- minted one, claimed, gone, bed upstairs
+
+b1's NIGHT SHELF EMPTY 14 lines: colonist 135 x13 and 134 x1, both
+present 0, round_need 2, round_loads 1, unclaimed 0, in_flight 0,
+GONE 1, bed_z 186 -- identical to b2's 21 and 46. Four of four
+empty-shelf sleepers across both arms: the round minted one load
+of the two units needed, a hauler claimed it, the job left the
+board, the shelf holds nothing, and the sleeper's bed is upstairs.
+Ten private shelves on b1 too read DROP CELL FILTER EMPTIED THE
+STORE (no standable surface cell). The shape now: the upstairs
+house's shelf is as unreachable as its bed (the private zone spans
+the house; a shelf cell on the upper floor has no standable drop
+cell; the haul is released or benched and the load goes back or is
+dropped elsewhere). E2-i3b's ids (queued) name which; H2-i's
+census counts the houses. The starvers on b1: 134, 135 and 83 (83
+is one of the two non-climb reclaim loopers: W6-G's class).
+
+### W17-c-r's full day on b1 (22:34, pair cd29099433, night block at hour 6): PASSED on its bars; the re-pick flood at 616; H1-a's b1 night: idle 0, in bed 32, twelve walking all night
+
+The W14-g2 reader's night block: FETCH STALLED 22 (bar 25; 183 by
+hour 19 under W17-c), starving sleepers 2 (the empty-shelf class),
+arrivals 883 (bar 900 missed by 17: the flood's clock), STUCK
+CENSUS 24, bobs peak 2, CLIMB BANNED(other) 3, would-refuse 15,
+LONGEST-EXHAUST 616 -- 290 of them to (7721,6335,188), a bed two
+floors up -- with 114 jobs benched by three exhausts: the re-pick
+flood W6-F is for (W6-F not yet on b1; it boards at this restart);
+reclaims: colonist 122 x42 and 83 x41 without a climb ban (W6-G's
+class, two sleepers); p95 720 us; panics 0. W17-c-r PASSED on both
+arms (stalls, no starving by day, the witness); the arrivals miss
+on b1 is the flood's.
+
+H1-a's first night on b1 (NIGHT CENSUS): hour 23 in_bed 28, to_bed
+14, idle 0; hours 0-5 in_bed 30-32, TO_BED 11-13, watch 6-7, idle 0,
+working 0; hour 6 working 33. BED CENSUS peaks: h22 26, h23 31, h0
+32, h1-h5 31 (22-27 before). Bars on b1: idle 0 (<= 5); in_bed at
+hour 0 = 32 (>= 28); the peak 32 (>= 35: three short); to_bed at
+hour 0 = 11 (<= 8: three over). H1-a PASSED on its mechanism bars
+on both arms; the two walker bars miss on b1 by the size of the
+ledge arm's unreachable-bed class: TWELVE colonists walking to bed
+all night, every night, because their beds are upstairs (290
+exhausts to one z-188 bed today). That is the stair judgement, now
+with a number: a quarter of the ledge arm's sleepers.
+
+### W17-c-r's full day on b2 (22:26, pair cd29099433, hour 6 of day 1): PASSED
+
+The W17-c b2 reader's day block: arrivals 855 (bar 720; 730 under
+W17-c), FETCH STALLED 5 (bar 25; 171 under W17-c), starving
+sleepers 2 (21 and 46: the empty shelves, E2-i3's class, not the
+store), LONGEST-EXHAUST 39 (518 on the W6-E day, 178 under W17-c),
+bobs peak 2, REPEATED LIFT 8, CLIMB BANNED(other) 51 (colonist 57
+x19 at the wall (7705,6310,181)), reclaims 57 x19, struck out 12,
+held strikes 9 (W6-E; W6-F boards b2 now), would-refuse witness 16
+(table corner x7, chair x4, fence x2), snapped starts 0, mover
+drops from z >= 185: 42 (the leniency restored: bodies leave the
+upper floors by drops again, as before W17-c -- accepted, the
+class is the stair), p95 476 us, panics 0. W17-c-r PASSED on b2;
+b1's night block (~22:33) is its second read. W18-e2 committed
+fbc710b221 at 22:26, building (stage ~22:40).
+
 ### E2-i3b registered (22:23): THE SUPPER LOAD IS NAMED -- an amendment at the end of the queue
 
 Mechanism: one SUPPER LOAD MINTED line per load at the round
