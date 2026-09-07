@@ -3107,6 +3107,13 @@ pub(crate) fn sleeper_stands(speed_xy: f32) -> bool {
     speed_xy < STANDING_SPEED
 }
 
+/// ★ W6-K pinned: THE WALKING SLEEPER NAMES ITS STATE. A sleeper on the way
+/// to bed at or above STANDING_SPEED walks; its state prints beside the
+/// standers'.
+pub(crate) fn sleeper_walks(speed_xy: f32) -> bool {
+    !sleeper_stands(speed_xy)
+}
+
 pub(crate) fn steer_class(steer: Option<Vec3<f32>>, body: Vec3<f32>) -> &'static str {
     match steer {
         None => "none",
@@ -51938,6 +51945,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let mut far: Vec<(u64, i32, f32, String, Vec3<i32>)> = Vec::new();
                         // ★ W6-H: the standing sleepers, with their state.
                         let mut standing: Vec<String> = Vec::new();
+                        // ★ W6-K: the walking sleepers, with theirs.
+                        let mut walking: Vec<String> = Vec::new();
                         let mut feet_z: HashMap<i32, usize> = HashMap::new();
                         let mut untired = 0usize;
                         let mut rest_min = 1.0f32;
@@ -51980,6 +51989,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     far.push((uid.map(|u| u.0.get()).unwrap_or(0), d, a.stuck_time, format!("{:?}", a.state), p.0.map(|c| c.floor() as i32)));
                                     // ★ W6-H: THE STANDING SLEEPER NAMES ITS STATE.
                                     let speed_xy = velocities.get(e).map(|v| v.0.xy().magnitude()).unwrap_or(0.0);
+                                    // ★ W6-K: THE WALKING SLEEPER NAMES ITS STATE.
+                                    if sleeper_walks(speed_xy) && walking.len() < STANDING_SLEEPERS_MAX {
+                                        let route_k = uid.and_then(|u| board.path_cache.get(&u)).map(|(nodes, idx, _)| (nodes.len(), *idx));
+                                        let age_k = uid.and_then(|u| board.route_built_at.get(&u)).map(|t| tick.0.saturating_sub(*t));
+                                        let push_k = uid.and_then(|u| board.last_push_site.get(&u).copied()).unwrap_or("none");
+                                        let pending_k = uid.is_some_and(|u| board.path_searches.contains_key(&u.0.get()));
+                                        let exh_k = agents.get(e).map(|ag| ag.chaser.diagnostic_snapshot().longest_exhausts).unwrap_or(0);
+                                        let feet_k = p.0.map(|c| c.floor() as i32);
+                                        walking.push(format!(
+                                            "{}:d{}@({},{},{}) bed=({},{},{}) speed={:.2} clock={:.2} route={:?} age={:?} push={} pending={} exh={}",
+                                            uid.map(|u| u.0.get()).unwrap_or(0),
+                                            d,
+                                            feet_k.x,
+                                            feet_k.y,
+                                            feet_k.z,
+                                            j.pos.x,
+                                            j.pos.y,
+                                            j.pos.z,
+                                            speed_xy,
+                                            a.stuck_time,
+                                            route_k,
+                                            age_k,
+                                            push_k,
+                                            pending_k,
+                                            exh_k,
+                                        ));
+                                    }
                                     if sleeper_stands(speed_xy) && standing.len() < STANDING_SLEEPERS_MAX {
                                         let steer = agents.get(e).and_then(|ag| match ag.rtsim_controller.activity {
                                             Some(common::rtsim::NpcActivity::Goto(t, _)) => Some(t),
@@ -52050,8 +52086,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ?far,
                             ?feet_z,
                             standing = ?standing,
+                            walking = ?walking,
                             "bastion: NIGHT CENSUS — who is awake at this hour, and why (H1-i)"
                         );
+                        // ★ W6-K: one line per walking sleeper at hour 1, for the read.
+                        if hour == 1 {
+                            for entry in &walking {
+                                info!(
+                                    hour,
+                                    entry = %entry,
+                                    "bastion: THE WALKING SLEEPER NAMES ITS STATE — a sleeper on the way to bed, moving: its route, its search, its last push (W6-K)"
+                                );
+                            }
+                        }
                         // ★ W6-H: one line per standing sleeper at hour 1, for the read.
                         if hour == 1 {
                             for entry in &standing {
@@ -58900,6 +58947,19 @@ mod tests {
         assert_eq!(over_reach_anchor(&far, feet, 186, pos, true), None, "out of the window");
         let high = vec![(Vec3::new(7686, 6317, 190), true)];
         assert_eq!(over_reach_anchor(&high, feet, 186, pos, true), None, "above the job");
+    }
+
+    /// ★ W6-K pinned: at or above the standing speed a sleeper walks; under
+    /// it, it stands; never both. Planted defect: every speed walks -> red.
+    #[test]
+    fn the_walking_sleeper_names_its_state() {
+        assert!(sleeper_walks(0.3));
+        assert!(sleeper_walks(STANDING_SPEED));
+        assert!(!sleeper_walks(0.0));
+        assert!(!sleeper_walks(0.03));
+        for v in [0.0f32, 0.03, STANDING_SPEED, 0.3, 2.0] {
+            assert!(sleeper_walks(v) != sleeper_stands(v), "one class per speed");
+        }
     }
 
     /// ★ W6-H pinned: a sleeper at no speed stands; the steer classes are
