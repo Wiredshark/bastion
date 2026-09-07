@@ -9946,11 +9946,14 @@ pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
 /// router's own steps either reach a road cell inside the box (open), run
 /// out of cells first (closed: a basin), or hit the cap (capped: the box is
 /// bigger than the budget, no verdict).
-pub(crate) fn basin_verdict(reached_road: bool, cells: usize, cap: usize) -> &'static str {
+/// ★ TR1d: a reach that touched the box's edge without a road is "boxed",
+/// not "closed" -- the box, not a wall, ended it.
+pub(crate) fn basin_verdict(reached_road: bool, cells: usize, cap: usize, boxed: bool) -> &'static str {
     match (reached_road, cells, cap) {
         (true, _, _) => "open",
-        (false, n, cap) if n < cap => "closed",
-        _ => "capped",
+        (false, n, cap) if n >= cap => "capped",
+        (false, _, _) if boxed => "boxed",
+        _ => "closed",
     }
 }
 
@@ -27740,7 +27743,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 wall_margin_cells: board.wall_margin_cells.clone(),
                                 interior_cells: board.interior_cells.clone(),
                             };
-                            for (label, bed) in [("upstairs", upstairs), ("ground", ground)] {
+                            // ★ TR1d: THE PROBE ASKS THE STORE -- the first general store's
+                            // floor centre, the cell every hauler walks to.
+                            let store_p: Option<Vec3<i32>> = board
+                                .stockpiles
+                                .iter()
+                                .filter(|(_, r)| !store_is_private(r, houses_p.iter()))
+                                .map(|(_, r)| *r)
+                                .min_by_key(|r| (r.min.x, r.min.y))
+                                .and_then(|r| {
+                                    let cx = (r.min.x + r.max.x) / 2;
+                                    let cy = (r.min.y + r.max.y) / 2;
+                                    (r.min.z..=r.min.z + 3).map(|z| Vec3::new(cx, cy, z)).find(|c| walk_p(*c))
+                                });
+                            for (label, bed) in [("upstairs", upstairs), ("ground", ground), ("store", store_p)] {
                                 let Some(bed) = bed else { continue };
                                 let startf = seed.map(|e| e as f32 + 0.5);
                                 let endf = bed.map(|e| e as f32 + 0.5);
@@ -45959,6 +45975,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     };
                                                     let set = common::path::reach_set_with_steps(&[feet_c], inside_r, &walk_r, &step_r, RIM_REACH_MAX_CELLS);
                                                     let road_cell = set.iter().copied().find(|c| roads_r.contains(&c.xy()));
+                                                    // ★ TR1d: did the reach touch the box's edge?
+                                                    let boxed_r = set.iter().any(|c| {
+                                                        (c.x - feet_c.x).abs() >= RIM_BOX_XY
+                                                            || (c.y - feet_c.y).abs() >= RIM_BOX_XY
+                                                            || (c.z - feet_c.z).abs() >= RIM_BOX_Z
+                                                    });
                                                     let max_z = set.iter().map(|c| c.z).max();
                                                     let rising: usize = common::path::COLONIST_STEP_DIRS
                                                         .iter()
@@ -45984,14 +46006,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                         uid = k,
                                                         from = ?feet_c,
                                                         target = ?tcell,
-                                                        verdict = basin_verdict(road_cell.is_some(), set.len(), RIM_REACH_MAX_CELLS),
+                                                        verdict = basin_verdict(road_cell.is_some(), set.len(), RIM_REACH_MAX_CELLS, boxed_r),
+                                                        boxed = boxed_r,
                                                         cells = set.len(),
                                                         ?max_z,
                                                         ?road_cell,
                                                         rising,
                                                         rim = ?rim,
                                                         named = n_rim,
-                                                        "bastion: THE BASIN NAMES ITS RIM — from the walker's feet with the router's own steps: the road within reach or not, and the heights around (W14-j)"
+                                                        "bastion: THE BASIN NAMES ITS RIM — from the walker's feet with the router's own steps: the road within reach or not, and the heights around (W14-j; TR1d: the box named)"
                                                     );
                                                 }
                                             }
@@ -59020,9 +59043,13 @@ mod tests {
     /// open -> red.
     #[test]
     fn the_basin_names_its_rim() {
-        assert_eq!(basin_verdict(true, 10, 40_000), "open");
-        assert_eq!(basin_verdict(false, 10, 40_000), "closed");
-        assert_eq!(basin_verdict(false, 40_000, 40_000), "capped");
+        assert_eq!(basin_verdict(true, 10, 40_000, false), "open");
+        assert_eq!(basin_verdict(false, 10, 40_000, false), "closed");
+        assert_eq!(basin_verdict(false, 40_000, 40_000, false), "capped");
+        // ★ TR1d pinned: THE RIM NAMES ITS BOX. Planted defect: boxed named open -> red.
+        assert_eq!(basin_verdict(false, 10, 40_000, true), "boxed", "the box ended it");
+        assert_eq!(basin_verdict(true, 10, 40_000, true), "open", "a road before the edge is still open");
+        assert_eq!(basin_verdict(false, 40_000, 40_000, true), "capped", "the cap outranks the box");
         assert_eq!(rim_glyph(None, 182), '#');
         assert_eq!(rim_glyph(Some(182), 182), '.');
         assert_eq!(rim_glyph(Some(183), 182), '1', "a step");

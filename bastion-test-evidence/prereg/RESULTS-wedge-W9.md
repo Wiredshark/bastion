@@ -3128,6 +3128,11 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W6-K LANDED (09:30): b1018162f4, marker 'THE WALKING SLEEPER NAMES ITS STATE' server=1 in stage-bin
+
+- Chain b7k23gye0 (fired 09:09:31 on a1-staged +300 s): E free 30.8 GB, patch applied (crlf=False), check ok, pin the_walking_sleeper_names_its_state ok (1 passed), commit b1018162f4 (09:20), both halves built, staged 09:30:28. An instrument only: the night census's far list now names every ToBed body moving faster than STANDING_SPEED (0.05) at hour 1 -- route, age, push, pending, exhaust -- up to STANDING_SLEEPERS_MAX (12), beside W6-H's standing list. Falsifier blxzupvg1 fires +90 s (plants `!sleeper_stands(speed_xy) || true`: every ToBed body counted as walking); reader wait-walking-w6k beud4mi5p reads hour 1 of the first night after the arms board it. TR1d's chain btlkcaqb6 fires 09:35:28. At 09:30 b1 is at day 0 hour ~16 and b2 at hour ~13, both on W6-J 3b9661d2; the daily cascades restart each onto stage-bin's newest pair after its first full night (b1 ~09:40 -> W6-K; b2 ~09:50 -> W6-K, or TR1d if it has staged by then, ~09:55).
+- Falsifier blxzupvg1 (09:32-09:35): planted `!sleeper_stands(speed_xy) || true` (every ToBed body counted as walking): pin the_walking_sleeper_names_its_state went RED (good) at bastion_jobs.rs:58958; restored 0 dirty files. Shipper bkbmp8an9 shipped b1018162f4 to lab-bin at 09:31:04: THE PAIR TO PLAY.
+
 ### A1 LANDED (09:04): 723205a947, marker 'THE ACCESS PLANNER SPARES THE HOUSES' server=1 in stage-bin
 
 - Chain be6gs13sh: check ok 08:46, pin the_access_planner_spares_the_houses, commit 723205a947, both halves built, staged 09:04:31. Falsifier bbvp3pwy5 fires +90 s (plants every kind admitted); reader wait-access-a1 by0nxnewz reads the first day. W6-K's chain fires 09:09:31. b2's daily cascade (cycle 7, 09:03) restarted b2 onto W6-J 3b9661d2 a minute before A1 staged; b1 has run W6-J since 08:58: both arms' first W6-J nights (~09:35-09:45) are wait-ladder-w6j's read; A1 boards at the following restarts (~09:40-09:45).
