@@ -7836,6 +7836,20 @@ pub(crate) fn failsafe_holds(cells_pending: usize, stuck_secs: f32, limit_secs: 
     cells_pending > 0 && stuck_secs < limit_secs
 }
 
+/// ★ NW1: THE NIGHT WALKER STRIKES ITS BED. W6-K's first nights: on both arms
+/// a sleeper walked all night toward the upstairs bed at (7724,6368,186) with
+/// no route and a chaser that only probed -- the exhaust strike (three
+/// exhausted Longest searches) never fires for a probe that finds no route,
+/// and a three-strike reputation cannot accumulate in a world that boots
+/// fresh each day. A RestAt claim Traveling past NIGHT_WALK_LIMIT_SECS (two
+/// game hours; a cross-town walk is under one) without arriving strikes the
+/// bed the same night, is benched, and the sleeper re-picks.
+pub(crate) const NIGHT_WALK_LIMIT_SECS: f64 = 150.0;
+
+pub(crate) fn night_walk_strikes(walked_secs: f64, limit_secs: f64) -> bool {
+    walked_secs >= limit_secs
+}
+
 pub(crate) static HAULS_WITHOUT_CARGO: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 pub const FOOD_DEFS: &[&str] = &[
@@ -16091,6 +16105,8 @@ pub struct JobBoard {
     /// unreachable bed and flood the town with a fresh search every three
     /// timeouts.
     pub bed_shun: HashMap<Uid, Vec<(Vec3<i32>, f64)>>,
+    /// ★ NW1: when this colonist's RestAt claim started Traveling (sim seconds).
+    pub rest_walk_since: HashMap<Uid, f64>,
     /// ★ H2-p: per bed, (strike-outs since it was last slept in, the time of
     /// the last). At BED_REPUTATION_STRIKES the picker skips the bed town-wide
     /// until a sleeper arrives in it or the window passes.
@@ -39433,6 +39449,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // ★ W14-e: THE THIRD LONGEST EXHAUSTION STRIKES THE JOB -- read
                         // from the chaser every tick, not from the stuck branch (which
                         // a gliding body's re-asks never enter).
+                        // ★ NW1: THE NIGHT WALKER STRIKES ITS BED -- a RestAt
+                        // claim Traveling past NIGHT_WALK_LIMIT_SECS without
+                        // arriving strikes the bed the same night (the exhaust
+                        // strike below never fires for a probe that finds no
+                        // route) and is benched; the sleeper re-picks.
+                        if let Some(u) = uids.get(entity).copied() {
+                            if let common::bastion::JobKind::RestAt { bed_pos } = job.kind
+                                && matches!(active.state, ActiveJobState::Traveling)
+                            {
+                                let since = *board.rest_walk_since.entry(u).or_insert(time.0);
+                                let walked = time.0 - since;
+                                if night_walk_strikes(walked, NIGHT_WALK_LIMIT_SECS)
+                                    && bench_is_new(true, job.unreachable)
+                                {
+                                    job.unreachable = true;
+                                    board.rest_walk_since.remove(&u);
+                                    let held = shun_bed_for_night(board.bed_shun.entry(u).or_default(), bed_pos, time.0);
+                                    let rep_n = bed_strike(board.bed_reputation.entry(bed_pos).or_insert((0, 0.0)), time.0);
+                                    info!(
+                                        job = active.job,
+                                        colonist = u.0.get(),
+                                        bed = ?bed_pos,
+                                        walked_secs = walked,
+                                        limit = NIGHT_WALK_LIMIT_SECS,
+                                        held,
+                                        strikes = rep_n,
+                                        "bastion: THE NIGHT WALKER STRIKES ITS BED — walked past the limit without arriving; the bed is shunned for the night and the claim benched (NW1)"
+                                    );
+                                }
+                            } else {
+                                board.rest_walk_since.remove(&u);
+                            }
+                        }
                         if let Some(u) = uids.get(entity).copied()
                             && let Some(a) = agent.as_deref()
                         {
@@ -59115,6 +59164,19 @@ mod tests {
     }
 
     /// ★ E2-v pinned: carried or in the world admits; neither refuses.
+    /// NW1: a RestAt claim Traveling past the limit strikes its bed; under
+    /// the limit it walks on. Planted defect: a strike that never strikes ->
+    /// red.
+    #[test]
+    fn the_night_walker_strikes_its_bed() {
+        assert!(night_walk_strikes(150.0, 150.0), "at the limit the bed is struck");
+        assert!(night_walk_strikes(400.0, 150.0), "well past it too");
+        assert!(!night_walk_strikes(149.0, 150.0), "under the limit the walker walks on");
+        assert!(!night_walk_strikes(0.0, 150.0), "a fresh claim is not struck");
+        assert!(NIGHT_WALK_LIMIT_SECS >= 75.0, "at least one game hour: a cross-town walk");
+        assert!(NIGHT_WALK_LIMIT_SECS <= 450.0, "at most six: the Sleep block's length");
+    }
+
     /// FS1: the fail-safe holds only while a rescue dig is pending for the
     /// colonist and its stuck clock is under the extended limit; no dig, or
     /// the patience spent, and it fires as before. Planted defect: a hold
