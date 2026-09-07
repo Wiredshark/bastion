@@ -9929,20 +9929,24 @@ pub(crate) fn landing_gate(check: bool, routable: bool) -> bool {
 pub(crate) static LANDINGS_REFUSED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 /// ★ H2-i pinned: THE UPSTAIRS BED NAMES ITS STAIR. A bed more than two
-/// blocks above its house's floor is upstairs; from the walkable cells
-/// around it, a bounded search over the router's own walkable cells (the
-/// eight lateral moves at dz 0/+1/-1 and straight down one) either reaches
-/// the floor (Connected) or runs out (Cut), and Cut names the lowest cell
-/// it reached -- the step under which the stair is blocked.
+/// blocks above its house's floor is upstairs; from the house's floor cells
+/// a bounded climb with the router's own steps (H2-i2: the thirteen moves
+/// and jumps, the clearance a rising step needs -- colonist_step_admitted)
+/// either stands beside the bed (Connected) or runs out (Cut), and Cut
+/// names the highest cell the climb reached -- the step above which the
+/// stair is blocked. H2-i searched down from the bed with eight lateral
+/// moves and no clearance: 16 of 16 'connected' while the router failed
+/// them live; the way down is not the way up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StairVerdict {
     Ground,
     Connected { cells: usize },
-    Cut { cells: usize, lowest: Vec3<i32> },
+    Cut { cells: usize, top: Vec3<i32> },
 }
 
 pub(crate) fn stair_probe(
     walkable: impl Fn(Vec3<i32>) -> bool,
+    step: impl Fn(Vec3<i32>, Vec3<i32>) -> bool,
     bed: Vec3<i32>,
     floor_z: i32,
     min: Vec2<i32>,
@@ -9955,50 +9959,23 @@ pub(crate) fn stair_probe(
     let inside = |c: Vec3<i32>| {
         c.x >= min.x - 2 && c.x <= max.x + 2 && c.y >= min.y - 2 && c.y <= max.y + 2 && c.z >= floor_z - 1 && c.z <= bed.z + 3
     };
-    let mut seen: HashSet<Vec3<i32>> = HashSet::new();
-    let mut queue: std::collections::VecDeque<Vec3<i32>> = std::collections::VecDeque::new();
-    for dx in -1..=1 {
-        for dy in -1..=1 {
-            for dz in -1..=1 {
-                let c = bed + Vec3::new(dx, dy, dz);
-                if inside(c) && walkable(c) && seen.insert(c) {
-                    queue.push_back(c);
+    // the floor's feet cells, in a fixed order
+    let mut starts: Vec<Vec3<i32>> = Vec::new();
+    for z in floor_z..=floor_z + 2 {
+        for y in min.y..=max.y {
+            for x in min.x..=max.x {
+                let c = Vec3::new(x, y, z);
+                if walkable(c) {
+                    starts.push(c);
                 }
             }
         }
     }
-    let mut lowest = bed;
-    while let Some(c) = queue.pop_front() {
-        if c.z < lowest.z {
-            lowest = c;
-        }
-        if c.z <= floor_z + 1 {
-            return StairVerdict::Connected { cells: seen.len() };
-        }
-        if seen.len() >= max_cells {
-            break;
-        }
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                for dz in [0i32, 1, -1] {
-                    let n = c + Vec3::new(dx, dy, dz);
-                    if inside(n) && !seen.contains(&n) && walkable(n) {
-                        seen.insert(n);
-                        queue.push_back(n);
-                    }
-                }
-            }
-        }
-        let d = c - Vec3::unit_z();
-        if inside(d) && !seen.contains(&d) && walkable(d) {
-            seen.insert(d);
-            queue.push_back(d);
-        }
+    let beside = |c: Vec3<i32>| (c.x - bed.x).abs() <= 1 && (c.y - bed.y).abs() <= 1 && (c.z - bed.z).abs() <= 1;
+    match common::path::climb_with_steps(&starts, beside, inside, &walkable, &step, max_cells) {
+        Ok(cells) => StairVerdict::Connected { cells },
+        Err((cells, top)) => StairVerdict::Cut { cells, top },
     }
-    StairVerdict::Cut { cells: seen.len(), lowest }
 }
 
 /// The drop is taken unless its landing is a closed basin.
@@ -27178,6 +27155,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             };
                             match stair_probe(
                                 |c| common::path::colonist_walkable(&*terrain, c),
+                                |c, d| common::path::colonist_step_admitted(&*terrain, c, d, trunk_scramble_reach(), true),
                                 *pos,
                                 h.min.z,
                                 h.min.xy(),
@@ -27189,7 +27167,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     upstairs += 1;
                                     connected += 1;
                                 },
-                                StairVerdict::Cut { cells, lowest } => {
+                                StairVerdict::Cut { cells, top } => {
                                     upstairs += 1;
                                     cut += 1;
                                     if named < 12 {
@@ -27200,11 +27178,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             house_min = ?h.min,
                                             floor_z = h.min.z,
                                             cells,
-                                            ?lowest,
-                                            under = ?blk(lowest - Vec3::unit_z()),
-                                            under2 = ?blk(lowest - Vec3::unit_z() * 2),
-                                            head = ?blk(lowest + Vec3::unit_z()),
-                                            "bastion: THE UPSTAIRS BED NAMES ITS STAIR — no walkable way down from this bed to its house's floor; the lowest cell reached and what is around it (H2-i)"
+                                            ?top,
+                                            under = ?blk(top - Vec3::unit_z()),
+                                            above2 = ?blk(top + Vec3::unit_z() * 2),
+                                            head = ?blk(top + Vec3::unit_z()),
+                                            "bastion: THE UPSTAIRS BED NAMES ITS STAIR — the climb from the house's floor with the router's feet stops here (H2-i; H2-i2: up, not down)"
                                         );
                                     }
                                 },
@@ -27216,7 +27194,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             upstairs,
                             connected,
                             cut,
-                            "bastion: STAIR CENSUS — upstairs beds, and whether the router can climb to them (H2-i)"
+                            "bastion: STAIR CENSUS — upstairs beds, and whether the router can climb to them (H2-i; H2-i2: climbed from the floor with the router's feet)"
                         );
                     }
                     // ★ THE DAILY CENSUSES RUN ONCE A DAY (2026-09-02 00:05).
@@ -57861,24 +57839,37 @@ mod tests {
         assert!(!store_cell_has_stand(Vec3::new(20, 4, 2), floor), "four rows in: still none (the reach is three)");
     }
 
-    /// ★ H2-i pinned: a ground-floor bed is Ground; an upstairs bed with an
-    /// open staircase of walkable cells to the floor is Connected; the same
-    /// staircase with one step removed is Cut, and the lowest cell named is
-    /// the step above the gap. Planted defect: the floor never recognised
-    /// -> red on the connected case.
+    /// ★ H2-i pinned, H2-i2 rewritten: a ground-floor bed is Ground; an
+    /// upstairs bed reached by an open staircase climbed from the floor is
+    /// Connected; the same staircase with the rising step under a low
+    /// ceiling refused by the step rule is Cut, and the cell named is the
+    /// step under the ceiling -- though the way DOWN through it is open
+    /// (the H2-i shape that read 'connected'). Planted defect: the step
+    /// rule ignored -> red on the ceiling case.
     #[test]
     fn the_upstairs_bed_names_its_stair() {
-        // a staircase: (10-k, 0, 6-k) walkable for k in 0..=5 (from beside the bed at z 6
-        // down to the floor's feet cell at z 1), plus the bed's neighbour (9, 0, 6)
-        let stair: Vec<Vec3<i32>> = (0..=5).map(|k| Vec3::new(10 - k, 0, 6 - k)).collect();
+        // a staircase: (5 + k, 0, 1 + k) walkable for k in 0..=5 (from the floor's feet
+        // cell at z 1 up to beside the bed at z 6), plus the bed's other neighbour (9, 0, 6)
+        let stair: Vec<Vec3<i32>> = (0..=5).map(|k| Vec3::new(5 + k, 0, 1 + k)).collect();
         let open = |c: Vec3<i32>| stair.contains(&c) || c == Vec3::new(9, 0, 6);
+        let cardinal = |c: Vec3<i32>, d: Vec3<i32>| open(c) && open(c + d) && d.z.abs() <= 1;
         let bed = Vec3::new(10, 1, 6);
-        assert_eq!(stair_probe(open, Vec3::new(3, 1, 1), 0, Vec2::new(0, 0), Vec2::new(12, 4), 400), StairVerdict::Ground, "a ground-floor bed");
-        assert!(matches!(stair_probe(open, bed, 0, Vec2::new(0, 0), Vec2::new(12, 4), 400), StairVerdict::Connected { .. }), "an open staircase reaches the floor");
+        let (min, max) = (Vec2::new(0, 0), Vec2::new(12, 4));
+        assert_eq!(stair_probe(open, cardinal, Vec3::new(3, 1, 1), 0, min, max, 400), StairVerdict::Ground, "a ground-floor bed");
+        assert!(matches!(stair_probe(open, cardinal, bed, 0, min, max, 400), StairVerdict::Connected { .. }), "an open staircase climbed from the floor reaches the bed");
+        // a ceiling over the step at (7, 0, 3): the rising step from it is refused, the
+        // falling step onto it from above is not -- down is open, up is cut
+        let ceiling = |c: Vec3<i32>, d: Vec3<i32>| cardinal(c, d) && !(c == Vec3::new(7, 0, 3) && d.z == 1);
+        assert!(ceiling(Vec3::new(8, 0, 4), Vec3::new(-1, 0, -1)), "the way down through the ceiling step is open");
+        match stair_probe(open, ceiling, bed, 0, min, max, 400) {
+            StairVerdict::Cut { top, .. } => assert_eq!(top, Vec3::new(7, 0, 3), "the step under the ceiling is named"),
+            other => panic!("a staircase cut going up is Cut even though it is open going down, got {other:?}"),
+        }
         let gap = Vec3::new(7, 0, 3);
-        let cut = |c: Vec3<i32>| open(c) && c != gap;
-        match stair_probe(cut, bed, 0, Vec2::new(0, 0), Vec2::new(12, 4), 400) {
-            StairVerdict::Cut { lowest, .. } => assert_eq!(lowest, Vec3::new(8, 0, 4), "the step above the gap is named"),
+        let gapped = |c: Vec3<i32>| open(c) && c != gap;
+        let gapped_step = |c: Vec3<i32>, d: Vec3<i32>| gapped(c) && gapped(c + d) && d.z.abs() <= 1;
+        match stair_probe(gapped, gapped_step, bed, 0, min, max, 400) {
+            StairVerdict::Cut { top, .. } => assert_eq!(top, Vec3::new(6, 0, 2), "the step below the gap is named"),
             other => panic!("a gapped staircase is cut, got {other:?}"),
         }
     }

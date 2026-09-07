@@ -1431,6 +1431,100 @@ where
     walkable(vol, pos, true, true)
 }
 
+/// ★ H2-i2: THE STAIR PROBE CLIMBS WITH THE ROUTER'S FEET. The colonist
+/// router's move set, as data a probe can walk: the thirteen walking
+/// moves (four flat, four rising one, four falling one, straight down),
+/// the four two-block jumps, the four three-block scrambles. The same
+/// arrays live inside `find_path_priced`'s neighbour closure; the pin
+/// `the_stair_probe_climbs_with_the_routers_feet` holds the mirror to the
+/// router on the stairs-lab shapes.
+pub const COLONIST_STEP_DIRS: [Vec3<i32>; 13] = [
+    Vec3::new(0, 1, 0),
+    Vec3::new(0, 1, 1),
+    Vec3::new(0, 1, -1),
+    Vec3::new(1, 0, 0),
+    Vec3::new(1, 0, 1),
+    Vec3::new(1, 0, -1),
+    Vec3::new(0, -1, 0),
+    Vec3::new(0, -1, 1),
+    Vec3::new(0, -1, -1),
+    Vec3::new(-1, 0, 0),
+    Vec3::new(-1, 0, 1),
+    Vec3::new(-1, 0, -1),
+    Vec3::new(0, 0, -1),
+];
+pub const COLONIST_STEP_JUMPS: [Vec3<i32>; 4] =
+    [Vec3::new(0, 1, 2), Vec3::new(1, 0, 2), Vec3::new(0, -1, 2), Vec3::new(-1, 0, 2)];
+pub const COLONIST_STEP_SCRAMBLES: [Vec3<i32>; 4] =
+    [Vec3::new(0, 1, 3), Vec3::new(1, 0, 3), Vec3::new(0, -1, 3), Vec3::new(-1, 0, 3)];
+
+/// ★ H2-i2: one colonist step, admitted as the router admits it for a
+/// loaded, non-flying search with no climb ban: the move is in the set
+/// (jumps when `jumps_admitted`, scrambles at reach 3); both cells are
+/// walkable under colonist rules; a rising step needs the block two above
+/// the feet free (three above for a jump, four for a scramble); a falling
+/// step needs the block two above the landing free. A mirror of the
+/// filter in `find_path_priced`'s neighbour closure.
+pub fn colonist_step_admitted<V>(vol: &V, pos: Vec3<i32>, dir: Vec3<i32>, scramble_reach: u8, can_climb: bool) -> bool
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    let free = |q: Vec3<i32>| vol.get(q).map(|b| !b.is_solid()).unwrap_or(true);
+    let on_land = vol.get(pos - Vec3::unit_z()).map(|b| !b.is_liquid()).unwrap_or(true);
+    let in_set = COLONIST_STEP_DIRS.contains(&dir)
+        || (COLONIST_STEP_JUMPS.contains(&dir) && jumps_admitted(scramble_reach, on_land, can_climb, false))
+        || (COLONIST_STEP_SCRAMBLES.contains(&dir) && scramble_reach >= 3);
+    in_set
+        && colonist_walkable(vol, pos)
+        && colonist_walkable(vol, pos + dir)
+        && (dir.z < 1 || free(pos + Vec3::unit_z() * 2))
+        && (dir.z < 2 || free(pos + Vec3::unit_z() * 3))
+        && (dir.z < 3 || free(pos + Vec3::unit_z() * 4))
+        && (dir.z >= 0 || free(pos + dir + Vec3::unit_z() * 2))
+}
+
+/// ★ H2-i2: a bounded breadth-first climb from a set of feet cells toward
+/// a goal, one `step(from, dir)` at a time over every move in the set, in
+/// a fixed order. Ok(cells) when a goal cell is stood on; Err((cells, top))
+/// when the search runs out or hits `max_cells`, `top` the highest cell it
+/// stood on (the first reached at that height).
+pub fn climb_with_steps(
+    starts: &[Vec3<i32>],
+    is_goal: impl Fn(Vec3<i32>) -> bool,
+    inside: impl Fn(Vec3<i32>) -> bool,
+    walkable: impl Fn(Vec3<i32>) -> bool,
+    step: impl Fn(Vec3<i32>, Vec3<i32>) -> bool,
+    max_cells: usize,
+) -> Result<usize, (usize, Vec3<i32>)> {
+    let mut seen: std::collections::HashSet<Vec3<i32>> = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<Vec3<i32>> = std::collections::VecDeque::new();
+    for &c in starts {
+        if inside(c) && walkable(c) && seen.insert(c) {
+            queue.push_back(c);
+        }
+    }
+    let mut top: Option<Vec3<i32>> = None;
+    while let Some(c) = queue.pop_front() {
+        if top.is_none_or(|t| c.z > t.z) {
+            top = Some(c);
+        }
+        if is_goal(c) {
+            return Ok(seen.len());
+        }
+        if seen.len() >= max_cells {
+            break;
+        }
+        for dir in COLONIST_STEP_DIRS.iter().chain(COLONIST_STEP_JUMPS.iter()).chain(COLONIST_STEP_SCRAMBLES.iter()) {
+            let n = c + *dir;
+            if inside(n) && !seen.contains(&n) && step(c, *dir) {
+                seen.insert(n);
+                queue.push_back(n);
+            }
+        }
+    }
+    Err((seen.len(), top.unwrap_or(starts.first().copied().unwrap_or(Vec3::zero()))))
+}
+
 /// ★ THE SHARED BODY-CELL RULE (Ben, live: "i just saw them try to go
 /// through one" — the ROUTER refused windows but the kinematic mover's
 /// own probes (glide surface-follow, search-gap bridge, unstuck nudge,
@@ -3044,6 +3138,106 @@ mod bastion_vertical_tests {
         let (r2, c2) = find_path_priced(&mut astar, &vol, startf, endf, &cfg, PathLength::Longest, None, None);
         assert!(matches!(r2, PathResult::Path(..)), "asked again for the same goal: a path, not a flood (got {})", match r2 { PathResult::Path(..) => "Path", PathResult::Pending => "Pending", PathResult::Exhausted(_) => "Exhausted", PathResult::None(_) => "None" });
         assert!(c2 < 30, "found in a fresh search's few expansions, not the old frontier's: {c2}");
+    }
+
+    /// ★ H2-i2 pinned: THE STAIR PROBE CLIMBS WITH THE ROUTER'S FEET. On the
+    /// stairs-lab shapes the mirror's climb and the router agree: an open
+    /// block staircase (A) is climbed by both; the same staircase with a
+    /// one-block ceiling two above one step's feet (E) is refused by both --
+    /// the step's feet cell is walkable, only the rising step's clearance
+    /// fails. Planted defect: the clearance ignored in the mirror -> the
+    /// mirror climbs E while the router does not -> red.
+    #[test]
+    fn the_stair_probe_climbs_with_the_routers_feet() {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let cfg = TraversalConfig {
+            node_tolerance: 1.5,
+            slow_factor: 0.0,
+            on_ground: true,
+            in_liquid: false,
+            min_tgt_dist: 1.0,
+            can_climb: false,
+            scramble_reach: 2,
+            can_fly: false,
+            vectored_propulsion: false,
+            is_target_loaded: true,
+            search_allowed: true,
+            climb_ban: Vec::new(),
+            road_cells: Default::default(),
+            route_jitter_seed: 0,
+            wall_margin_cells: Default::default(),
+            interior_cells: Default::default(),
+        };
+        let build = |variant: char| {
+            let mut blocks = StdHashMap::new();
+            for x in 0..40 {
+                for y in 0..40 {
+                    blocks.insert(Vec3::new(x, y, 0), rock);
+                }
+            }
+            for k in 0..4i32 {
+                let x = 13 + k;
+                for z in 1..=(k + 1) {
+                    blocks.insert(Vec3::new(x, 20, z), rock);
+                }
+            }
+            for x in 17..31 {
+                for y in 10..31 {
+                    blocks.insert(Vec3::new(x, y, 5), rock);
+                }
+            }
+            if variant == 'E' {
+                // a ceiling two above the feet of the step at x 14 (feet z 3): the cell is
+                // walkable (head z 4 free) but the rise to x 15 needs z 5 free
+                blocks.insert(Vec3::new(14, 20, 5), rock);
+            }
+            MockVol::from_parts(blocks, Block::empty())
+        };
+        let startf = Vec3::new(5.5, 20.5, 1.0);
+        let endf = Vec3::new(25.5, 20.5, 6.0);
+        for v in ['A', 'E'] {
+            let vol = build(v);
+            let mut astar = None;
+            let mut polls = 0u32;
+            let r = loop {
+                let (r, _) = find_path_priced(&mut astar, &vol, startf, endf, &cfg, PathLength::Longest, None, None);
+                polls += 1;
+                if !matches!(r, PathResult::Pending) || polls >= 400 {
+                    break r;
+                }
+            };
+            let router_climbs = matches!(r, PathResult::Path(..));
+            let verdict = if router_climbs {
+                "Path"
+            } else if matches!(r, PathResult::Pending) {
+                "Pending"
+            } else {
+                "not a path"
+            };
+            let inside = |c: Vec3<i32>| c.x >= 0 && c.x < 40 && c.y >= 0 && c.y < 40 && c.z >= 0 && c.z <= 9;
+            let mirror = climb_with_steps(
+                &[Vec3::new(5, 20, 1)],
+                |c| c == Vec3::new(25, 20, 6),
+                inside,
+                |c| colonist_walkable(&vol, c),
+                |c, d| colonist_step_admitted(&vol, c, d, cfg.scramble_reach, cfg.can_climb),
+                20_000,
+            );
+            assert!(colonist_walkable(&vol, Vec3::new(14, 20, 3)), "variant {v}: the step under the ceiling is itself walkable");
+            match v {
+                'A' => {
+                    assert!(router_climbs, "A: the router climbs the open staircase (got {verdict})");
+                    assert!(mirror.is_ok(), "A: the mirror climbs it too (got {mirror:?})");
+                },
+                _ => {
+                    assert!(!router_climbs, "E: the router refuses the low ceiling (got {verdict})");
+                    match mirror {
+                        Err((_, top)) => assert_eq!(top, Vec3::new(14, 20, 3), "E: the mirror stops on the step under the ceiling"),
+                        Ok(n) => panic!("E: the mirror climbed past the ceiling in {n} cells: it does not walk with the router's feet"),
+                    }
+                },
+            }
+        }
     }
 
     /// ★ W14-g pinned: a search left Pending toward a far goal A, then

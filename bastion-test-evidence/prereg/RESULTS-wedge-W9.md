@@ -3128,6 +3128,115 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### THE BED-WALK FLOOD IS CALLED CLOSED (02:07): six arm-nights since W6-F2 landed, none the 148x/170x bed-cell loop
+
+Whole-town searches per arm-day/night on pairs at or after W6-F2:
+b2 336 (W6-F2's night: house 86's threshold hauls, not a bed),
+16 (W14-i8), 13 (W18-i2); b1 14 (W14-i8), 27 (S1-i), 19 (W6-G).
+Before W6-F2 on the same town: 148x / 170x to the cell beside bed
+(7715,6342,186) on both arms (H2-i's night), 402 / 471 (W6-F),
+518 / 616 (W6-E). The three-replicates rule is met on each arm.
+The re-pick loop's consumers -- W6-F2 (the list) and W6-G (the
+patience) -- stand; the remaining whole-town searches (13-27 a
+day) are hauls to house 86's threshold and the roof-snapped store
+goal, which TR1's census names. NOT closed: the upstairs sleepers'
+walk to beds they never reach (to_bed 5-14 a night) -- Ben's stair
+judgement, with H2-i2's census as its numbers.
+
+### W6-G's first night on b1 (02:03, pair 11555b6c1c, boarded 01:36, hour 3 of day 1): PASSED -- the patience turns the wall-standers into strike-outs; climb bans 132 -> 4, reclaims 44 -> 22, 40 of 50 in bed by hour 3 (the ledge arm's best night)
+
+PATIENCE witness 10 lines: colonist 80 (job 610, RestAt to house
+86's bed (7756,6412,186), feet at the wall cell (7706,6310,181))
+suspends 6, 7, 8 -> strikes 1, 2, 3 -> struck out; colonist 63
+(job 1001, bed (7748,6333,186), the same wall cell) likewise; 73,
+44, 30 one each. Held strikes 10, STRUCK OUT 11, shun witness 8
+(the list took over), reclaims top 63 x22, 77 x16 (from 30-44 the
+nights before: the registered bar of 20 missed by two -- six
+suspends per job before the sixth strikes, three or four beds a
+night, is 18-24 by construction), other bans 4 (from 132: the
+climb-ban loop at the wall is gone), benched by banned climbs 0.
+FLOOD 19 (bar 80 PASSED); STALL BLAMED 2 (was 4: the patience did
+not strike real queues); FETCH STALLED 15; arrivals 810 by hour 3;
+starving 1 (unchanged). NIGHT CENSUS: hour 22 in_bed 4 / to_bed 29;
+23: 30 / 12; 0: 37 / 7; 1: 38 / 7; 2: 39 / 6; 3: 40 / 5, idle 0-1,
+watch 5-6 -- the ledge arm's previous nights read 28-32 in bed with
+11-14 walking all night. DISPOSITION: PASSED on its mechanism and
+its consumer chain (patience -> strike -> strike-out -> shun ->
+another bed -> in bed); the reclaim bar re-registered at <= 24 for
+the next nights (its arithmetic, not the rule).
+
+The full day at hour 6 (cascade reader, 02:07): flood 30, reclaims
+63 x28 / 77 x23 (the re-registered bar of 24 missed by four: six
+suspends a job, four beds), struck out 12, held strikes 10, other
+bans 5, arrivals 851 (bar 900 missed by 49), STUCK CENSUS distinct
+24, idle 11 at hour 6 (the morning), starving sleepers 2 -- 30 and
+39, both the empty-shelf class (round_need 2, loads 1, gone 1, bed
+z 186), a third line for 68: E2-i3b's MINTED lines on the next day
+(b1 restarted onto E2-i3b at 02:07) name those loads.
+
+W18-i2 on b1 the same night (02:02): COLUMN lines 0, bob stalls 0,
+top bobbers x2 at (7712,6306) (the pit's cells) -- a second null
+with its witness; STUCK CENSUS distinct 17, EXPERIENCE stuck 0.
+The pit's 1,024-bob night has not recurred in three arm-nights;
+the instrument stays armed.
+
+### E2-i3b LANDED (01:51): 5a5822c77f, both halves, marker 'SUPPER LOAD MINTED' 1 in the exe
+
+Pin the_supper_load_is_named green (513 filtered, 1 passed);
+committed 01:38, staged 01:51, pushed, shipped to lab-bin 01:52.
+Falsifier b51h9ozou plants the id list emptied at +90 s: RED
+(01:56). H2-i2's chain fired at 01:56 (
+both halves, two pins; stage ~02:20) -> TR1 -> E2-q -> H2-p. The
+readers wait-e2i3b-b1/b2 (patched to print the MINTED lines and
+the loads/ledgered fields) restart each arm after the W6-G readers'
+blocks and read the next day; the fingerprints to close: 21/46/134/
+135 (minted 1, gone), 52 (minted 2, gone 2), 34 (round_need 0:
+ledgered true or false).
+
+### W18-i2's first night on b2 (01:40, pair c670efb527, boarded 01:12, hour 3 of day 1): no column line -- no body reached sixteen bobs (a null with its witness); stuck census 3, arrivals 913
+
+COLUMN lines 0; BOB: 12 lines, top bobbers 1645 x2, 821 x1, 70 x1,
+bob stalls 0, lifts_repeated 0; STUCK CENSUS distinct 3 (18 and 27
+on b1's H2-i and W14-i8 nights); THE DROP HAS NO WAY UP 6; arrivals
+913 by hour 3 (b2's best); starving 0. The full day at hour 6 of
+day 1 (cascade reader, 01:45): flood 13, every strike counter 0,
+other bans 3, arrivals 951, starving 0; SHELF: colonist 52 x9 with
+round_need 2, round_loads 2, GONE 2, bed z 186 -- two loads minted
+for that house and both gone (E2-i3b's per-load lines will name
+them; the readers were patched to print them). b2 restarted onto
+W6-G at 01:50. The instrument prints only
+at a stall (sixteen bobs at one cell inside the window) and none
+happened on b2 tonight: the pit's walkers are a per-night draw, as
+b1's quiet W14-i8 night showed. The read waits for b1's night on a
+pair at or after W18-i2 (b1 boarded W6-G at 01:36; hour 3 of day 1
+~02:10) and for the next night either arm draws the pit.
+
+### H2-p THE BED EARNS ITS REPUTATION -- registered 01:40 (before the binary exists), queued behind E2-q
+
+Prior art: DF's "could not find path" cancel (the dwarf sleeps on
+the floor), RimWorld's failed-path memory. MECHANISM: bed_reputation:
+bed -> (strike-outs since last slept in, time of the last); bed_
+strike at both strike-out sites beside W6-F2's shun; at 3 (BED_
+REPUTATION_STRIKES) the witness THE BED IS OUT OF THE PICKER; the
+picker's two filters add bed_is_offered (no entry, under three, or
+past the 3-game-day window); the hourly bed census collects the
+beds a RestAt job ARRIVED in and removes their entries (THE BED IS
+SLEPT IN AGAIN at >= 3). The arrival truth, not the router's reach
+(31-33 of 50 sleep in 34 beds of which 16 read "upstairs"). PIN
+the_bed_earns_its_reputation (one/two offered, three out, the
+window reopens, no entry offered, the window is 5,400 s);
+falsifier plants always offered. BARS (each arm's first night):
+STRUCK OUT per arm-night <= 8 (21); no sleeper strikes out more
+than two beds (85: five); BEDS OUT >= 3 per arm over the first day;
+in_bed at hours 1-4 >= 30 of 50; b1's to_bed at hours 1-4 <= 8
+(11-14); starving unchanged. FALSIFIED if in_bed < 25 (beds taken
+out that sleepers reached: the reset is not firing) or if STRUCK
+OUT stays >= 15 with BEDS OUT >= 3 (the count is 2, not 3, or the
+walk is to beds no one has tried). Rejected: the router's reach as
+the picker's rule; a permanent ban; a per-sleeper memory (W6-F2).
+Chain chain-h2p on e2q-staged; falsifier armed; dry tree passed
+E2-i3b -> H2-i2 -> TR1 -> E2-q -> H2-p.
+
 ### b1's S1-i night (01:33, pair 504eebc174, boarded 00:55, hour 8 of day 1): W6-F2 EXERCISED -- colonist 85 struck out five upstairs beds in a row, each shunned (held 1 -> 5); the per-colonist bar FAILS by design of the picker
 
 LOOP: other bans 132 (85 x67 at the wall cell (7705,6310,181),
