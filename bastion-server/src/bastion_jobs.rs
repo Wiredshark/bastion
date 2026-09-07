@@ -9758,6 +9758,20 @@ pub(crate) fn drop_verdict(
     DropVerdict::Closed { cells: seen.len() }
 }
 
+/// ★ W17-c pinned: THE MOVER STANDS WHERE THE ROUTER WALKS. A surface probe
+/// used to land a body on any is_solid block (a fence top, a chest, a
+/// planter, an anvil: hurdle-height sprites the router never treats as
+/// ground), and every search from there began under the floor (451 starts
+/// snapped four blocks down on one b2 day; colonist 37's bed benched from a
+/// fence line at z 185). The landing must satisfy the mover's own triple AND
+/// the router's `colonist_walkable`, the predicate every search starts from.
+pub(crate) fn probe_landing_ok(below_solid: bool, feet_solid: bool, head_solid: bool, routable: bool) -> bool {
+    below_solid && !feet_solid && !head_solid && routable
+}
+
+/// ★ W17-c: the witness count (landings the router refused).
+pub(crate) static LANDINGS_REFUSED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// The drop is taken unless its landing is a closed basin.
 pub(crate) fn drop_is_safe(
     standable: impl Fn(Vec3<i32>) -> bool,
@@ -37370,9 +37384,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 Vec3::new(cx, cy, fz + dz);
                                             let head =
                                                 Vec3::new(cx, cy, fz + dz + 1);
-                                            if solid(below)
-                                                && !solid(feet)
-                                                && !solid(head)
+                                            if probe_landing_ok(solid(below), solid(feet), solid(head), common::path::colonist_walkable(&*terrain, feet))
                                             {
                                                 // ★ W18-b / W18-b2: a two-block drop is refused only into a
                                                 // closed basin; a landing that opens onto the town is taken.
@@ -37894,9 +37906,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         let below = Vec3::new(cx, cy, fz + dz - 1);
                                         let feet = Vec3::new(cx, cy, fz + dz);
                                         let head_c = Vec3::new(cx, cy, fz + dz + 1);
-                                        if solid(below)
-                                            && !solid(feet)
-                                            && !solid(head_c)
+                                        if solid(below) && !solid(feet) && !solid(head_c)
+                                            && !common::path::colonist_walkable(&*terrain, feet)
+                                        {
+                                            // ★ W17-c: the router refuses a surface the mover's
+                                            // triple accepted -- named, counted, not landed on.
+                                            let n = LANDINGS_REFUSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                            if n <= 8 || n.is_power_of_two() {
+                                                let under = terrain.get(below).ok().map(|b| b.get_sprite().map(|sp| format!("{:?}", sp)).unwrap_or_else(|| format!("{:?}", b.kind())));
+                                                info!(
+                                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                                    ?feet,
+                                                    ?under,
+                                                    refused = n,
+                                                    "bastion: THE MOVER STANDS WHERE THE ROUTER WALKS — a landing the router cannot start a search from is refused (W17-c)"
+                                                );
+                                            }
+                                        }
+                                        if probe_landing_ok(solid(below), solid(feet), solid(head_c), common::path::colonist_walkable(&*terrain, feet))
                                         {
                                             // ★ W18-b / W18-b2: a two-block drop is refused only into a
                                             // closed basin; a landing that opens onto the town is taken.
@@ -38758,9 +38785,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 Vec3::new(cx, cy, fz + dz);
                                             let headc =
                                                 Vec3::new(cx, cy, fz + dz + 1);
-                                            if solid(below)
-                                                && !solid(feet)
-                                                && !solid(headc)
+                                            if probe_landing_ok(solid(below), solid(feet), solid(headc), common::path::colonist_walkable(&*terrain, feet))
                                             {
                                                 return Some(Vec3::new(
                                                     cx, cy, fz + dz,
@@ -57174,6 +57199,18 @@ mod tests {
         assert!(!reservation_yields_to_owner(true, "haul"), "a claimed haul stands");
         assert!(!reservation_yields_to_owner(false, "eat"), "an unclaimed eat stands");
         assert!(!reservation_yields_to_owner(false, "deposit"), "an unclaimed deposit stands");
+    }
+
+    /// ★ W17-c pinned: a floor the router walks is landed on; a fence top the
+    /// mover's triple accepts but the router refuses is not; the triple's own
+    /// refusals stand. Planted defect: the router's verdict ignored -> red.
+    #[test]
+    fn the_mover_stands_where_the_router_walks() {
+        assert!(probe_landing_ok(true, false, false, true), "a plank floor: both agree, landed");
+        assert!(!probe_landing_ok(true, false, false, false), "a fence top: the mover's triple says solid support, the router says no ground -- refused");
+        assert!(!probe_landing_ok(false, false, false, true), "no support: refused whatever the router says");
+        assert!(!probe_landing_ok(true, true, false, true), "feet in a block: refused");
+        assert!(!probe_landing_ok(true, false, true, true), "head in a block: refused");
     }
 
     /// ★ W18-e pinned: fifteen bobs are not a stall, sixteen are, and so is

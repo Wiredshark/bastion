@@ -3128,6 +3128,197 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### b1's W18-e day (20:14, pair 5f7089fbfa, night block at hour 6): the wall loop's worst night -- three colonists, 261 bans; arrivals 834
+
+The W18-c reader's night block: CLIMB BANNED(other) 261 -- colonist
+51 x163 (87 at (7709,6312,181) from 23:53 to 00:12 UTC, twenty
+minutes) with 157 reclaims, 74 x29, 77 x22; THE BODY BOBS 46 lines
+with 38 at the wall cell (7706,6311) (77:8, 23:8, 74:4: under
+W18-e's sixteen, so no stall witness); pit drops 14; starving
+sleepers 4 (RestAt); FETCH STALLED 18; benched by route proofs 118
+(15-22 on the days before: with W14-g2 a re-asked unreachable goal
+runs a fresh search and answers at once, so the route proof strikes
+and benches what is truly unreachable -- the upstairs targets --
+instead of resuming a dead frontier); LONGEST-EXHAUST 45; arrivals
+834 (997 the day before: the bar of 900 FAILED, the loop's and the
+benching's cost); p95 684 us; panics 0. Three colonists looped at
+the one house wall under the z-186 bed at (7700,6308): the class
+H2-i counts and W6-E strikes out. b1 boards ae6b8fd42d (W6-E and
+H1-i aboard) at this restart; its next night is W6-E's b1 read and
+the first NIGHT CENSUS on b1.
+
+### H2-i registered (20:14): THE UPSTAIRS BED NAMES ITS STAIR -- a daily probe, no behaviour change
+
+Mechanism: stair_probe(walkable, bed, floor_z, min, max, max_cells)
+-> Ground (the bed within two of the house floor) | Connected |
+Cut { cells, lowest }: from the walkable cells around the bed, a
+bounded breadth-first walk over colonist_walkable cells (eight
+lateral moves at dz 0/+1/-1 and straight down one) inside the
+house's footprint (+2) until the floor's feet level is reached. At
+the day-changed gate, every registered bed inside a Bed-designated
+house is probed; the first twelve cut beds print THE UPSTAIRS BED
+NAMES ITS STAIR (bed, owner, house_min, floor_z, cells, lowest, the
+blocks under / two under / over the lowest cell) and one STAIR
+CENSUS line (beds, upstairs, connected, cut). Pin
+the_upstairs_bed_names_its_stair (Ground; an open staircase
+Connected; a gapped one Cut with the step above the gap named);
+falsifier plants the floor never recognised. Chain (holds on
+w18e2-staged) and falsifier launched 20:14; dry tree HEAD
+ae6b8fd42d + W17-c + E2-i3 + W18-e2 + H2-i (5 uses). Readers
+wait-h2i-b1/b2 print a STAIR line.
+
+Bars (each arm's first day line): upstairs >= 20 of ~80 beds; cut
+>= upstairs / 2; the named lowest cells at z 182-184 with a plank
+block at `head` (the lab's shape D); the loopers' beds among the
+cut. Falsified if cut == 0 with upstairs > 0 (the router reaches
+the beds: the live failure is elsewhere, the start_under diag
+names it), or if the lowest cells sit at the bed's own level (a
+furnishing class). The fix is Ben's choice among three -- the
+router's headroom under a rising step (engine), the plot's
+stairwell (worldgen), or beds the colony can walk to (halves the
+housing cap) -- with the census in hand.
+
+### The sixth night starver (20:11): b1, colonist 56 -- the empty shelf, a ground-floor bed
+
+b1 on the W18-e pair at hour 4 of day 1: colonist 56, hunger 0.00
+for 46 samples (RestAt) and 11 (EatFrom), NIGHT SHELF EMPTY x15,
+bed at (7734,6351,181). Six of six night starvers today have the
+empty home shelf; the bed's floor is not the class. E2-i3 reads
+why. b1's night otherwise: bob stalls 0, bobs peak 8 (W18-e's
+witness needs 16), no reclaim loop yet.
+
+### W18-e2 registered (20:10): THE STALL PINS ITS RESET POINT
+
+Mechanism: STALL_RESET_POINT = f32::MIN; at the bob stall the mover
+sets aj.reset_dist = STALL_RESET_POINT alongside the timeout, and the
+per-tick progress check reads its condition through
+progress_past_reset(reset_dist, sdist) = reset_dist - sdist >= 1.0
+(the same rule, named). The bob's lift can no longer be a block
+past the reset point; the clock accrues past the timeout on the
+next tick and the stuck-timeout branch runs (release / suspend with
+W6-E's strike). best_dist still tracks, so the four-block
+"pushed away" arm cannot fire on a two-block bob. The witness gains
+"(W18-e2: the reset point pinned)". Pin the_stall_pins_its_reset_point
+(two blocks closer than a reset point is progress, half is not,
+nothing is a block closer than the stalled reset point); falsifier
+plants `>= 1.0 || true`. Chain (holds on e2i3-staged) and falsifier
+launched 20:11; dry tree HEAD ae6b8fd42d + W17-c + E2-i3 + W18-e2
+(5 uses of the condition, 3 of the constant). Readers
+wait-w18e2-b1/b2 from the E2-i3 readers.
+
+Bars (each arm's first night): bobs peak <= 24 (64 / 32); every
+stall-witnessed walker shows a release, suspend or strike line
+within 15 s of its first stall line; THE BODY BOBS at >= 32: 0;
+starving unchanged; arrivals >= 900 / 720. Falsified if a walker
+passes 32 with the witness present (a fifth reset path: name it),
+or arrivals fall > 10%. Rejected: refusing the drop; zeroing
+best_dist (the +4 arm fires on any far target); reset_dist = sdist
+(the next lift is a block closer again).
+
+### H1-i LANDED (20:07): ae6b8fd42d, both halves, marker 'NIGHT CENSUS' 1 in the exe
+
+Pin the_night_census_classifies_the_awake green on the fresh
+compile; committed 19:52, staged 20:07:33, pushed, shipped to
+lab-bin 20:07:45 (playable). Falsifier beelcdgmn planted the arrived
+arm away at 20:09: the pin went RED (0 passed, 1 failed), 0 dirty
+files restored at 20:12. H1-i is red on its plant. The W17-c
+chain fires at +300 s (~20:12; both halves, stage ~20:40). The arms
+board H1-i at their next reader restarts (the H1-i readers, after
+the W6-E days); the first NIGHT CENSUS lines come from those nights
+(b2 ~21:10, b1 ~21:20 at the new day length).
+
+Stairs lab, polled to completion (20:06): A and B (open stairwell,
+roof at 8 or none) UP = Path(len 21) in 818 expansions over two
+polls, DOWN = Path in 344 -- THE ROUTER CLIMBS AN OPEN STAIRCASE. C
+(roof one block over the upper floor) = None both ways. D (the
+upper slab covering the stair run with a one-cell hole at the top)
+UP = None in 2,316 expansions, DOWN = Path(len 21) in 773 (the down
+search takes the slab's edge). So a house whose upper slab covers
+the stair run blocks the climb at the step whose head cell is the
+slab, and bodies that reach the upper floor by the assist can come
+down but never route up -- the live shape (frontier at z 181 under
+a walkable z-186 bed). Next for this class: H2-i, the daily probe
+that names the blocking step per upstairs bed (queued after W18-e2
+below); then the judgement with the counts.
+
+### W18-e day on b2 (20:04, pair 5f7089fbfa, hour 6 of day 1): THE FALSIFICATION CLAUSE TRIPPED -- the witness fired 11 times and the body still bobbed 64
+
+The W18-e b2 reader's day block (the first night-safe b2 block):
+LONGEST-EXHAUST 16, bobs: colonist 26 bobbed 64 at (7551,6399) with
+stuck_time 0.033 at the 64 sample; THE BOB IS A STALL 11 lines, all
+uid 26; REPEATED LIFT 4; CLIMB BANNED(other) 5; reclaims top
+colonist 30 x29 (the loop's fifth run, W6-E boards b2 now). The
+registered falsification clause: "a body still reaches 64 on a pair
+that shows the witness" -- it did. The stall set the clock to its
+timeout eleven times and the clock was zero again by the next
+sample: the per-tick progress check (3-D distance) reads each lift
+of the bob as progress and resets the clock before the timeout
+consumer runs. W18-e is DISPOSED as FAILED ON ITS BAR: the witness
+is honest, the consumer is undone by the fourth reset path it was
+built to bypass. The fix is the reset point, not the clock (below).
+
+### STAIRS LAB (20:02, the falsify worktree at b3adc86540): the router climbs a plain block staircase; a low ceiling or a covered stairwell makes a step unwalkable
+
+A 40x40 slab, a four-step staircase rising one block per cell, an
+upper slab at z 5 (feet z 6), colonist rules, Longest tier, one poll
+of 750 in the first run. A (open stairwell, no roof): every stair
+cell walkable; DOWN from the upper floor to the ground: Path(len 21)
+in 344 expansions; UP: Pending after the first poll (the flat slab
+is cheaper than the +4-cost climbs, so the frontier spreads before
+it rises -- re-run with polling to completion below). B (roof at z
+8): the same. C (roof at z 7 over everything): walkable(17,20,6) =
+FALSE -- an upper floor needs two free cells above its slab (feet
+and head), so a floor one block under a roof is not a floor; up and
+down both Pending. D (the upper slab covering the stairwell except
+a one-cell hole over the top step): walkable(15,20,4) = FALSE -- the
+step under the covered part has the slab at its head; up and down
+both Pending. So the router's rule is the two-cell headroom: a
+staircase is routable only where every step has two free cells
+above it. Veloren's houses put the upper slab over the stair run
+with a hole at the top (variant D) or a ceiling close over the
+stair -- the live probes' "closest z 181 under the bed" is that
+shape. The row: an instrument that names the blocking step for each
+upstairs bed (THE UPSTAIRS BED NAMES ITS STAIR), then the fix is
+either the router's headroom under a stair (an engine admission:
+one free cell over a rising step is enough for a walking body) or
+the plot's stairwell -- Ben's judgement, now with the cell named.
+
+### THE UPSTAIRS BED IS THE CLASS (19:58): every wall-looper and four of five starvers were bound for a z-186 bed, and the search stops on the ground floor beneath it
+
+The four loopers' targets: 51 -> (7700,6308,186), the bed right
+upstairs in the house whose wall it pushed at (7709,6310,181); 59 ->
+(7832,6272,186); 71 -> (7748,6315,186); 961 -> (7590,6502,186). The
+target probes (THE EXHAUSTED SEARCH NAMES ITS TARGET) for z-186 beds
+across three archived days (7 on b1, 13 on b2): the frontier's
+closest cell is at z 181 (one at 182, one at 183), often directly
+below the bed (closest_xy 1.0 for (7719,6336,186), class "sealed",
+target_walk true, start_walk true, components "same"). The bed cell
+is walkable and the house is one component with the street; the
+router finds NO WAY UP. So the upper floor is unreachable for every
+search, the sleeper glides at the wall under its bed, the timeout
+suspends and reclaims (W6-E now strikes it out), and the night is
+spent standing -- and the same houses' shelves are the empty ones.
+This is the judgement item asked at 16:22 (routable stairs, an
+engine-side admission, or beds the colony can walk to, colony-side).
+Next: a LAB test of a plain block staircase with headroom against
+find_path_priced (does the router climb stairs at all?) in the
+falsify worktree between falsifier runs, then either the router
+row or the bed route-proof row (an instrument: beds by floor and
+reachability at the daily census) -- whichever the lab says.
+
+### b1 hour 19 on W18-e (19:56, pair 5f7089fbfa): the loop's fourth run, W6-E not yet aboard
+
+The W18-c reader's hour-19 block: arrivals 619 (645-831 at this
+hour on the days before: a WATCH, the day total decides), LONGEST-
+EXHAUST 8 (W14-g2 holds), bobs peak 1, bob stalls 0, REPEATED LIFT
+0, FETCH STALLED 10, STUCK CENSUS 4, starving 0, ledge stalls 10,
+p95 695 us, panics 0. CLIMB BANNED(other) 28, of which colonist 51
+took 20 at (7709,6310,181) between 23:53 and 23:55 UTC with 20
+reclaims -- the 961 loop's FOURTH run (961, 71, 59, 51), always at
+the same two cells (7705-7709, 6299-6311) under the same wall, on
+both arms. b1 boards W6-E at its next restart (~20:15); its first
+W6-E night is the read.
+
 ### W6-E LANDED (19:39): b3adc86540, both halves, markers 'THE HELD JOB STRIKES' 1 and 'THE HELD JOB STRUCK OUT' 1 in the exe
 
 Pin the_held_job_strikes_and_strikes_out green on the fresh

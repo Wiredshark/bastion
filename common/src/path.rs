@@ -1709,6 +1709,15 @@ where
                 resolved_start = ?start,
                 resolved_end = ?end,
                 end_snap_dz = end.z - endf.z.floor() as i32,
+                // ★ W17-c: a start that snapped more than two names the block under the requested cell
+                start_snap_dz = start.z - startf.z.floor() as i32,
+                start_under = ?if (start.z - startf.z.floor() as i32).abs() > 2 {
+                    vol.get(startf.map(|e| e.floor() as i32) - Vec3::unit_z())
+                        .ok()
+                        .map(|b| b.get_sprite().map(|sp| format!("{:?}", sp)).unwrap_or_else(|| format!("{:?}", b.kind())))
+                } else {
+                    None
+                },
                 "bastion: LONGEST-TIER SEARCH — resolved endpoints (a nonzero                  end_snap_dz means the goal moved off the requested cell)"
             );
         }
