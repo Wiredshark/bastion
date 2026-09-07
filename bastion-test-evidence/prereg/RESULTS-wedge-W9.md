@@ -3128,6 +3128,87 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### W18-i2 THE BOB NAMES ITS COLUMN -- registered 00:18 (before the binary exists), inserted behind S1-i
+
+The pit at (7700,6303) on b1 (see the H2-i night above): 86 and 87
+x1024 bobs, lifted to 185.9 by "chaser-probed" and dropped to 183;
+THE BOB IS A STALL fired 2,048 times with the clock at 0.033 s at
+bob 900. W18-e2 pinned the per-tick reset; what re-zeroes the
+clock now is unnamed (a new ActiveJob after the timeout's release,
+or a path W18-e2 did not pin), and nothing names the cell's shape.
+
+MECHANISM (instrument, no behaviour): bob_stall_job: Uid -> (JobId,
+tick) at the body's last stall; at the stall, at each power of two
+of the body's bobs, THE BOB NAMES ITS COLUMN prints uid, cell,
+z_from, z_to, site, the column of block kinds from floor(z_to)-1 to
+floor(z_from)+2 (bob_column_span), the job, its kind and pos,
+same_job (against the last stall), ticks_since_stall, clock_found
+and reset_found (as the stall found them), bobs. PIN
+the_bob_names_its_column: the span (a 185.86 -> 183.0 drop spans
+182..=187), never inverts; the same-job rule (None / Some(false) /
+Some(true)). Falsifier plants the span reversed -> red.
+
+BARS (b1's first night on the pair): a column line per bobbing body
+at 16, 32, 64; the column shows a solid run two or three high at
+the lift height beside air at the landing (a wall or lintel the
+probe stands the body on); same_job Some(false) with
+ticks_since_stall <= 60 (the timeout releases nothing; another path
+freshens the clock -> W18-e3 names it) OR Some(true) with
+ticks_since_stall >= the timeout (the release happened and the next
+claim walks back in -> a glide cell ban, W18-f). FALSIFIED if the
+line never prints for a body the BOB witness shows at 64+ (a
+jobless body bobs unseen: the stall needs an active job), or if the
+column reads all air / all solid (the cell's frame is not the
+drop's frame). Rejected: fixing the lift blind (three candidate
+lifters); a cell ban now (its radius is a taste number until the
+shape is known).
+
+Chain chain-w18i2 holds on s1i-staged; W6-G re-anchored behind it.
+
+### W14-i8 LANDED (00:10): 4450039094, both halves, markers 'EXHAUST REPEAT CENSUS' and 'THE EXHAUSTED DELIVERY NAMES ITS ASKER' 1 each
+
+Pin the_exhausted_delivery_names_its_asker green (509 filtered, 1
+passed); committed ~00:00, staged 00:10:07, shipped to lab-bin
+00:10:15 (playable). Falsifier bue21bca3 plants truncate(0) at
++90 s: RED (00:15, "0 passed; 1 failed"). S1-i's chain fired at
+00:15. The first-read
+waiter read-w14i8-first keys on the pair boarding each arm (b1's
+next restart ~00:25; b2's ~00:35), then hour 16 of day 0 and hour
+3 of day 1.
+
+### b1's H2-i day and night (00:07, pair 8e72bfaee3, boarded 23:28, read at hour 6 of day 1): the flood is the same ONE pair (148 of 173 beside bed (7715,6342,186)); THE PIT CHURNS -- two colonists bobbed 1,024 times at (7700,6303), 18 distinct stuck, bob stalls 16
+
+Day 0 at hour 19: LONGEST-EXHAUST 18 (the lowest day ever: top
+ends 7x (7742,6404,181) = house 86's ground floor, 3x, 2x); bobs
+52:256, 80:32, 43:16 at cell (7700,6303) (21 lines) and (7698,6303);
+bob stalls 13 (80 x8, 52 x5); arrivals 715; STUCK CENSUS 3.
+Night 1 (hour 6 of day 1): LONGEST-EXHAUST 173 with 148x
+(7713,6345,186) -- the cell beside the upstairs bed (7715,6342,186),
+the same target b2's 170x (7716,6343,186) circled the same night;
+STRIKES terminal chaser 11, longest exhausts 60 ("three exhausted
+Longest searches job=8 colonist=28" ... W14-d struck and benched,
+the target was re-picked); reclaims top 50:1 (NOT a reclaim loop on
+b1: a strike-bench-re-pick loop); other bans 14 (82 x4 at
+(7705,6349,181)); STRUCK OUT 0. BOBS: 87 x1024, 86 x1024, 52 x256
+at (7700,6303) (59 lines) -- bob stalls 16, stalled uids 80 x8, 52
+x5; stuck_time at 64+ bobs = 0.033 s on 15 lines: THE STALL'S CLOCK
+IS FRESH AGAIN AT 64+ BOBS. W18-e2 pinned reset_dist so the per-
+tick check cannot re-zero it; what re-zeroes it now is a NEW
+ActiveJob: the stall times out, the job is released, the colonist
+re-claims (the same or the next job through the same cell), the
+bob counter (per uid + cell) keeps counting and the stall fires
+again at the next 16 -- 1,024 bobs = 64 stall cycles. Before
+W18-e2 the bobber froze at 64 with its clock re-zeroed and never
+left; now it leaves and comes back. STUCK CENSUS distinct 18 (13
+on the W6-F night); EXPERIENCE at hour 6: stuck 7, idle 8, moving
+35; arrivals 903 (bar 900, barely). Starving sleepers 0.
+
+The pit at (7700,6303) is the worst thing a player would see on
+this arm tonight: bodies dropping two blocks and being lifted,
+over and over, at one cell. W18-c's drop_is_safe ("the drop is
+taken unless its landing is a closed basin") let these drops
+through: the read below names the cell's shape.
+
 ### b2's H2-i day (23:45, pair 8e72bfaee3, boarded 23:12, read at hour 6 of day 1): the flood is ONE pair -- 170 of 192 to the cell beside an upstairs bed, from a non-climb reclaim loop (W6-G's class); the best night yet (40 of 50 in bed)
 
 FLOOD: LONGEST-EXHAUST 192 (whole-town 192), top ends 170x

@@ -18534,6 +18534,14 @@ pub(crate) fn search_stand(target: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> b
     target
 }
 
+/// ★ S1-i pinned: THE STORE NAMES ITS AISLES. A stocked cell has a stand
+/// when a body can stand in it or search_stand finds a standable cell
+/// within reach; a crate field wider than twice the reach has stocked
+/// cells with none, and only the mover's leniency reaches them.
+pub(crate) fn store_cell_has_stand(cell: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> bool) -> bool {
+    standable(cell) || search_stand(cell, &standable) != cell
+}
+
 pub(crate) fn trade_mission_pos(site: Vec3<i32>, standable: impl Fn(Vec3<i32>) -> bool) -> Vec3<i32> {
     for r in 0..=TRADE_STAND_REACH {
         for dx in -r..=r {
@@ -27042,6 +27050,61 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // from here. `growth_logged_day` is the sibling of
                     // `immigration_day` in every respect.
                     let day_changed = board.growth_logged_day != Some(today);
+                    // ★ S1-i: THE STORE NAMES ITS AISLES -- once a day, every stockpile
+                    // zone: its cells, the walkable columns inside it, the stocked
+                    // cells, and the stocked cells with no stand within reach.
+                    if day_changed {
+                        let houses_s1: Vec<Region> = board
+                            .designated
+                            .iter()
+                            .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                            .map(|(r, _)| *r)
+                            .collect();
+                        let standable = |c: Vec3<i32>| common::path::colonist_walkable(&*terrain, c);
+                        let mut stocked_by_zone: HashMap<common::bastion::ZoneId, Vec<Vec3<i32>>> = HashMap::new();
+                        for (_, ipos) in (&pickup_items, &positions).join() {
+                            let c = ipos.0.map(|e| e.floor() as i32);
+                            if let Some((z, _)) = board
+                                .stockpiles
+                                .iter()
+                                .find(|(_, r)| r.contains_point_xy(c) && c.z >= r.min.z - 2 && c.z <= r.max.z + 3)
+                            {
+                                stocked_by_zone.entry(*z).or_default().push(c);
+                            }
+                        }
+                        let mut named = 0usize;
+                        for (z, r) in board.stockpiles.iter() {
+                            let cells = ((r.max.x - r.min.x + 1).max(0) * (r.max.y - r.min.y + 1).max(0)) as usize;
+                            let mut walkable_cols = 0usize;
+                            for x in r.min.x..=r.max.x {
+                                for y in r.min.y..=r.max.y {
+                                    if ((r.min.z - 1)..=(r.max.z + 3)).any(|zz| standable(Vec3::new(x, y, zz))) {
+                                        walkable_cols += 1;
+                                    }
+                                }
+                            }
+                            let stocked = stocked_by_zone.get(z).map(|v| v.len()).unwrap_or(0);
+                            let no_stand = stocked_by_zone
+                                .get(z)
+                                .map(|v| v.iter().filter(|c| !store_cell_has_stand(**c, &standable)).count())
+                                .unwrap_or(0);
+                            if stocked > 0 && named < 12 {
+                                named += 1;
+                                info!(
+                                    day = today,
+                                    zone = ?z,
+                                    min = ?r.min,
+                                    max = ?r.max,
+                                    private = store_is_private(r, houses_s1.iter()),
+                                    cells,
+                                    walkable_cols,
+                                    stocked,
+                                    no_stand,
+                                    "bastion: STORE AISLE CENSUS — one stockpile zone, its walkable columns, and the stocked cells the router has no stand for (S1-i)"
+                                );
+                            }
+                        }
+                    }
                     // ★ H2-i: THE UPSTAIRS BED NAMES ITS STAIR -- once a day, every
                     // registered bed above its house's floor is probed for a
                     // walkable way down; the cut ones name their lowest cell.
@@ -57647,6 +57710,19 @@ mod tests {
         assert!(landing_gate(LANDING_ROUTER_CHECK, true), "off: a floor too");
         assert!(!landing_gate(true, false) && landing_gate(true, true), "on: only routable landings");
         assert!(probe_landing_ok(true, false, false, landing_gate(LANDING_ROUTER_CHECK, false)), "the fence top lands while the check is off");
+    }
+
+    /// ★ S1-i pinned: a standable cell has a stand; a cell with a standable
+    /// neighbour within reach has one; a cell deep in a crate field wider
+    /// than twice the reach has none. Planted defect: every cell has a
+    /// stand -> red.
+    #[test]
+    fn the_store_names_its_aisles() {
+        let floor = |c: Vec3<i32>| c.z == 1 && c.x >= 0 && c.x < 40 && (c.y == 0 || c.y == 39);
+        assert!(store_cell_has_stand(Vec3::new(5, 0, 1), floor), "a standable cell is its own stand");
+        assert!(store_cell_has_stand(Vec3::new(5, 2, 2), floor), "two cells from the floor row: a stand within reach");
+        assert!(!store_cell_has_stand(Vec3::new(20, 20, 2), floor), "deep in the crate field: no stand within reach");
+        assert!(!store_cell_has_stand(Vec3::new(20, 4, 2), floor), "four rows in: still none (the reach is three)");
     }
 
     /// ★ H2-i pinned: a ground-floor bed is Ground; an upstairs bed with an
