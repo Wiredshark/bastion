@@ -10040,6 +10040,23 @@ pub(crate) fn stair_probe(
 pub(crate) const SITE_STAND_RING: i32 = 2;
 pub(crate) const SITE_REACH_MAX_CELLS: usize = 400_000;
 
+/// ★ TR1c pinned: THE ROUTER IS ASKED ONCE A DAY. The probe names how the
+/// live router and the mirror agree on one pair: both find a way
+/// ("agree-path"), neither does ("agree-cut"), only the router ("router-
+/// only": the mirror is stricter), only the mirror ("mirror-only": the
+/// router's budget or its rules refuse what the geometry allows).
+pub(crate) fn router_mirror_agree(router_path: bool, mirror_ok: bool) -> &'static str {
+    match (router_path, mirror_ok) {
+        (true, true) => "agree-path",
+        (false, false) => "agree-cut",
+        (true, false) => "router-only",
+        (false, true) => "mirror-only",
+    }
+}
+
+/// ★ TR1c: the probe's poll cap (a whole-town search is ~60 polls of 1,024).
+pub(crate) const ROUTER_PROBE_MAX_POLLS: u32 = 400;
+
 /// ★ TR1b: a stockpile's probe cells -- every fourth column of its footprint
 /// at every height of its band, in a fixed order; the first with a stand is
 /// the site (the corner cell can be underground).
@@ -27503,6 +27520,100 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                         }
                         board.site_reach = Some(reach);
+                    }
+                    // ★ TR1c: THE ROUTER IS ASKED ONCE A DAY -- the trunk's own configuration,
+                    // the resumable full-path search, one road seed to the first upstairs
+                    // bed and one to the first ground bed; the outcome, the polls, the
+                    // closest cell, and the mirror's verdict for the same pair.
+                    if day_changed {
+                        let houses_p: Vec<Region> = board
+                            .designated
+                            .iter()
+                            .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                            .map(|(r, _)| *r)
+                            .collect();
+                        let mut beds_p: Vec<Vec3<i32>> = board.beds.keys().copied().collect();
+                        beds_p.sort_by_key(|b| (b.x, b.y, b.z));
+                        let floor_of = |b: &Vec3<i32>| houses_p.iter().find(|h| h.contains_point_xy(*b)).map(|h| h.min.z);
+                        let upstairs = beds_p.iter().copied().find(|b| floor_of(b).is_some_and(|f| b.z > f + 2));
+                        let ground = beds_p.iter().copied().find(|b| floor_of(b).is_some_and(|f| b.z <= f + 2));
+                        let mut roads_p: Vec<Vec2<i32>> = board.road_cells.iter().copied().collect();
+                        roads_p.sort_by_key(|c| (c.x, c.y));
+                        let walk_p = |c: Vec3<i32>| common::path::colonist_walkable(&*terrain, c);
+                        let seed = roads_p
+                            .iter()
+                            .find_map(|xy| (170..=205).map(|z| Vec3::new(xy.x, xy.y, z)).find(|c| walk_p(*c)));
+                        if let Some(seed) = seed {
+                            let reach_p = trunk_scramble_reach();
+                            let interior_p = board.interior_cells.clone();
+                            let cfg = common::path::TraversalConfig {
+                                node_tolerance: 1.5,
+                                slow_factor: 0.0,
+                                on_ground: true,
+                                in_liquid: false,
+                                min_tgt_dist: 1.0,
+                                can_climb: true,
+                                scramble_reach: reach_p,
+                                can_fly: false,
+                                vectored_propulsion: false,
+                                is_target_loaded: true,
+                                search_allowed: true,
+                                climb_ban: Vec::new(),
+                                road_cells: board.road_cells.clone(),
+                                route_jitter_seed: 0,
+                                wall_margin_cells: board.wall_margin_cells.clone(),
+                                interior_cells: board.interior_cells.clone(),
+                            };
+                            for (label, bed) in [("upstairs", upstairs), ("ground", ground)] {
+                                let Some(bed) = bed else { continue };
+                                let startf = seed.map(|e| e as f32 + 0.5);
+                                let endf = bed.map(|e| e as f32 + 0.5);
+                                let mut search = common::path::FullPathSearch::new(common::path::PathLength::Longest);
+                                let mut polls = 0u32;
+                                let outcome = loop {
+                                    polls += 1;
+                                    match common::path::bastion_full_path_step(&mut search, &*terrain, startf, endf, &cfg) {
+                                        common::path::FullPathStep::Pending if polls < ROUTER_PROBE_MAX_POLLS => continue,
+                                        common::path::FullPathStep::Pending => break "pending-at-cap",
+                                        common::path::FullPathStep::Done(common::path::FullPathOutcome::Path(p)) => {
+                                            break if p.is_empty() { "path-empty" } else { "path" };
+                                        },
+                                        common::path::FullPathStep::Done(common::path::FullPathOutcome::Unreachable) => break "unreachable",
+                                        common::path::FullPathStep::Done(common::path::FullPathOutcome::BudgetExhausted) => break "budget-exhausted",
+                                    }
+                                };
+                                let closest = search.last_closest;
+                                let closest_dist = closest.map(|c| (c - bed).map(|e| e.abs()).reduce_max());
+                                let beside = |c: Vec3<i32>| (c.x - bed.x).abs() <= 1 && (c.y - bed.y).abs() <= 1 && (c.z - bed.z).abs() <= 1;
+                                let inside_p = |c: Vec3<i32>| {
+                                    (c.x - bed.x).abs() <= 400 && (c.y - bed.y).abs() <= 400 && (165..=210).contains(&c.z)
+                                };
+                                let mirror = common::path::climb_with_steps(
+                                    &[seed],
+                                    beside,
+                                    inside_p,
+                                    walk_p,
+                                    |c, d| common::path::colonist_step_admitted(&*terrain, c, d, reach_p, true, &|xy| interior_p.contains(&xy)),
+                                    SITE_REACH_MAX_CELLS,
+                                );
+                                let mirror_ok = mirror.is_ok();
+                                let mirror_cells = match mirror { Ok(n) => n, Err((n, _)) => n };
+                                info!(
+                                    day = today,
+                                    label,
+                                    ?seed,
+                                    ?bed,
+                                    outcome,
+                                    polls,
+                                    ?closest,
+                                    ?closest_dist,
+                                    mirror_ok,
+                                    mirror_cells,
+                                    agreement = router_mirror_agree(outcome == "path", mirror_ok),
+                                    "bastion: ROUTER PROBE — the trunk's own search from a road seed to a bed, beside the mirror's verdict (TR1c)"
+                                );
+                            }
+                        }
                     }
                     // ★ THE DAILY CENSUSES RUN ONCE A DAY (2026-09-02 00:05).
                     // They were inserted between `let day_changed` and the
@@ -58371,6 +58482,18 @@ mod tests {
         assert!(!bob_reset_allowed(Some(1000), 100, true), "inside the hold: no reset");
         assert!(bob_reset_allowed(Some(1000), 1000, true), "the hold expired: reset again");
         assert!(STALL_HOLD_TICKS >= 300, "the hold outlasts the ladder's next pass");
+    }
+
+    /// ★ TR1c pinned: the four agreements are named apart; only-the-mirror
+    /// is the router's refusal of what the geometry allows. Planted defect:
+    /// every pair named as agreeing -> red.
+    #[test]
+    fn the_router_is_asked_once_a_day() {
+        assert_eq!(router_mirror_agree(true, true), "agree-path");
+        assert_eq!(router_mirror_agree(false, false), "agree-cut");
+        assert_eq!(router_mirror_agree(true, false), "router-only");
+        assert_eq!(router_mirror_agree(false, true), "mirror-only");
+        assert!(ROUTER_PROBE_MAX_POLLS >= 100, "enough polls for a whole-town search");
     }
 
     /// ★ TR1 pinned: a site with a reached cell two away in x, y and z has a
