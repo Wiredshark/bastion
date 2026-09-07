@@ -9602,6 +9602,16 @@ pub(crate) fn quarry_spares(house: &Region, xy: Vec2<i32>, margin: i32) -> bool 
 }
 
 pub(crate) static QUARRY_PASSES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// ★ A1 pinned: THE ACCESS PLANNER SPARES THE HOUSES. The dig mask is the
+/// mine and ladder claims; a house, a farm, a store, a build or a gather
+/// region is not a place the planner may tunnel (the planned ladders at
+/// (7713,6342), (7706,6310) and (7698,6303) stood inside houses).
+pub(crate) fn access_mask_kind(kind: &DesignationKind) -> bool {
+    matches!(kind, DesignationKind::Mine | DesignationKind::Ladder)
+}
+
+pub(crate) static ACCESS_MASKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 /// bastion (AUTON-1): scan volume top, relative to the anchor's z.
 pub const MINE_GEN_Z_TOP: i32 = 2;
 /// bastion (AUTON-1): scan volume height — one z-slab per firing (the
@@ -16427,6 +16437,14 @@ impl JobBoard {
     /// `.map(|(r, _)| r)`.
     pub fn designated_regions(&self) -> impl Iterator<Item = Region> + '_ {
         self.designated.iter().map(|(region, _)| *region)
+    }
+
+    /// ★ A1: the access planner's dig mask -- the mine and ladder claims only.
+    pub fn access_mask_regions(&self) -> impl Iterator<Item = Region> + '_ {
+        self.designated
+            .iter()
+            .filter(|(_, kind)| access_mask_kind(kind))
+            .map(|(region, _)| *region)
     }
 
     /// bastion (ITEM 27 GRANULARITY): mint the ONE build job a painted
@@ -46280,7 +46298,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             if let Some(job) = board.jobs.get_mut(&parent) {
                 job.carve_attempted = true;
             }
-            let mask = board.designated_regions().collect::<Vec<_>>();
+            // ★ A1: THE ACCESS PLANNER SPARES THE HOUSES -- the dig mask is the
+            // claims, not the houses.
+            let mask = board.access_mask_regions().collect::<Vec<_>>();
+            {
+                let all = board.designated.len();
+                let n = ACCESS_MASKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                if n <= 8 || n.is_power_of_two() {
+                    info!(
+                        claims = mask.len(),
+                        designations = all,
+                        spared = all.saturating_sub(mask.len()),
+                        pass = n,
+                        "bastion: THE ACCESS PLANNER SPARES THE HOUSES — the dig mask holds the mine and ladder claims, not the houses, farms or stores (A1)"
+                    );
+                }
+            }
             // ★ AXIS-1 PROBE (banked item 8, 2026-08-19). Corpus fact: this
             // call site is 0 emissions / 55 calls across 48 seeds, while the
             // `emergency` site — the SAME `plan_access` — succeeds 46/478 in
@@ -50274,7 +50307,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         if let Some((jid, jpos, jdepth)) = descent_plan {
             let from = jpos + Vec3::unit_z();
             let to = Vec3::new(jpos.x, jpos.y, jpos.z + jdepth as i32);
-            let mask = board.designated_regions().collect::<Vec<_>>();
+            // ★ A1: THE ACCESS PLANNER SPARES THE HOUSES -- the dig mask is the
+            // claims, not the houses.
+            let mask = board.access_mask_regions().collect::<Vec<_>>();
+            {
+                let all = board.designated.len();
+                let n = ACCESS_MASKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                if n <= 8 || n.is_power_of_two() {
+                    info!(
+                        claims = mask.len(),
+                        designations = all,
+                        spared = all.saturating_sub(mask.len()),
+                        pass = n,
+                        "bastion: THE ACCESS PLANNER SPARES THE HOUSES — the dig mask holds the mine and ladder claims, not the houses, farms or stores (A1)"
+                    );
+                }
+            }
             // DPA-1: dig_provisioned=true — THE Part-A wiring. Stairs still
             // plan first; tight shafts now fall to wood-costed rungs
             // instead of the D16 release.
@@ -58868,6 +58916,20 @@ mod tests {
         assert_eq!(dist_label(f32::MAX), "MAX");
         assert_eq!(dist_label(f32::MIN), "MIN");
         assert_eq!(dist_label(12.34), "12.3");
+    }
+
+    /// ★ A1 pinned: mine and ladder claims are the dig mask; a house, a
+    /// store, a farm, a build or a gather region is not. Planted defect:
+    /// every kind admitted -> red.
+    #[test]
+    fn the_access_planner_spares_the_houses() {
+        assert!(access_mask_kind(&DesignationKind::Mine), "a mine claim");
+        assert!(access_mask_kind(&DesignationKind::Ladder), "a ladder");
+        assert!(!access_mask_kind(&DesignationKind::Bed), "a house");
+        assert!(!access_mask_kind(&DesignationKind::Stockpile), "a store");
+        assert!(!access_mask_kind(&DesignationKind::Build), "a build");
+        assert!(!access_mask_kind(&DesignationKind::Gather), "a gather");
+        assert!(!access_mask_kind(&DesignationKind::Chop), "a tree");
     }
 
     /// ★ Q1 pinned: inside the footprint and on its margin the quarry
