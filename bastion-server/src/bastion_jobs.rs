@@ -10038,7 +10038,22 @@ pub(crate) fn stair_probe(
 /// SITE_REACH_MAX_CELLS (a whole-town search is ~60,000 cells; the town's
 /// standable ground is under that).
 pub(crate) const SITE_STAND_RING: i32 = 2;
-pub(crate) const SITE_REACH_MAX_CELLS: usize = 150_000;
+pub(crate) const SITE_REACH_MAX_CELLS: usize = 400_000;
+
+/// ★ TR1b: a stockpile's probe cells -- every fourth column of its footprint
+/// at every height of its band, in a fixed order; the first with a stand is
+/// the site (the corner cell can be underground).
+pub(crate) fn stockpile_probe_cells(r: &Region) -> Vec<Vec3<i32>> {
+    let mut v = Vec::new();
+    for z in r.min.z..=r.max.z {
+        for y in (r.min.y..=r.max.y).step_by(4) {
+            for x in (r.min.x..=r.max.x).step_by(4) {
+                v.push(Vec3::new(x, y, z));
+            }
+        }
+    }
+    v
+}
 
 pub(crate) fn site_has_stand(p: Vec3<i32>, reached: impl Fn(Vec3<i32>) -> bool) -> bool {
     for dz in -2..=2i32 {
@@ -27278,7 +27293,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             };
                             match stair_probe(
                                 |c| common::path::colonist_walkable(&*terrain, c),
-                                |c, d| common::path::colonist_step_admitted(&*terrain, c, d, trunk_scramble_reach(), true),
+                                |c, d| {
+                                    common::path::colonist_step_admitted(&*terrain, c, d, trunk_scramble_reach(), true, &|xy| {
+                                        board.interior_cells.contains(&xy)
+                                    })
+                                },
                                 *pos,
                                 h.min.z,
                                 h.min.xy(),
@@ -27326,8 +27345,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if day_changed {
                         let reach = trunk_scramble_reach();
                         let walk = |c: Vec3<i32>| common::path::colonist_walkable(&*terrain, c);
+                        // ★ TR1b: the live search's jump refusal (a landing inside a building).
+                        let interior = board.interior_cells.clone();
                         let step = |c: Vec3<i32>, d: Vec3<i32>| {
-                            common::path::colonist_step_admitted(&*terrain, c, d, reach, true)
+                            common::path::colonist_step_admitted(&*terrain, c, d, reach, true, &|xy| interior.contains(&xy))
+                        };
+                        let step_open = |c: Vec3<i32>, d: Vec3<i32>| {
+                            common::path::colonist_step_admitted(&*terrain, c, d, reach, true, &|_| false)
                         };
                         let mut bmin = Vec3::broadcast(i32::MAX);
                         let mut bmax = Vec3::broadcast(i32::MIN);
@@ -27358,7 +27382,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .filter_map(|xy| (lo.z..=hi.z).map(|z| Vec3::new(xy.x, xy.y, z)).find(|c| walk(*c)))
                                 .collect();
                             let set = common::path::reach_set_with_steps(&starts, inside, walk, step, SITE_REACH_MAX_CELLS);
+                            let set_open = common::path::reach_set_with_steps(&starts, inside, walk, step_open, SITE_REACH_MAX_CELLS);
                             let reached = |c: Vec3<i32>| set.contains(&c);
+                            let reached_open = |c: Vec3<i32>| set_open.contains(&c);
                             let mut by_kind: std::collections::BTreeMap<String, (u32, u32)> = std::collections::BTreeMap::new();
                             let mut sites: Vec<(String, Vec3<i32>, Option<JobId>, bool)> = Vec::new();
                             let mut job_ids: Vec<JobId> = board.jobs.keys().copied().collect();
@@ -27374,14 +27400,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 sites.push(("Bed".to_string(), p, None, board.beds.get(&p).is_some_and(|s| s.owner.is_some())));
                             }
                             for (_, r) in board.stockpiles.iter() {
-                                sites.push(("Stockpile".to_string(), r.min, None, false));
+                                // ★ TR1b: the first probe cell with a stand, else the corner.
+                                let probes = stockpile_probe_cells(r);
+                                let site = probes.iter().copied().find(|c| site_has_stand(*c, reached)).unwrap_or(r.min);
+                                sites.push(("Stockpile".to_string(), site, None, false));
                             }
                             let mut named = 0usize;
+                            let mut cut_open_n = 0u32;
                             for (kind, pos, job, claimed) in sites.iter() {
                                 let e = by_kind.entry(kind.clone()).or_insert((0, 0));
                                 e.0 += 1;
                                 if !site_has_stand(*pos, reached) {
                                     e.1 += 1;
+                                    let open = site_has_stand(*pos, reached_open);
+                                    if !open {
+                                        cut_open_n += 1;
+                                    }
                                     if named < 12 {
                                         named += 1;
                                         info!(
@@ -27389,8 +27423,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             ?pos,
                                             ?job,
                                             claimed,
+                                            reached_with_open_jumps = open,
                                             above = ?terrain.get(*pos + Vec3::unit_z()).ok().map(|b| format!("{:?}", b.kind())),
-                                            "bastion: THE SITE IS CUT OFF — no cell within two of it is reached from the road with the router's feet (TR1)"
+                                            "bastion: THE SITE IS CUT OFF — no cell within two of it is reached from the road with the router's feet (TR1; TR1b: the live jump rule)"
                                         );
                                     }
                                 }
@@ -27402,6 +27437,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 cap_hit = set.len() >= SITE_REACH_MAX_CELLS,
                                 sites = sites.len(),
                                 cut = by_kind.values().map(|(_, c)| *c).sum::<u32>(),
+                                cut_open = cut_open_n,
+                                reached_open = set_open.len(),
                                 kinds = ?by_kind,
                                 "bastion: SITE REACH CENSUS — from the road with the router's feet: which sites its people can stand at, by kind (total, cut) (TR1)"
                             );

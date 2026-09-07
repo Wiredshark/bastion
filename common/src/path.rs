@@ -1465,7 +1465,18 @@ pub const COLONIST_STEP_SCRAMBLES: [Vec3<i32>; 4] =
 /// the feet free (three above for a jump, four for a scramble); a falling
 /// step needs the block two above the landing free. A mirror of the
 /// filter in `find_path_priced`'s neighbour closure.
-pub fn colonist_step_admitted<V>(vol: &V, pos: Vec3<i32>, dir: Vec3<i32>, scramble_reach: u8, can_climb: bool) -> bool
+/// ★ TR1b: `jump_landing_blocked(xy)` is the live search's refusal of a jump
+/// (dir.z >= 2) whose landing column is a building interior or a banned
+/// climb -- the trunk search carries board.interior_cells; a census that
+/// wants the router's answer passes the same set.
+pub fn colonist_step_admitted<V>(
+    vol: &V,
+    pos: Vec3<i32>,
+    dir: Vec3<i32>,
+    scramble_reach: u8,
+    can_climb: bool,
+    jump_landing_blocked: &dyn Fn(Vec2<i32>) -> bool,
+) -> bool
 where
     V: BaseVol<Vox = Block> + ReadVol,
 {
@@ -1475,6 +1486,7 @@ where
         || (COLONIST_STEP_JUMPS.contains(&dir) && jumps_admitted(scramble_reach, on_land, can_climb, false))
         || (COLONIST_STEP_SCRAMBLES.contains(&dir) && scramble_reach >= 3);
     in_set
+        && (dir.z < 2 || !jump_landing_blocked((pos + dir).xy()))
         && colonist_walkable(vol, pos)
         && colonist_walkable(vol, pos + dir)
         && (dir.z < 1 || free(pos + Vec3::unit_z() * 2))
@@ -3253,7 +3265,7 @@ mod bastion_vertical_tests {
                 |c| c == Vec3::new(25, 20, 6),
                 inside,
                 |c| colonist_walkable(&vol, c),
-                |c, d| colonist_step_admitted(&vol, c, d, cfg.scramble_reach, cfg.can_climb),
+                |c, d| colonist_step_admitted(&vol, c, d, cfg.scramble_reach, cfg.can_climb, &|_| false),
                 20_000,
             );
             assert!(colonist_walkable(&vol, Vec3::new(14, 20, 3)), "variant {v}: the step under the ceiling is itself walkable");
@@ -3306,7 +3318,7 @@ mod bastion_vertical_tests {
                 &[Vec3::new(2, 2, 1)],
                 inside,
                 |c| colonist_walkable(&vol, c),
-                |c, d| colonist_step_admitted(&vol, c, d, 2, true),
+                |c, d| colonist_step_admitted(&vol, c, d, 2, true, &|_| false),
                 20_000,
             );
             assert!(set.contains(&Vec3::new(8, 8, 1)), "door {door}: the plaza is reached");
@@ -3318,6 +3330,37 @@ mod bastion_vertical_tests {
                 assert!(!set.contains(&Vec3::new(12, 5, 4)), "and its top is not stood on");
             }
         }
+        // ★ TR1b: case F -- the wall is two high at y 12 with a one-block step on
+        // the yard side, so the yard is reached only by a jump onto the wall top
+        // at (12, 12): in when the landing is open, out when it is 'interior'.
+        let mut blocks = StdHashMap::new();
+        for x in 0..24 {
+            for y in 0..24 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        for y in 0..24 {
+            for z in 1..=(if y == 12 { 2 } else { 3 }) {
+                blocks.insert(Vec3::new(12, y, z), rock);
+            }
+        }
+        blocks.insert(Vec3::new(13, 12, 1), rock);
+        let vol = MockVol::from_parts(blocks, Block::empty());
+        let reach = |blocked: &dyn Fn(Vec2<i32>) -> bool| {
+            reach_set_with_steps(
+                &[Vec3::new(2, 2, 1)],
+                inside,
+                |c| colonist_walkable(&vol, c),
+                |c, d| colonist_step_admitted(&vol, c, d, 2, true, blocked),
+                20_000,
+            )
+        };
+        let open = reach(&|_| false);
+        assert!(open.contains(&Vec3::new(12, 12, 3)), "F: the jump onto the two-high wall top is admitted");
+        assert!(open.contains(&Vec3::new(18, 18, 1)), "F: and the yard is reached down the step");
+        let shut = reach(&|xy: Vec2<i32>| xy == Vec2::new(12, 12));
+        assert!(!shut.contains(&Vec3::new(12, 12, 3)), "F: a jump onto an interior landing is refused, as the live search refuses it");
+        assert!(!shut.contains(&Vec3::new(18, 18, 1)), "F: and the yard stays out");
     }
 
     /// ★ W14-g pinned: a search left Pending toward a far goal A, then
