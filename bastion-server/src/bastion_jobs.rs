@@ -9891,6 +9891,40 @@ pub(crate) const BOB_WINDOW_TICKS: u64 = 900;
 /// at 0.033 s -- no assist, no re-plan; the per-tick distance check reset it
 /// every lift). At the count the mover sets the walker's stuck_time to the
 /// timeout and the stall's consumers act.
+/// ★ W14-j pinned: THE BASIN NAMES ITS RIM. From a walker's feet, the
+/// router's own steps either reach a road cell inside the box (open), run
+/// out of cells first (closed: a basin), or hit the cap (capped: the box is
+/// bigger than the budget, no verdict).
+pub(crate) fn basin_verdict(reached_road: bool, cells: usize, cap: usize) -> &'static str {
+    match (reached_road, cells, cap) {
+        (true, _, _) => "open",
+        (false, n, cap) if n < cap => "closed",
+        _ => "capped",
+    }
+}
+
+/// ★ W14-j: one column of the rim map, as the height of its first standable
+/// cell relative to the feet: '.' level, '1' '2' one and two up (the
+/// router's step and jump), '^' three or more up (no step), 'a' 'b' one and
+/// two down, 'v' three or more down, '#' nothing standable in the band.
+pub(crate) fn rim_glyph(surface_z: Option<i32>, feet_z: i32) -> char {
+    match surface_z.map(|z| z - feet_z) {
+        None => '#',
+        Some(0) => '.',
+        Some(1) => '1',
+        Some(2) => '2',
+        Some(d) if d >= 3 => '^',
+        Some(-1) => 'a',
+        Some(-2) => 'b',
+        Some(_) => 'v',
+    }
+}
+
+pub(crate) const RIM_BOX_XY: i32 = 24;
+pub(crate) const RIM_BOX_Z: i32 = 8;
+pub(crate) const RIM_REACH_MAX_CELLS: usize = 60_000;
+pub(crate) static RIMS_NAMED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ W18-j pinned: THE STALL HOLDS ITS CLOCK. The bridge probe zeroed the
 /// stuck clock on every landed step longer than a third of a walk step --
 /// a two-block bob is 2.0 -- so the stall's clock (W18-e) was back at one
@@ -45757,6 +45791,64 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     "bastion: THE EXHAUSTED DELIVERY NAMES ITS ASKER — the pump's fill spent its budget for this pair again (W14-i8)"
                                                 );
                                             }
+                                            // ★ W14-j: THE BASIN NAMES ITS RIM -- at the pair's second
+                                            // exhaustion, from the walker's feet with the router's own
+                                            // steps: does the road lie within reach, and what stands
+                                            // around the feet.
+                                            if reps == 2 {
+                                                let n_rim = RIMS_NAMED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                                                if n_rim <= 8 || n_rim.is_power_of_two() {
+                                                    let feet_c = ps.startf.map(|e| e.floor() as i32);
+                                                    let interior_r = board.interior_cells.clone();
+                                                    let roads_r = board.road_cells.clone();
+                                                    let reach_r = trunk_scramble_reach();
+                                                    let walk_r = |c: Vec3<i32>| common::path::colonist_walkable(&*terrain, c);
+                                                    let inside_r = |c: Vec3<i32>| {
+                                                        (c.x - feet_c.x).abs() <= RIM_BOX_XY
+                                                            && (c.y - feet_c.y).abs() <= RIM_BOX_XY
+                                                            && (c.z - feet_c.z).abs() <= RIM_BOX_Z
+                                                    };
+                                                    let step_r = |c: Vec3<i32>, d: Vec3<i32>| {
+                                                        common::path::colonist_step_admitted(&*terrain, c, d, reach_r, true, &|xy| interior_r.contains(&xy))
+                                                    };
+                                                    let set = common::path::reach_set_with_steps(&[feet_c], inside_r, &walk_r, &step_r, RIM_REACH_MAX_CELLS);
+                                                    let road_cell = set.iter().copied().find(|c| roads_r.contains(&c.xy()));
+                                                    let max_z = set.iter().map(|c| c.z).max();
+                                                    let rising: usize = common::path::COLONIST_STEP_DIRS
+                                                        .iter()
+                                                        .chain(common::path::COLONIST_STEP_JUMPS.iter())
+                                                        .chain(common::path::COLONIST_STEP_SCRAMBLES.iter())
+                                                        .filter(|d| d.z > 0 && step_r(feet_c, **d))
+                                                        .count();
+                                                    let rim: Vec<String> = (-4..=4)
+                                                        .map(|dy| {
+                                                            (-4..=4)
+                                                                .map(|dx| {
+                                                                    let surface = (-4..=4)
+                                                                        .rev()
+                                                                        .map(|dz| feet_c + Vec3::new(dx, dy, dz))
+                                                                        .find(|c| walk_r(*c))
+                                                                        .map(|c| c.z);
+                                                                    rim_glyph(surface, feet_c.z)
+                                                                })
+                                                                .collect()
+                                                        })
+                                                        .collect();
+                                                    info!(
+                                                        uid = k,
+                                                        from = ?feet_c,
+                                                        target = ?tcell,
+                                                        verdict = basin_verdict(road_cell.is_some(), set.len(), RIM_REACH_MAX_CELLS),
+                                                        cells = set.len(),
+                                                        ?max_z,
+                                                        ?road_cell,
+                                                        rising,
+                                                        rim = ?rim,
+                                                        named = n_rim,
+                                                        "bastion: THE BASIN NAMES ITS RIM — from the walker's feet with the router's own steps: the road within reach or not, and the heights around (W14-j)"
+                                                    );
+                                                }
+                                            }
                                         }
                                         let n = SEARCHES_EXHAUSTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
                                         if n <= 8 || n.is_power_of_two() {
@@ -58644,6 +58736,25 @@ mod tests {
         assert_eq!(dist_label(f32::MAX), "MAX");
         assert_eq!(dist_label(f32::MIN), "MIN");
         assert_eq!(dist_label(12.34), "12.3");
+    }
+
+    /// ★ W14-j pinned: the three verdicts are named apart and the rim glyphs
+    /// tell a step from a jump from a wall. Planted defect: closed named
+    /// open -> red.
+    #[test]
+    fn the_basin_names_its_rim() {
+        assert_eq!(basin_verdict(true, 10, 40_000), "open");
+        assert_eq!(basin_verdict(false, 10, 40_000), "closed");
+        assert_eq!(basin_verdict(false, 40_000, 40_000), "capped");
+        assert_eq!(rim_glyph(None, 182), '#');
+        assert_eq!(rim_glyph(Some(182), 182), '.');
+        assert_eq!(rim_glyph(Some(183), 182), '1', "a step");
+        assert_eq!(rim_glyph(Some(184), 182), '2', "a jump");
+        assert_eq!(rim_glyph(Some(185), 182), '^', "a wall");
+        assert_eq!(rim_glyph(Some(181), 182), 'a');
+        assert_eq!(rim_glyph(Some(180), 182), 'b');
+        assert_eq!(rim_glyph(Some(178), 182), 'v');
+        assert!(RIM_REACH_MAX_CELLS >= (2 * RIM_BOX_XY as usize + 1).pow(2), "the cap covers one full layer of the box");
     }
 
     /// ★ W18-j pinned: the stall's clock is past the timeout the ladder
