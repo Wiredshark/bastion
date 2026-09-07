@@ -9978,6 +9978,28 @@ pub(crate) fn stair_probe(
     }
 }
 
+/// ★ TR1 pinned: THE TOWN NAMES ITS CUT-OFF SITES. A site (a job's cell, a
+/// bed, a stockpile's corner) is reachable when some cell within two of it
+/// in x and y and two in z was reached from the road with the router's own
+/// steps -- the stand ring; three away is not. The reach set is capped at
+/// SITE_REACH_MAX_CELLS (a whole-town search is ~60,000 cells; the town's
+/// standable ground is under that).
+pub(crate) const SITE_STAND_RING: i32 = 2;
+pub(crate) const SITE_REACH_MAX_CELLS: usize = 150_000;
+
+pub(crate) fn site_has_stand(p: Vec3<i32>, reached: impl Fn(Vec3<i32>) -> bool) -> bool {
+    for dz in -2..=2i32 {
+        for dy in -SITE_STAND_RING..=SITE_STAND_RING {
+            for dx in -SITE_STAND_RING..=SITE_STAND_RING {
+                if reached(p + Vec3::new(dx, dy, dz)) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// The drop is taken unless its landing is a closed basin.
 pub(crate) fn drop_is_safe(
     standable: impl Fn(Vec3<i32>) -> bool,
@@ -14889,6 +14911,10 @@ pub struct JobBoard {
     /// (asker, target cell) pair this run (the exhausted delivery names its
     /// asker). Cumulative; the reader diffs by hour.
     pub exhaust_repeats: HashMap<(Uid, Vec3<i32>), u32>,
+    /// ★ TR1: the cells the router's own steps reach from the road, as of the
+    /// last SITE REACH CENSUS (None before the first). A generator asks
+    /// site_has_stand(pos, |c| set.contains(&c)) before it lays out a site.
+    pub site_reach: Option<std::collections::HashSet<Vec3<i32>>>,
     /// ★ W18-i: each body's last two-block-or-more mover drop (cell, tick)
     /// and how many bobs it has made at that cell since.
     pub bob_last: HashMap<Uid, (Vec2<i32>, u64)>,
@@ -27196,6 +27222,94 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             cut,
                             "bastion: STAIR CENSUS — upstairs beds, and whether the router can climb to them (H2-i; H2-i2: climbed from the floor with the router's feet)"
                         );
+                    }
+                    // ★ TR1: THE TOWN NAMES ITS CUT-OFF SITES -- once a day, from the
+                    // road with the router's own steps, which sites its people can
+                    // stand at. No behaviour change.
+                    if day_changed {
+                        let reach = trunk_scramble_reach();
+                        let walk = |c: Vec3<i32>| common::path::colonist_walkable(&*terrain, c);
+                        let step = |c: Vec3<i32>, d: Vec3<i32>| {
+                            common::path::colonist_step_admitted(&*terrain, c, d, reach, true)
+                        };
+                        let mut bmin = Vec3::broadcast(i32::MAX);
+                        let mut bmax = Vec3::broadcast(i32::MIN);
+                        let mut grow = |a: Vec3<i32>, b: Vec3<i32>| {
+                            bmin = Vec3::new(bmin.x.min(a.x), bmin.y.min(a.y), bmin.z.min(a.z));
+                            bmax = Vec3::new(bmax.x.max(b.x), bmax.y.max(b.y), bmax.z.max(b.z));
+                        };
+                        for (r, _) in board.designated.iter() {
+                            grow(r.min, r.max);
+                        }
+                        for p in board.beds.keys() {
+                            grow(*p, *p);
+                        }
+                        for (_, r) in board.stockpiles.iter() {
+                            grow(r.min, r.max);
+                        }
+                        if bmin.x <= bmax.x {
+                            let lo = bmin - Vec3::new(8, 8, 12);
+                            let hi = bmax + Vec3::new(8, 8, 12);
+                            let inside = |c: Vec3<i32>| {
+                                c.x >= lo.x && c.x <= hi.x && c.y >= lo.y && c.y <= hi.y && c.z >= lo.z && c.z <= hi.z
+                            };
+                            let mut roads: Vec<Vec2<i32>> = board.road_cells.iter().copied().collect();
+                            roads.sort_by_key(|c| (c.x, c.y));
+                            let starts: Vec<Vec3<i32>> = roads
+                                .iter()
+                                .step_by(8)
+                                .filter_map(|xy| (lo.z..=hi.z).map(|z| Vec3::new(xy.x, xy.y, z)).find(|c| walk(*c)))
+                                .collect();
+                            let set = common::path::reach_set_with_steps(&starts, inside, walk, step, SITE_REACH_MAX_CELLS);
+                            let reached = |c: Vec3<i32>| set.contains(&c);
+                            let mut by_kind: std::collections::BTreeMap<String, (u32, u32)> = std::collections::BTreeMap::new();
+                            let mut sites: Vec<(String, Vec3<i32>, Option<JobId>, bool)> = Vec::new();
+                            let mut job_ids: Vec<JobId> = board.jobs.keys().copied().collect();
+                            job_ids.sort_unstable();
+                            for id in job_ids {
+                                if let Some(j) = board.jobs.get(&id) {
+                                    sites.push((job_kind_name(&j.kind), j.pos, Some(id), j.claimed_by.is_some()));
+                                }
+                            }
+                            let mut bed_cells: Vec<Vec3<i32>> = board.beds.keys().copied().collect();
+                            bed_cells.sort_by_key(|p| (p.x, p.y, p.z));
+                            for p in bed_cells {
+                                sites.push(("Bed".to_string(), p, None, board.beds.get(&p).is_some_and(|s| s.owner.is_some())));
+                            }
+                            for (_, r) in board.stockpiles.iter() {
+                                sites.push(("Stockpile".to_string(), r.min, None, false));
+                            }
+                            let mut named = 0usize;
+                            for (kind, pos, job, claimed) in sites.iter() {
+                                let e = by_kind.entry(kind.clone()).or_insert((0, 0));
+                                e.0 += 1;
+                                if !site_has_stand(*pos, reached) {
+                                    e.1 += 1;
+                                    if named < 12 {
+                                        named += 1;
+                                        info!(
+                                            kind = %kind,
+                                            ?pos,
+                                            ?job,
+                                            claimed,
+                                            above = ?terrain.get(*pos + Vec3::unit_z()).ok().map(|b| format!("{:?}", b.kind())),
+                                            "bastion: THE SITE IS CUT OFF — no cell within two of it is reached from the road with the router's feet (TR1)"
+                                        );
+                                    }
+                                }
+                            }
+                            info!(
+                                day = today,
+                                seeds = starts.len(),
+                                reached = set.len(),
+                                cap_hit = set.len() >= SITE_REACH_MAX_CELLS,
+                                sites = sites.len(),
+                                cut = by_kind.values().map(|(_, c)| *c).sum::<u32>(),
+                                kinds = ?by_kind,
+                                "bastion: SITE REACH CENSUS — from the road with the router's feet: which sites its people can stand at, by kind (total, cut) (TR1)"
+                            );
+                            board.site_reach = Some(set);
+                        }
                     }
                     // ★ THE DAILY CENSUSES RUN ONCE A DAY (2026-09-02 00:05).
                     // They were inserted between `let day_changed` and the
@@ -57837,6 +57951,22 @@ mod tests {
         assert!(store_cell_has_stand(Vec3::new(5, 2, 2), floor), "two cells from the floor row: a stand within reach");
         assert!(!store_cell_has_stand(Vec3::new(20, 20, 2), floor), "deep in the crate field: no stand within reach");
         assert!(!store_cell_has_stand(Vec3::new(20, 4, 2), floor), "four rows in: still none (the reach is three)");
+    }
+
+    /// ★ TR1 pinned: a site with a reached cell two away in x, y and z has a
+    /// stand; three away in any axis has none; the site's own cell counts.
+    /// Planted defect: the ring shrunk to nothing -> red on the two-away case.
+    #[test]
+    fn the_town_names_its_cut_off_sites() {
+        let site = Vec3::new(100, 200, 186);
+        let only = |q: Vec3<i32>| move |c: Vec3<i32>| c == q;
+        assert!(site_has_stand(site, only(site)), "the site's own cell");
+        assert!(site_has_stand(site, only(site + Vec3::new(2, -2, 2))), "two away in every axis: a stand");
+        assert!(site_has_stand(site, only(site + Vec3::new(0, 0, -2))), "two below: the floor under a raised site");
+        assert!(!site_has_stand(site, only(site + Vec3::new(3, 0, 0))), "three away in x: none");
+        assert!(!site_has_stand(site, only(site + Vec3::new(0, 0, 3))), "three above: none");
+        assert!(!site_has_stand(site, |_| false), "nothing reached: none");
+        assert_eq!(SITE_STAND_RING, 2, "the ring is two");
     }
 
     /// ★ H2-i pinned, H2-i2 rewritten: a ground-floor bed is Ground; an

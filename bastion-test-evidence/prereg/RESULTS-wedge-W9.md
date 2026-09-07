@@ -3128,6 +3128,36 @@ W18-c days: -6%), FETCH STALLED 6, bobs peak 2, STUCK CENSUS 4
 distinct, starving sleepers 0, p95 722 us. The night block (~18:07)
 closes b1's W14-g day.
 
+### H2-i2 LANDED (02:28): cbda5eef47, both halves, markers 'H2-i2: up, not down' and the renamed STAIR CENSUS line in the exe
+
+Both pins green on the fresh compile: the bastion-server geometry
+pin (513 filtered, 1 passed) and the common agreement pin (719
+filtered, 1 passed: on the stairs-lab shapes the mirror and
+find_path_priced agree -- A climbed by both, E refused by both with
+the mirror stopping on the step under the ceiling). The first
+chain run died at the common pin's compile ({r:?} on PathResult:
+no Debug); the messages now print a computed verdict string.
+Committed 02:16, staged 02:28, pushed, shipped to lab-bin 02:29.
+Falsifier bthze1h3m plants the rise clearance ignored in the
+mirror at +90 s: RED (02:33 -- the mirror climbed past the ceiling
+on shape E while the router refused; the agreement pin panicked at
+path.rs:3236 as designed). TR1's chain fired at 02:33 (both halves;
+stage ~03:00) -> E2-q -> H2-p. The first census on a pair at or after this one prints on
+each arm's next boot (b1 ~02:45, b2 ~03:00); the waiter keys on
+the census line's new text.
+
+### E2-i3b's first supper round on b1 (02:25, pair 5a5822c77f, hour 12 of day 0): 56 SUPPER LOAD MINTED lines -- the instrument prints
+
+SUPPER ROUND houses 49, heads 49, shortfall 98, loads 56; one line
+per load: house_min, job, units, eaters (e.g. house (7546,6396,180)
+job 778 units 2 eaters [29]; (7552,6432,180) job 779 units 3
+eaters [30]). House 86 (7744,6402) got two loads; house
+(7618,6318,180) (colonist 34's fingerprint on b2) got one. The
+night's NIGHT SHELF EMPTY lines now carry loads=[ids] and
+ledgered=true/false; the b1 E2-i3b reader prints them at its night
+read (~03:00), and each GONE id is then traced through the release
+and deposit lines by id.
+
 ### THE BED-WALK FLOOD IS CALLED CLOSED (02:07): six arm-nights since W6-F2 landed, none the 148x/170x bed-cell loop
 
 Whole-town searches per arm-day/night on pairs at or after W6-F2:
@@ -3164,6 +3194,37 @@ watch 5-6 -- the ledge arm's previous nights read 28-32 in bed with
 its consumer chain (patience -> strike -> strike-out -> shun ->
 another bed -> in bed); the reclaim bar re-registered at <= 24 for
 the next nights (its arithmetic, not the rule).
+
+b2's first W6-G night (02:17, boarded 01:50, hour 3 of day 1):
+PATIENCE 2 (806, 40; one struck out); the climb-ban path carried
+the rest: other bans 120 (61 x45 at (7706,6310,183) in six minutes,
+65 x33), benched by banned climbs 9, held strikes 9, STRUCK OUT 12,
+shuns 8; reclaims top 806 x6, 40 x6 (from 30-44: the bar of 20
+PASSED); FLOOD 13; STALL BLAMED 0; arrivals 744 by hour 3; starving
+0. NIGHT: hour 22 in_bed 2 / to_bed 31; 23: 27 / 13; 0: 34 / 8;
+1-3: 36-37 / 7-8, idle 0-1, watch 6-8. Oddity: route_proofs 98
+(UNREACHABLE PROVEN benches) against 0-2 on other days -- checked:
+143 lines by hour 4, 88 distinct jobs, 18 in the day's first hours
+and 125 in the evening and night; the writer is "stuck-timeout
+release" and the jobs are material hauls (job 220: Haul stones,
+destination 27, pos (7704,6347,182)) whose claimant timed out five
+blocks from the pile (colonist at (7709,6349,181)) -- a store cell
+the router does not reach, on a day the Build lane posted eighty-
+eight hauls to it. Not W6-G's doing (b1's W6-G day: 2; the
+patience touches self jobs only); the daytime cut-off-site class
+on a new job mix. TR1's census names the cell; the poster
+consumer holds hauls to it. DISPOSITION on both arms: PASSED (reclaims 22-28 on b1 by
+the six-suspends arithmetic, 6 on b2; in bed 37-40 of 50).
+b2's full W6-G day at hour 6 (cascade reader, 02:22): flood 20,
+other bans 165 (65 x69 at (7706,6310,183) in ten minutes, 61 x54:
+the climb-ban loop's twenty-odd bans per strike before W6-E's
+timeout strikes it -- bounded searches, a walker's ten minutes),
+held strikes 9, struck out 13, reclaims 806/40 x6, route proofs 130
+(the material hauls above), arrivals 774, starving 0, NIGHT SHELF
+EMPTY 0. The old stair census at the day change: beds 113 (34 at
+boot: the day's adoption registered the rest), upstairs 55,
+connected 53, cut 2 -- even the lenient rule finds two cut; H2-i2's
+rule replaces it on the next pair.
 
 The full day at hour 6 (cascade reader, 02:07): flood 30, reclaims
 63 x28 / 77 x23 (the re-registered bar of 24 missed by four: six

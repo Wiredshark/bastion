@@ -1525,6 +1525,39 @@ pub fn climb_with_steps(
     Err((seen.len(), top.unwrap_or(starts.first().copied().unwrap_or(Vec3::zero()))))
 }
 
+/// ★ TR1: every cell a colonist can stand on that the router's own steps
+/// reach from `starts`, breadth-first in a fixed order, bounded by
+/// `inside` and `max_cells` (the set is whole when its length is under
+/// the cap). The town's reachability map, once a day.
+pub fn reach_set_with_steps(
+    starts: &[Vec3<i32>],
+    inside: impl Fn(Vec3<i32>) -> bool,
+    walkable: impl Fn(Vec3<i32>) -> bool,
+    step: impl Fn(Vec3<i32>, Vec3<i32>) -> bool,
+    max_cells: usize,
+) -> std::collections::HashSet<Vec3<i32>> {
+    let mut seen: std::collections::HashSet<Vec3<i32>> = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<Vec3<i32>> = std::collections::VecDeque::new();
+    for &c in starts {
+        if inside(c) && walkable(c) && seen.insert(c) {
+            queue.push_back(c);
+        }
+    }
+    while let Some(c) = queue.pop_front() {
+        if seen.len() >= max_cells {
+            break;
+        }
+        for dir in COLONIST_STEP_DIRS.iter().chain(COLONIST_STEP_JUMPS.iter()).chain(COLONIST_STEP_SCRAMBLES.iter()) {
+            let n = c + *dir;
+            if inside(n) && !seen.contains(&n) && step(c, *dir) {
+                seen.insert(n);
+                queue.push_back(n);
+            }
+        }
+    }
+    seen
+}
+
 /// ★ THE SHARED BODY-CELL RULE (Ben, live: "i just saw them try to go
 /// through one" — the ROUTER refused windows but the kinematic mover's
 /// own probes (glide surface-follow, search-gap bridge, unstuck nudge,
@@ -3236,6 +3269,53 @@ mod bastion_vertical_tests {
                         Ok(n) => panic!("E: the mirror climbed past the ceiling in {n} cells: it does not walk with the router's feet"),
                     }
                 },
+            }
+        }
+    }
+
+    /// ★ TR1 pinned: THE ROAD REACHES THE PLAZA, NOT THE WALLED YARD. A
+    /// ground slab with a three-high wall across it: from a seed west of the
+    /// wall the reach set holds the west (the plaza) and not the east (the
+    /// yard) at the trunk's reach of two; with a doorway cut in the wall the
+    /// yard joins. Planted defect: none here (the ring pin in bastion-server
+    /// is the falsified one); this pin holds the set to the wall.
+    #[test]
+    fn the_road_reaches_the_plaza_not_the_walled_yard() {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let build = |door: bool| {
+            let mut blocks = StdHashMap::new();
+            for x in 0..24 {
+                for y in 0..24 {
+                    blocks.insert(Vec3::new(x, y, 0), rock);
+                }
+            }
+            for y in 0..24 {
+                if door && y == 12 {
+                    continue;
+                }
+                for z in 1..=3 {
+                    blocks.insert(Vec3::new(12, y, z), rock);
+                }
+            }
+            MockVol::from_parts(blocks, Block::empty())
+        };
+        let inside = |c: Vec3<i32>| c.x >= 0 && c.x < 24 && c.y >= 0 && c.y < 24 && c.z >= 0 && c.z <= 8;
+        for door in [false, true] {
+            let vol = build(door);
+            let set = reach_set_with_steps(
+                &[Vec3::new(2, 2, 1)],
+                inside,
+                |c| colonist_walkable(&vol, c),
+                |c, d| colonist_step_admitted(&vol, c, d, 2, true),
+                20_000,
+            );
+            assert!(set.contains(&Vec3::new(8, 8, 1)), "door {door}: the plaza is reached");
+            assert!(set.len() < 20_000, "door {door}: the set is whole, under the cap");
+            if door {
+                assert!(set.contains(&Vec3::new(18, 18, 1)), "a doorway joins the yard");
+            } else {
+                assert!(!set.contains(&Vec3::new(18, 18, 1)), "a three-high wall keeps the yard out at reach 2");
+                assert!(!set.contains(&Vec3::new(12, 5, 4)), "and its top is not stood on");
             }
         }
     }
